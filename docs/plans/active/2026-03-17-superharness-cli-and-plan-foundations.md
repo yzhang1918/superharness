@@ -4,7 +4,7 @@ lifecycle: executing
 revision: 1
 template_version: 0.1.0
 created_at: 2026-03-17T10:12:01+08:00
-updated_at: 2026-03-17T16:08:00+08:00
+updated_at: 2026-03-18T00:15:27+08:00
 source_type: direct_request
 source_refs: []
 ---
@@ -43,7 +43,7 @@ core workflow.
       automated tests.
 - [x] `harness plan template` and `harness plan lint` are implemented against
       the documented contract.
-- [ ] `harness status` reports plan state plus step state from
+- [x] `harness status` reports plan state plus step state from
       local artifacts without requiring manual state bookkeeping.
 - [ ] `harness review start`, `harness review submit`, and
       `harness review aggregate` implement the review-round contract without
@@ -154,11 +154,15 @@ and archived-plan validation rules.
 #### Review Notes
 
 `go test ./...` passes. Smoke checks confirmed `harness plan template` renders
-seeded metadata and `harness plan lint` accepts the current active plan.
+seeded metadata, both `--help` surfaces exit cleanly, and `harness plan lint`
+accepts the current active plan plus a generated plan under
+`docs/plans/active/...`. Reviewer feedback also surfaced two panic paths plus
+missing filename, step-heading, and historical-template-version validation;
+follow-up negative tests and lint guards now cover those cases.
 
 ### Step 3: Implement local state and `harness status`
 
-- Status: pending
+- Status: completed
 
 #### Objective
 
@@ -173,9 +177,13 @@ current step, current step state, and next likely actions.
 
 #### Expected Files
 
-- `cmd/...`
-- `internal/...`
-- `*_test.go`
+- `internal/cli/app.go`
+- `internal/cli/app_test.go`
+- `internal/plan/document.go`
+- `internal/plan/document_test.go`
+- `internal/runstate/state.go`
+- `internal/status/service.go`
+- `internal/status/service_test.go`
 - `docs/specs/cli-contract.md`
 
 #### Validation
@@ -191,11 +199,17 @@ current step, current step state, and next likely actions.
 
 #### Execution Notes
 
-PENDING_STEP_EXECUTION
+Added a thin read-only `.local/harness/...` state model, a parsed plan-document
+helper, and `harness status` with plan detection, current-step inference,
+step-state inference, warnings, and agent-friendly next actions.
 
 #### Review Notes
 
-PENDING_STEP_REVIEW
+`go test ./...` passes. Real CLI smoke checks now cover `go run ./cmd/harness
+--help`, `plan template --help`, `plan lint --help`, `status --help`, a
+generated-plan template-plus-lint roundtrip, and `go run ./cmd/harness status`
+against the current worktree. A reviewer subagent also confirmed adjacent lint
+robustness gaps, which were fixed before closing this step.
 
 ### Step 4: Implement the review-round contract
 

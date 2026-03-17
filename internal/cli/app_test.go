@@ -101,3 +101,39 @@ func TestPlanLintHelpExitsZero(t *testing.T) {
 		t.Fatalf("expected help text, got %s", stderr.String())
 	}
 }
+
+func TestStatusCommandReturnsJSON(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 15, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+
+	outputPath := filepath.Join(root, "docs/plans/active/2026-03-18-test-plan.md")
+	if exitCode := app.Run([]string{
+		"plan", "template",
+		"--title", "CLI Generated Plan",
+		"--output", outputPath,
+	}); exitCode != 0 {
+		t.Fatalf("template command failed with %d: %s", exitCode, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+
+	exitCode := app.Run([]string{"status"})
+	if exitCode != 0 {
+		t.Fatalf("status command failed with %d: %s", exitCode, stderr.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON status output: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "status" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+}

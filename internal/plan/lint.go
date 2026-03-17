@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,9 +16,11 @@ import (
 )
 
 var (
-	stepHeadingPattern = regexp.MustCompile(`^### Step [0-9]+: .+`)
-	checkboxPattern    = regexp.MustCompile(`^- \[( |x|X)\] .+`)
-	statusPattern      = regexp.MustCompile(`^- Status:\s*(\S+)\s*$`)
+	stepHeadingPattern     = regexp.MustCompile(`^### Step [1-9][0-9]*: .+$`)
+	planFilenamePattern    = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$`)
+	templateVersionPattern = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)$`)
+	checkboxPattern        = regexp.MustCompile(`^- \[( |x|X)\] .+`)
+	statusPattern          = regexp.MustCompile(`^- Status:\s*(\S+)\s*$`)
 )
 
 var (
@@ -91,6 +94,7 @@ type lintArtifacts struct {
 }
 
 type lintContext struct {
+	path           string
 	frontmatter    Frontmatter
 	rawFrontmatter map[string]any
 	title          string
@@ -151,6 +155,7 @@ func parseAndValidate(path string) (*lintContext, []LintIssue) {
 
 	issues := make([]LintIssue, 0)
 	ctx := &lintContext{}
+	ctx.path = path
 	ctx.pathKind = inferPathKind(path)
 
 	rawFrontmatter, body, err := splitFrontmatter(string(content))
@@ -273,10 +278,10 @@ func validateFrontmatter(ctx *lintContext) []LintIssue {
 	supportedVersion, err := templateassets.PlanTemplateVersion()
 	if err != nil {
 		issues = append(issues, LintIssue{Path: "frontmatter.template_version", Message: err.Error()})
-	} else if ctx.frontmatter.TemplateVersion != supportedVersion {
+	} else if err := validateTemplateVersion(ctx.frontmatter.TemplateVersion, supportedVersion); err != nil {
 		issues = append(issues, LintIssue{
 			Path:    "frontmatter.template_version",
-			Message: fmt.Sprintf("unsupported template_version %q; supported version is %q", ctx.frontmatter.TemplateVersion, supportedVersion),
+			Message: err.Error(),
 		})
 	}
 
@@ -311,8 +316,12 @@ func validateScope(ctx *lintContext) []LintIssue {
 }
 
 func validateAcceptanceCriteria(ctx *lintContext) []LintIssue {
+	section := ctx.sections["Acceptance Criteria"]
+	if section == nil {
+		return []LintIssue{{Path: "section.Acceptance Criteria", Message: "missing Acceptance Criteria section"}}
+	}
 	issues := make([]LintIssue, 0)
-	items, err := parseCheckboxList(ctx.sections["Acceptance Criteria"].lines)
+	items, err := parseCheckboxList(section.lines)
 	if err != nil {
 		issues = append(issues, LintIssue{Path: "section.Acceptance Criteria", Message: err.Error()})
 		return issues
@@ -377,8 +386,14 @@ func parseSteps(ctx *lintContext) ([]step, []LintIssue) {
 
 	for _, rawLine := range lines {
 		line := strings.TrimRight(rawLine, "\r")
-		if strings.HasPrefix(line, "### Step ") {
+		if strings.HasPrefix(line, "### ") {
 			flush()
+			if !stepHeadingPattern.MatchString(line) {
+				issues = append(issues, LintIssue{
+					Path:    "section.Work Breakdown",
+					Message: fmt.Sprintf("invalid step heading %q; use ### Step N: Title", strings.TrimSpace(strings.TrimPrefix(line, "### "))),
+				})
+			}
 			current = &step{title: strings.TrimSpace(strings.TrimPrefix(line, "### "))}
 			buffer = nil
 			continue
@@ -488,6 +503,10 @@ func validatePathRules(ctx *lintContext) []LintIssue {
 	default:
 		issues = append(issues, LintIssue{Path: "path", Message: "plan must live under docs/plans/active or docs/plans/archived"})
 	}
+
+	if filenameErr := validatePlanFilename(filepath.Base(ctx.path)); filenameErr != nil {
+		issues = append(issues, LintIssue{Path: "path", Message: filenameErr.Error()})
+	}
 	return issues
 }
 
@@ -528,7 +547,12 @@ func validateArchivedRules(ctx *lintContext) []LintIssue {
 
 	if deferredItemsSection := ctx.sections["Deferred Items"]; deferredItemsSection != nil {
 		if hasRealDeferredItems(strings.Join(deferredItemsSection.lines, "\n")) {
-			outcomeSubsections, _ := parseLevelThreeSections(ctx.sections["Outcome Summary"].lines)
+			outcomeSummary := ctx.sections["Outcome Summary"]
+			if outcomeSummary == nil {
+				issues = append(issues, LintIssue{Path: "section.Outcome Summary", Message: "missing Outcome Summary section"})
+				return issues
+			}
+			outcomeSubsections, _ := parseLevelThreeSections(outcomeSummary.lines)
 			followUp := outcomeSubsections["Follow-Up Issues"]
 			if followUp == nil || strings.EqualFold(strings.TrimSpace(strings.Join(followUp.lines, "\n")), "NONE") {
 				issues = append(issues, LintIssue{Path: "section.Outcome Summary.Follow-Up Issues", Message: "archived plans with deferred items must include follow-up issue references"})
@@ -618,4 +642,59 @@ func hasRealDeferredItems(content string) bool {
 		}
 	}
 	return true
+}
+
+func validatePlanFilename(filename string) error {
+	matches := planFilenamePattern.FindStringSubmatch(filename)
+	if len(matches) != 3 {
+		return fmt.Errorf("plan filename must match YYYY-MM-DD-short-topic.md")
+	}
+	if _, err := time.Parse("2006-01-02", matches[1]); err != nil {
+		return fmt.Errorf("plan filename must start with a valid date")
+	}
+	return nil
+}
+
+func validateTemplateVersion(planVersion, supportedVersion string) error {
+	planSemver, err := parseTemplateVersion(planVersion)
+	if err != nil {
+		return fmt.Errorf("template_version must be semver-like (for example 0.1.0)")
+	}
+	supportedSemver, err := parseTemplateVersion(supportedVersion)
+	if err != nil {
+		return fmt.Errorf("supported template version is invalid: %v", err)
+	}
+	if compareTemplateVersions(planSemver, supportedSemver) > 0 {
+		return fmt.Errorf("template_version %q is newer than this harness supports (%q)", planVersion, supportedVersion)
+	}
+	return nil
+}
+
+func parseTemplateVersion(version string) ([3]int, error) {
+	matches := templateVersionPattern.FindStringSubmatch(strings.TrimSpace(version))
+	if len(matches) != 4 {
+		return [3]int{}, fmt.Errorf("invalid version %q", version)
+	}
+
+	var parsed [3]int
+	for i := 1; i < len(matches); i++ {
+		value, err := strconv.Atoi(matches[i])
+		if err != nil {
+			return [3]int{}, err
+		}
+		parsed[i-1] = value
+	}
+	return parsed, nil
+}
+
+func compareTemplateVersions(left, right [3]int) int {
+	for i := 0; i < len(left); i++ {
+		switch {
+		case left[i] < right[i]:
+			return -1
+		case left[i] > right[i]:
+			return 1
+		}
+	}
+	return 0
 }

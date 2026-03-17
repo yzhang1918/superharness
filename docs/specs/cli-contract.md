@@ -243,7 +243,9 @@ Contract:
   invalid plan data
 - report issues in a compact machine-readable form
 - distinguish active-plan errors from archived-plan errors
-- validate supported `template_version` values
+- validate supported `template_version` values without invalidating older
+  historical plans created by earlier harness versions
+- reject malformed plan filenames and malformed `### Step N: ...` headings
 
 Recommended next action:
 

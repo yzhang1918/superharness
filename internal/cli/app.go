@@ -12,12 +12,14 @@ import (
 	"time"
 
 	"github.com/yzhang1918/superharness/internal/plan"
+	"github.com/yzhang1918/superharness/internal/status"
 )
 
 type App struct {
 	Stdout io.Writer
 	Stderr io.Writer
 	Now    func() time.Time
+	Getwd  func() (string, error)
 }
 
 func New(stdout, stderr io.Writer) *App {
@@ -25,6 +27,7 @@ func New(stdout, stderr io.Writer) *App {
 		Stdout: stdout,
 		Stderr: stderr,
 		Now:    time.Now,
+		Getwd:  os.Getwd,
 	}
 }
 
@@ -37,6 +40,8 @@ func (a *App) Run(args []string) int {
 	switch args[0] {
 	case "plan":
 		return a.runPlan(args[1:])
+	case "status":
+		return a.runStatus(args[1:])
 	case "-h", "--help", "help":
 		a.printRootUsage()
 		return 0
@@ -163,6 +168,44 @@ func (a *App) runPlanLint(args []string) int {
 	return 1
 }
 
+func (a *App) runStatus(args []string) int {
+	fs := flag.NewFlagSet("harness status", flag.ContinueOnError)
+	fs.SetOutput(a.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(a.Stderr, "Usage: harness status")
+		fmt.Fprintln(a.Stderr)
+		fmt.Fprintln(a.Stderr, "Summarize the current plan plus local execution state for the current worktree.")
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fs.Usage()
+		return 2
+	}
+
+	workdir, err := a.Getwd()
+	if err != nil {
+		fmt.Fprintf(a.Stderr, "resolve working directory: %v\n", err)
+		return 1
+	}
+
+	result := status.Service{Workdir: workdir}.Read()
+	encoder := json.NewEncoder(a.Stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(result); err != nil {
+		fmt.Fprintf(a.Stderr, "encode status result: %v\n", err)
+		return 1
+	}
+	if result.OK {
+		return 0
+	}
+	return 1
+}
+
 func (a *App) resolveTimestamp(timestampValue, dateValue string) (time.Time, error) {
 	if strings.TrimSpace(timestampValue) != "" {
 		ts, err := time.Parse(time.RFC3339, timestampValue)
@@ -187,6 +230,7 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.Stderr, "Commands:")
 	fmt.Fprintln(a.Stderr, "  plan template   Render the packaged plan template")
 	fmt.Fprintln(a.Stderr, "  plan lint       Validate a tracked plan")
+	fmt.Fprintln(a.Stderr, "  status          Summarize the current plan and local execution state")
 }
 
 func (a *App) printPlanUsage() {

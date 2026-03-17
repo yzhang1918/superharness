@@ -111,6 +111,9 @@ Examples:
 The goal is not uniqueness through numbering. The goal is a filename that stays
 clear and searchable when humans or agents scan plan history.
 
+Lint should enforce the `YYYY-MM-DD-short-topic.md` shape, including a valid
+calendar date and a kebab-case short topic.
+
 The file stem is the durable plan identifier used by local
 `.local/harness/plans/<plan-stem>/` state.
 
@@ -149,6 +152,9 @@ source_refs: []
   - Harness template/schema version used when the plan was generated or last
     intentionally migrated.
   - v0.1 examples use `0.1.0`.
+  - Lint should accept the bundled template version and older historical
+    versions, while rejecting versions newer than the current harness knows
+    how to validate.
 - `created_at`
   - RFC3339 timestamp with offset.
 - `updated_at`
