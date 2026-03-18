@@ -1,10 +1,10 @@
 ---
-status: active
-lifecycle: executing
+status: archived
+lifecycle: awaiting_merge_approval
 revision: 1
 template_version: 0.1.0
-created_at: 2026-03-17T10:12:01+08:00
-updated_at: 2026-03-18T00:28:44+08:00
+created_at: "2026-03-17T10:12:01+08:00"
+updated_at: "2026-03-18T09:38:46+08:00"
 source_type: direct_request
 source_refs: []
 ---
@@ -209,7 +209,10 @@ step-state inference, warnings, and agent-friendly next actions.
 --help`, `plan template --help`, `plan lint --help`, `status --help`, a
 generated-plan template-plus-lint roundtrip, and `go run ./cmd/harness status`
 against the current worktree. A reviewer subagent also confirmed adjacent lint
-robustness gaps, which were fixed before closing this step.
+robustness gaps, which were fixed before closing this step. During archive
+prep dogfooding, `harness status` also surfaced a `ready_for_archive`
+handoff mismatch; the summary and next actions now correctly recommend
+archiving instead of pointing back to already-written closeout summaries.
 
 ### Step 4: Implement the review-round contract
 
@@ -341,26 +344,55 @@ plan pointer updates, and a clean active-plan lint result after reopen.
 
 ## Validation Summary
 
-PENDING_UNTIL_ARCHIVE
+- `go test ./...` passes across the current Go module, covering the CLI, plan,
+  lifecycle, review, and status packages.
+- CLI smoke checks covered every shipped help surface:
+  `go run ./cmd/harness --help`, `plan template --help`, `plan lint --help`,
+  `status --help`, `review start --help`, `review submit --help`,
+  `review aggregate --help`, `archive --help`, and `reopen --help`.
+- Functional smoke runs covered:
+  - generated plan template plus lint roundtrip
+  - `review start -> status -> submit -> aggregate -> status`
+  - built-binary `plan template -> archive -> status -> reopen -> status -> plan lint`
 
 ## Review Summary
 
-PENDING_UNTIL_ARCHIVE
+- The final full review round
+  `review-20260318t012857000000000z-full` passed with no blocking or
+  non-blocking findings in the aggregated result.
+- Earlier spec and implementation review feedback was incorporated before
+  closing Steps 1 through 5, including state vocabulary, archive/reopen
+  mechanics, help-surface smoke coverage, and lint edge cases.
+- No unresolved review findings remain for the v0.1 foundations slice.
 
 ## Archive Summary
 
-PENDING_UNTIL_ARCHIVE
+- Archived At: 2026-03-18T09:38:46+08:00
+- Revision: 1
+- PR: https://github.com/yzhang1918/superharness/pull/3
+- Ready: The candidate satisfies the tracked acceptance criteria, automated
+  tests, and review gates for the v0.1 foundations slice.
+- Merge Handoff: Run `harness archive`, commit and push the archived-plan
+  move, then wait for human merge approval or merge manually from the PR once
+  checks are green.
 
 ## Outcome Summary
 
 ### Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Shipped the first Go-based `superharness` CLI with `plan template`,
+  `plan lint`, `status`, `review start`, `review submit`, `review aggregate`,
+  `archive`, and `reopen`.
+- Locked the v0.1 plan schema, CLI contract, and packaged plan template that
+  the CLI and future skills can share.
+- Dogfooded the workflow in this repository with a real active plan, local
+  review artifacts, status inference, archive handoff rules, and a draft PR.
 
 ### Not Delivered
 
-PENDING_UNTIL_ARCHIVE
+- `harness ui` remains deferred until the CLI and local-state contracts are
+  stable enough to serve as a clean backend.
 
 ### Follow-Up Issues
 
-NONE
+- #2 Add harness ui for local status and trajectory visualization
