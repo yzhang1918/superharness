@@ -1,10 +1,10 @@
 ---
 status: archived
 lifecycle: awaiting_merge_approval
-revision: 1
+revision: 2
 template_version: 0.1.0
 created_at: "2026-03-17T10:12:01+08:00"
-updated_at: "2026-03-18T09:38:46+08:00"
+updated_at: "2026-03-18T21:27:33+08:00"
 source_type: direct_request
 source_refs: []
 ---
@@ -26,6 +26,8 @@ core workflow.
   workflows.
 - Add a reusable plan template that matches the schema.
 - Implement the initial CLI around those contracts in later steps.
+- Address PR review feedback on archive/reopen state handling.
+- Shorten review round identifiers while keeping them deterministic per plan.
 
 ### Out of Scope
 
@@ -50,11 +52,26 @@ core workflow.
       binding to a specific subagent runtime.
 - [x] `harness archive` and `harness reopen` implement the freeze/reopen
       lifecycle with agent-friendly `next_actions`.
+- [x] `harness archive` refuses to archive while local review, CI, or sync
+      state shows unresolved work.
+- [x] `harness reopen` clears stale CI and sync state from the archived
+      candidate before the next revision resumes.
+- [x] Review round identifiers are compact, deterministic, and monotonic
+      within a plan without relying on long timestamp suffixes.
 
 ## Deferred Items
 
 - `harness ui` is intentionally deferred until the CLI and local-state
-  contracts are stable enough to serve as a clean backend.
+  contracts are stable enough to serve as a clean backend. Follow-up: #2.
+- `harness plan list` and the longer-term docs navigation shape are deferred
+  until the core lifecycle flow is stable enough to expose history through the
+  CLI. Follow-up: #4.
+- The first reusable skill system, including the reviewer skill contract, is
+  deferred until the CLI boundaries are stable enough to anchor the skills.
+  Follow-up: #5.
+- Shared test fixtures and broader integration coverage are deferred to a
+  dedicated test-infrastructure pass after this first foundations PR lands.
+  Follow-up: #6.
 
 ## Work Breakdown
 
@@ -315,6 +332,92 @@ synchronization for both `current-plan.json` and plan-local `state.json`.
 roundtrip confirmed archived status handoff, `revision + 1` on reopen, current
 plan pointer updates, and a clean active-plan lint result after reopen.
 
+### Step 6: Address archive and reopen review feedback
+
+- Status: completed
+
+#### Objective
+
+Tighten lifecycle behavior so archive/reopen respects local review, CI, and
+sync state instead of relying only on tracked plan completeness.
+
+#### Details
+
+The current PR review surfaced two lifecycle gaps: `archive` can ignore
+unresolved `.local` state, and `reopen` can preserve stale CI/sync evidence
+from the archived candidate.
+
+#### Expected Files
+
+- `internal/lifecycle/service.go`
+- `internal/lifecycle/service_test.go`
+- `internal/status/service.go`
+- `docs/specs/cli-contract.md`
+- `docs/specs/plan-schema.md`
+
+#### Validation
+
+- `harness archive` rejects unresolved active review, pending/failed CI, and
+  stale/conflicting sync state with agent-friendly errors.
+- `harness reopen` clears stale lifecycle signals that should not survive into
+  the reopened revision.
+- Automated tests cover both the new rejection paths and the cleaned reopen
+  state.
+
+#### Execution Notes
+
+`harness archive` now rejects unresolved plan-local review, CI, and sync state
+before moving a plan to `docs/plans/archived/`. `harness reopen` now clears
+stale `latest_ci` and `sync` signals, alongside `active_review_round`, so a
+reopened revision does not inherit misleading archive-candidate state.
+
+#### Review Notes
+
+`go test ./internal/lifecycle ./internal/review ./internal/status` passes, and
+the new lifecycle tests cover unresolved review/CI/sync archive rejection plus
+stale-state cleanup on reopen.
+
+### Step 7: Simplify review round identifiers
+
+- Status: completed
+
+#### Objective
+
+Replace the current long timestamp-based review round IDs with a shorter,
+plan-local sequence that is easier for humans and agents to read.
+
+#### Details
+
+The identifier should stay deterministic within a plan, preserve ordering, and
+leave precise timestamps to the manifest instead of the round ID itself.
+
+#### Expected Files
+
+- `internal/review/service.go`
+- `internal/review/service_test.go`
+- `internal/status/service.go`
+- `docs/specs/cli-contract.md`
+
+#### Validation
+
+- New review rounds use a compact `review-<NNN>-<kind>` shape.
+- Sequence numbers increase monotonically within a plan-local review history.
+- Automated tests cover the first round, later rounds, and status/reporting
+  paths that expose the round ID.
+
+#### Execution Notes
+
+Review round IDs now use compact plan-local sequence numbers in the form
+`review-<NNN>-<kind>`. New rounds derive the next sequence from existing
+plan-local review directories, which lets this repo continue after the earlier
+timestamp-based rounds without migration.
+
+#### Review Notes
+
+`go test ./...` passes, and a real dogfood review on this plan created
+`review-003-delta`, then submitted and aggregated successfully with the new
+compact ID format.
+
 ## Validation Strategy
 
 - Validate contracts by keeping the active plan, plan template, and spec docs
@@ -344,34 +447,35 @@ plan pointer updates, and a clean active-plan lint result after reopen.
 
 ## Validation Summary
 
-- `go test ./...` passes across the current Go module, covering the CLI, plan,
-  lifecycle, review, and status packages.
-- CLI smoke checks covered every shipped help surface:
-  `go run ./cmd/harness --help`, `plan template --help`, `plan lint --help`,
-  `status --help`, `review start --help`, `review submit --help`,
-  `review aggregate --help`, `archive --help`, and `reopen --help`.
-- Functional smoke runs covered:
-  - generated plan template plus lint roundtrip
-  - `review start -> status -> submit -> aggregate -> status`
-  - built-binary `plan template -> archive -> status -> reopen -> status -> plan lint`
+- `go test ./...` passes across the current module after the revision 2
+  lifecycle-state and review-ID changes.
+- Focused lifecycle coverage now exercises unresolved review/CI/sync archive
+  rejection and stale-state cleanup during reopen.
+- Real CLI smoke runs confirmed:
+  - `harness reopen` moved the archived plan back to active revision 2
+  - a delta review created `review-003-delta` and aggregated cleanly
+  - a full review created `review-004-full` and aggregated cleanly
+  - `harness status` now resumes from the reopened plan and points toward
+    archive once closeout summaries are present
 
 ## Review Summary
 
-- The final full review round
-  `review-20260318t012857000000000z-full` passed with no blocking or
-  non-blocking findings in the aggregated result.
-- Earlier spec and implementation review feedback was incorporated before
-  closing Steps 1 through 5, including state vocabulary, archive/reopen
-  mechanics, help-surface smoke coverage, and lint edge cases.
-- No unresolved review findings remain for the v0.1 foundations slice.
+- Addressed both open PR review findings against lifecycle handling:
+  - `archive` now blocks unresolved local review, CI, and sync state
+  - `reopen` now clears stale CI and sync state from the archived candidate
+- Revision 2 delta review `review-003-delta` passed with no findings after the
+  lifecycle fixes landed.
+- Revision 2 full review `review-004-full` passed with no blocking or
+  non-blocking findings on the archive candidate.
 
 ## Archive Summary
 
-- Archived At: 2026-03-18T09:38:46+08:00
-- Revision: 1
+- Archived At: 2026-03-18T21:27:33+08:00
+- Revision: 2
 - PR: https://github.com/yzhang1918/superharness/pull/3
-- Ready: The candidate satisfies the tracked acceptance criteria, automated
-  tests, and review gates for the v0.1 foundations slice.
+- Ready: The revision 2 candidate addresses the open lifecycle review
+  findings, keeps review round IDs compact and deterministic, and satisfies
+  the tracked acceptance criteria, automated tests, and clean full review gate.
 - Merge Handoff: Run `harness archive`, commit and push the archived-plan
   move, then wait for human merge approval or merge manually from the PR once
   checks are green.
@@ -380,19 +484,29 @@ plan pointer updates, and a clean active-plan lint result after reopen.
 
 ### Delivered
 
-- Shipped the first Go-based `superharness` CLI with `plan template`,
-  `plan lint`, `status`, `review start`, `review submit`, `review aggregate`,
-  `archive`, and `reopen`.
-- Locked the v0.1 plan schema, CLI contract, and packaged plan template that
-  the CLI and future skills can share.
-- Dogfooded the workflow in this repository with a real active plan, local
-  review artifacts, status inference, archive handoff rules, and a draft PR.
+- Shipped revision 2 fixes that prevent `harness archive` from freezing a
+  candidate with unresolved local review, CI, or sync state.
+- Shipped revision 2 fixes that clear stale CI and sync signals during
+  `harness reopen`, so the next revision starts from fresh local-state
+  evidence.
+- Replaced long timestamp-based review round IDs with compact plan-local IDs
+  such as `review-003-delta` and `review-004-full`.
+- Created follow-up issues for deferred plan list/docs navigation work,
+  skill-system design, and shared test infrastructure.
 
 ### Not Delivered
 
-- `harness ui` remains deferred until the CLI and local-state contracts are
-  stable enough to serve as a clean backend.
+- `harness ui` remains deferred to #2.
+- `harness plan list` and the longer-term docs navigation decision remain
+  deferred to #4.
+- The first reusable skill system, including the reviewer skill contract,
+  remains deferred to #5.
+- Shared test fixtures and broader integration infrastructure remain deferred
+  to #6.
 
 ### Follow-Up Issues
 
 - #2 Add harness ui for local status and trajectory visualization
+- #4 Add harness plan list and revisit docs navigation
+- #5 Design the first skill system around the harness CLI
+- #6 Build shared test infrastructure for harness workflows
