@@ -1,10 +1,10 @@
 ---
 status: archived
 lifecycle: awaiting_merge_approval
-revision: 2
+revision: 3
 template_version: 0.1.0
 created_at: "2026-03-17T10:12:01+08:00"
-updated_at: "2026-03-18T21:27:33+08:00"
+updated_at: "2026-03-18T22:13:16+08:00"
 source_type: direct_request
 source_refs: []
 ---
@@ -28,6 +28,8 @@ core workflow.
 - Implement the initial CLI around those contracts in later steps.
 - Address PR review feedback on archive/reopen state handling.
 - Shorten review round identifiers while keeping them deterministic per plan.
+- Make archive review gating revision-aware and persist review decisions in
+  plan-local state.
 
 ### Out of Scope
 
@@ -58,6 +60,12 @@ core workflow.
       candidate before the next revision resumes.
 - [x] Review round identifiers are compact, deterministic, and monotonic
       within a plan without relying on long timestamp suffixes.
+- [x] Archive requires a passing `full` review for revision 1 and a passing
+      review result for later reopened revisions.
+- [x] Review aggregation persists the review decision in local state so
+      archive can distinguish a failed aggregated review from a passing one.
+- [x] Legacy aggregated review state without a stored `decision` field still
+      resolves review outcome from the round aggregate artifact.
 
 ## Deferred Items
 
@@ -418,6 +426,69 @@ timestamp-based rounds without migration.
 `review-003-delta`, then submitted and aggregated successfully with the new
 compact ID format.
 
+### Step 8: Make archive review gating revision-aware
+
+- Status: completed
+
+#### Objective
+
+Require a passing `full` review for the initial archive candidate while still
+allowing reopened, narrow follow-up work to archive after a passing `delta`
+review.
+
+#### Details
+
+The remaining PR feedback is really about carrying durable review outcome into
+archive gating. Revision 1 should require a passing `full` review. Later
+revisions may archive after a passing `delta` review when the reopened change
+is intentionally narrow.
+
+#### Expected Files
+
+- `internal/lifecycle/service.go`
+- `internal/lifecycle/service_test.go`
+- `internal/review/service.go`
+- `internal/review/service_test.go`
+- `internal/runstate/state.go`
+- `docs/specs/cli-contract.md`
+- `docs/specs/plan-schema.md`
+
+#### Validation
+
+- Revision 1 archive fails without a passing `full` review in local state.
+- Reopened revisions can archive after a passing `delta` review.
+- Aggregated failed review outcomes stay visible in local state and still block
+  archive.
+- Commands can recover the latest review decision from `aggregate.json` when
+  older local state predates the stored `decision` field.
+- A real reviewer subagent runs against the current branch and submits results
+  through the harness contract rather than relying on main-agent-only smoke.
+
+#### Execution Notes
+
+Persisted aggregated review decisions into plan-local state, made revision-1
+archive require a passing `full` review while later revisions can use a
+passing `delta`, and taught `harness status` to surface aggregated review
+failures as `fix_required` instead of falling back to generic implementation
+guidance. A second real reviewer round then exposed a legacy-upgrade gap:
+older aggregated review state may lack the stored `decision` field, so the
+current slice now falls back to the round `aggregate.json` artifact when that
+field is missing. A third real reviewer round then found a priority bug in
+`harness status`: once all steps were complete, failed review states could
+still surface closeout guidance instead of repair-and-rereview guidance. The
+current slice now fixes that ordering as well. A fourth reviewer round then
+found that legacy aggregated reviews whose outcome cannot be recovered at all
+still need conservative repair guidance instead of falling back to generic
+implementing or closeout/archive advice; the current slice now treats that
+case as review follow-up too.
+
+#### Review Notes
+
+`review-005-delta`, `review-006-delta`, `review-007-delta`, and
+`review-008-delta` each found one real state/handoff bug, and each finding is
+now fixed in the current delta. `review-009-delta` passed clean through a real
+subagent reviewer submission plus aggregate cycle.
+
 ## Validation Strategy
 
 - Validate contracts by keeping the active plan, plan template, and spec docs
@@ -447,66 +518,62 @@ compact ID format.
 
 ## Validation Summary
 
-- `go test ./...` passes across the current module after the revision 2
-  lifecycle-state and review-ID changes.
-- Focused lifecycle coverage now exercises unresolved review/CI/sync archive
-  rejection and stale-state cleanup during reopen.
-- Real CLI smoke runs confirmed:
-  - `harness reopen` moved the archived plan back to active revision 2
-  - a delta review created `review-003-delta` and aggregated cleanly
-  - a full review created `review-004-full` and aggregated cleanly
-  - `harness status` now resumes from the reopened plan and points toward
-    archive once closeout summaries are present
+Validated the lifecycle and status slice with `go test ./...`, plus targeted
+package runs for `./internal/status`, `./internal/lifecycle`, and
+`./internal/review` while iterating on the review-gating edge cases.
+Additional dogfood validation covered repeated real `harness review start ->
+submit -> aggregate` cycles, `harness status` after each aggregate outcome,
+and legacy-compatibility tests that recover review decisions from
+`aggregate.json` when older local state lacks the stored `decision` field.
 
 ## Review Summary
 
-- Addressed both open PR review findings against lifecycle handling:
-  - `archive` now blocks unresolved local review, CI, and sync state
-  - `reopen` now clears stale CI and sync state from the archived candidate
-- Revision 2 delta review `review-003-delta` passed with no findings after the
-  lifecycle fixes landed.
-- Revision 2 full review `review-004-full` passed with no blocking or
-  non-blocking findings on the archive candidate.
+Real reviewer subagents drove five delta rounds on this revision. The first
+four rounds surfaced substantive issues:
+
+- `review-005-delta`: failed aggregated review decisions were not visible in
+  `harness status`
+- `review-006-delta`: older aggregated review state without
+  `active_review_round.decision` broke archive/status semantics
+- `review-007-delta`: completed plans with failed aggregated reviews still got
+  closeout guidance instead of repair guidance
+- `review-008-delta`: unrecoverable legacy review outcome still fell back to
+  misleading archive/closeout guidance
+
+Each of those findings is fixed in this slice. `review-009-delta` passed with
+no findings.
 
 ## Archive Summary
 
-- Archived At: 2026-03-18T21:27:33+08:00
-- Revision: 2
+- Archived At: 2026-03-18T22:13:16+08:00
+- Revision: 3
 - PR: https://github.com/yzhang1918/superharness/pull/3
-- Ready: The revision 2 candidate addresses the open lifecycle review
-  findings, keeps review round IDs compact and deterministic, and satisfies
-  the tracked acceptance criteria, automated tests, and clean full review gate.
-- Merge Handoff: Run `harness archive`, commit and push the archived-plan
-  move, then wait for human merge approval or merge manually from the PR once
-  checks are green.
+- Ready: Revision-aware archive gating, review-decision persistence, legacy
+  aggregate fallback, and conservative status handoff guidance are all in
+  place, tested, and reviewed for this reopened revision.
+- Merge Handoff: Run `harness archive`, commit and push the tracked plan move,
+  then let the PR checks rerun before asking for merge approval.
 
 ## Outcome Summary
 
 ### Delivered
 
-- Shipped revision 2 fixes that prevent `harness archive` from freezing a
-  candidate with unresolved local review, CI, or sync state.
-- Shipped revision 2 fixes that clear stale CI and sync signals during
-  `harness reopen`, so the next revision starts from fresh local-state
-  evidence.
-- Replaced long timestamp-based review round IDs with compact plan-local IDs
-  such as `review-003-delta` and `review-004-full`.
-- Created follow-up issues for deferred plan list/docs navigation work,
-  skill-system design, and shared test infrastructure.
+Documented and implemented the v0.1 foundation slice for plans, review rounds,
+status, archive, and reopen. This revision tightened archive semantics so the
+initial candidate requires a passing `full` review, reopened narrow fixes can
+archive after a passing review result, aggregate decisions persist in local
+state, legacy review decisions can be recovered from `aggregate.json`, and
+`harness status` now gives repair-first guidance for failed or unrecoverable
+review outcomes.
 
 ### Not Delivered
 
-- `harness ui` remains deferred to #2.
-- `harness plan list` and the longer-term docs navigation decision remain
-  deferred to #4.
-- The first reusable skill system, including the reviewer skill contract,
-  remains deferred to #5.
-- Shared test fixtures and broader integration infrastructure remain deferred
-  to #6.
+`harness ui`, `harness plan list`, the first reusable skill system, and shared
+test fixtures remain intentionally deferred from this PR.
 
 ### Follow-Up Issues
 
-- #2 Add harness ui for local status and trajectory visualization
-- #4 Add harness plan list and revisit docs navigation
-- #5 Design the first skill system around the harness CLI
-- #6 Build shared test infrastructure for harness workflows
+- #2 `harness ui`
+- #4 `harness plan list` and docs navigation
+- #5 first skill system, including reviewer-skill contract
+- #6 shared test infrastructure
