@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/install-dev-harness [--install-dir <path>] [--force]
+
+Build the current repo's harness binary into .local/bin and expose `harness`
+from a writable directory on PATH.
+
+Options:
+  --install-dir <path>  Override the target directory for the harness symlink.
+  --force               Replace an existing non-matching harness entry.
+  -h, --help            Show this help text.
+EOF
+}
+
+install_dir=""
+force=0
+
+while (($#)); do
+  case "$1" in
+    --install-dir)
+      shift
+      if (($# == 0)); then
+        echo "--install-dir requires a value" >&2
+        exit 2
+      fi
+      install_dir="$1"
+      ;;
+    --force)
+      force=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+binary_dir="${repo_root}/.local/bin"
+binary_path="${binary_dir}/harness"
+
+choose_install_dir() {
+  if [[ -n "${install_dir}" ]]; then
+    printf '%s\n' "${install_dir}"
+    return
+  fi
+
+  local dir
+  IFS=':' read -r -a path_entries <<< "${PATH:-}"
+  for dir in "${path_entries[@]}"; do
+    [[ -z "${dir}" ]] && continue
+    case "${dir}" in
+      */.codex/tmp/*)
+        continue
+        ;;
+    esac
+    if [[ -d "${dir}" && -w "${dir}" ]]; then
+      printf '%s\n' "${dir}"
+      return
+    fi
+  done
+
+  printf '%s\n' "${HOME}/.local/bin"
+}
+
+target_dir="$(choose_install_dir)"
+link_path="${target_dir}/harness"
+
+mkdir -p "${binary_dir}"
+(
+  cd "${repo_root}"
+  go build -o "${binary_path}" ./cmd/harness
+)
+
+mkdir -p "${target_dir}"
+if [[ -e "${link_path}" || -L "${link_path}" ]]; then
+  if [[ "${force}" -eq 1 ]]; then
+    rm -f "${link_path}"
+  elif [[ -L "${link_path}" && "$(readlink "${link_path}")" == "${binary_path}" ]]; then
+    :
+  else
+    echo "Refusing to replace existing ${link_path}. Re-run with --force if you want to overwrite it." >&2
+    exit 1
+  fi
+fi
+
+ln -sfn "${binary_path}" "${link_path}"
+
+echo "Built dev harness binary at ${binary_path}"
+echo "Linked harness at ${link_path}"
+"${link_path}" --help >/dev/null
+echo "Verified the installed binary directly at ${link_path}"
+
+if [[ ":${PATH}:" == *":${target_dir}:"* ]]; then
+  resolved_path="$(command -v harness || true)"
+  if [[ -z "${resolved_path}" ]]; then
+    echo "The target directory is on PATH, but \`harness\` is still not resolvable in this shell." >&2
+    echo "Open a new shell and verify with: command -v harness" >&2
+    exit 1
+  fi
+  if [[ "${resolved_path}" != "${link_path}" ]]; then
+    echo "The repo build was installed at ${link_path}, but \`harness\` currently resolves to ${resolved_path}." >&2
+    echo "Choose an earlier install directory with --install-dir, or move ${target_dir} earlier in PATH." >&2
+    exit 1
+  fi
+  harness --help >/dev/null
+  echo "Verified harness on PATH at ${resolved_path}"
+else
+  echo "${target_dir} is not currently on PATH."
+  echo "Add it to your shell and open a new shell, or run:"
+  echo "  export PATH=\"${target_dir}:\$PATH\""
+fi
