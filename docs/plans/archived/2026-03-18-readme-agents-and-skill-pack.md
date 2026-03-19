@@ -1,12 +1,14 @@
 ---
 status: archived
 lifecycle: awaiting_merge_approval
-revision: 2
+revision: 3
 template_version: 0.1.0
 created_at: "2026-03-18T22:25:00+08:00"
-updated_at: "2026-03-19T09:46:21+08:00"
-source_type: direct_request
-source_refs: []
+updated_at: "2026-03-19T23:26:43+08:00"
+source_type: issue
+source_refs:
+    - '#5'
+    - https://github.com/yzhang1918/superharness/pull/10
 ---
 
 # Bootstrap README, AGENTS, and skill pack
@@ -357,6 +359,76 @@ important reviewer-boundary mismatch: the reviewer skill still mentioned
 to `harness review submit` only. That inconsistency was also fixed locally, and
 `review-006-delta` passed cleanly with no blocking or non-blocking findings.
 
+### Step 6: Address revision-3 review feedback on skill wording and metadata
+
+- Status: completed
+
+#### Objective
+
+Absorb the next review pass on the skill pack and archived-plan metadata so the
+distributed contracts are simpler, less ambiguous, and better aligned with the
+intended lifecycle.
+
+#### Details
+
+Focus on the remaining contract-shape comments:
+
+- move always-needed execute guidance into the main execute skill
+- keep discovery focused on plan handoff instead of lifecycle jumps
+- clarify review-spec field semantics and remove reviewer-skill duplication
+- record the issue-backed provenance and shell/heredoc guidance in the right
+  places
+
+#### Expected Files
+
+- `.agents/skills/harness-discovery/SKILL.md`
+- `.agents/skills/harness-execute/SKILL.md`
+- `.agents/skills/harness-execute/references/review-orchestration.md`
+- `.agents/skills/harness-reviewer/SKILL.md`
+- `AGENTS.md`
+- `docs/plans/active/2026-03-18-readme-agents-and-skill-pack.md`
+
+#### Validation
+
+- The execute skill includes the resume/start guidance that every controller
+  run needs.
+- Discovery only hands off into plan writing.
+- Review-orchestration explains `kind` and `trigger` clearly and keeps
+  reviewer-specific behavior in the reviewer skill.
+- Repo metadata reflects the issue-backed source and shell-writing guidance.
+
+#### Execution Notes
+
+Moved the execute resume/status guidance into `harness-execute` itself so the
+controller no longer has to jump into a separate reference for every run.
+Discovery now reads enough relevant context to ask sharper questions without
+pretending "smallest" context is always best, and it now hands off only into
+`harness-plan`. Review-orchestration now explains `kind` as a real enum,
+`trigger` as a free-form tag with recommended values, and `manifest_path` as a
+controller-side artifact rather than a required reviewer input. The fixed
+reviewer prompt now passes only the minimal inputs that the reviewer skill
+actually needs. `AGENTS.md` also now records the heredoc rule for multi-line
+git/gh bodies.
+
+After `review-007-delta`, updated the active plan frontmatter so revision 3 is
+clearly issue-backed and review-feedback-driven instead of looking like the
+original direct request. After `review-008-delta`, tightened `source_refs` so
+the frontmatter stays fully referential and leaves the descriptive revision
+story in Step 6 instead of mixing prose into metadata. The controller then ran
+`review-009-delta` with a real reviewer subagent plus a fresh cold-start
+tester; both confirmed the final provenance cleanup is archive-ready.
+
+#### Review Notes
+
+`review-007-delta` found one important metadata issue: revision 3 still looked
+like the original direct request instead of issue-backed follow-up work. That
+is now fixed locally by changing the active plan provenance fields.
+`review-008-delta` then found one minor follow-up: `source_refs` still mixed a
+descriptive label with referential metadata. That non-blocking finding has been
+fixed locally. `review-009-delta` then passed with no findings, and a fresh
+tester confirmed a cold-start agent could identify the next move from
+repository artifacts alone.
+
 ## Validation Strategy
 
 - Keep repo-level truth layered:
@@ -385,76 +457,69 @@ to `harness review submit` only. That inconsistency was also fixed locally, and
 
 ## Validation Summary
 
-- Initial dogfood validation for this plan passed:
-  - `go test ./...`
-  - `scripts/install-dev-harness --help`
-  - `scripts/install-dev-harness`
-  - `command -v harness`
-  - `harness --help`
-  - `harness status`
-- Revision 2 validation for the distribution-ready skill updates passed:
-  - `harness plan lint docs/plans/active/2026-03-18-readme-agents-and-skill-pack.md`
-  - `git diff --check`
-  - repeated `harness status` checks during reopen/execute/review closeout
-- Pure-context skill testing passed:
-  - fresh tester confirmed cold-start resume from `AGENTS.md`, `harness status`,
-    and the updated skills
-  - fresh tester rechecked the reviewer-boundary cleanup before archive
-- Review artifacts confirm the final revision-2 candidate is clean.
+Validated the revision-3 follow-up with deterministic repository checks and
+real subagent dogfood:
+
+- `harness status`
+- `harness plan lint docs/plans/active/2026-03-18-readme-agents-and-skill-pack.md`
+- `git diff --check`
+- real reviewer rounds `review-007-delta`, `review-008-delta`, and
+  `review-009-delta`
+- fresh cold-start tester passes that only used tracked repo artifacts plus
+  `harness status`
+
+The final narrow follow-up change is documentation- and contract-only, so the
+validation emphasis stayed on lifecycle clarity, provenance, and resumability
+instead of additional Go behavior tests.
 
 ## Review Summary
 
-- Initial skill-pack dogfood review history:
-  - `review-001-delta` surfaced the installer shadowing issue
-  - `review-002-delta` passed after installer/documentation fixes
-  - `review-003-full` passed on the first archived candidate
-- Revision 2 review history:
-  - `review-004-delta` requested changes for reviewer close/respawn behavior and
-    resume/setup guidance
-  - `review-005-delta` requested one more change for the reviewer submit-only
-    boundary
-  - `review-006-delta` passed cleanly
-- Fresh tester passes agreed with the final clean review result.
+Real reviewer subagents and fresh testers drove the revision-3 closeout:
+
+- `review-007-delta` found that revision 3 still looked like the original
+  direct request instead of issue-backed follow-up work
+- `review-008-delta` found one non-blocking metadata issue: `source_refs` was
+  still mixing descriptive text with referential metadata
+- `review-009-delta` passed with no findings after the provenance cleanup
+
+The final fresh tester reported no blocking ambiguity in lifecycle, provenance,
+or cold-start resumability. Its only nit was that `harness status` does not
+yet expose whether every active review slot has already submitted, which is
+useful but not required for this slice to archive cleanly.
 
 ## Archive Summary
 
-- Archived At: 2026-03-19T09:46:21+08:00
-- Revision: 2
-- Branch: `codex/readme-agents-skill-pack`
-- PR: `https://github.com/yzhang1918/superharness/pull/10`
-- Ready: All plan steps are completed, acceptance criteria are satisfied,
-  revision-2 review feedback has been absorbed, `review-006-delta` passed
-  cleanly, and deferred scope is tracked in GitHub issues #2, #4, #5, and #6.
-- Merge Handoff: Commit and push the archive move before treating this
-  candidate as awaiting merge approval; keep merge metadata on the PR and
-  post-merge remote record rather than in further plan edits.
+- Archived At: 2026-03-19T23:26:43+08:00
+- Revision: 3
+- PR: https://github.com/yzhang1918/superharness/pull/10
+- Ready: README, `AGENTS.md`, and the first `harness-*` skill pack now agree
+  on the repo contract, development install path, controller-vs-reviewer
+  boundary, and revision-3 provenance fixes. The final delta review passed
+  cleanly and the cold-start tester found no blocking lifecycle ambiguity.
+- Merge Handoff: Run `harness archive`, commit and push the tracked plan move,
+  then let PR checks rerun before asking for merge approval.
 
 ## Outcome Summary
 
 ### Delivered
 
-- repo-local skills were renamed and hardened as `harness-discovery`,
-  `harness-plan`, `harness-execute`, `harness-land`, and `harness-reviewer`
-- discovery now uses Socratic questioning with concise options and a
-  recommendation pattern
-- plan guidance now emphasizes meaningful plan topics and fully self-contained
-  tracked plans
-- execute/reviewer contracts now make the controller-vs-reviewer boundary
-  explicit, including Codex async subagent wait/close rules
-- `AGENTS.md` now better reflects repo start points and commit co-author
-  conventions
+Delivered a dogfoodable repository contract for `superharness`: a human-facing
+`README.md`, an agent-facing `AGENTS.md`, a first repo-local `harness-*`
+skill pack, and a development-time installer that exposes `harness` directly
+as a command in this repo. This revision also tightened the distributed skill
+contracts so discovery is more Socratic, execute owns its always-needed resume
+guidance, reviewer behavior stays inside the reviewer skill, heredoc guidance
+is recorded at the repo level, and the plan metadata is fully issue-backed and
+referential.
 
 ### Not Delivered
 
-- `harness ui` remains deferred to #2
-- `harness plan list` / docs navigation remains deferred to #4
-- broader skill-system expansion remains deferred to #5
-- shared test fixtures and harness-wide test infrastructure remain deferred to
-  #6
+`harness ui`, `harness plan list`, broader skill-system expansion, and shared
+test infrastructure remain intentionally deferred from this slice.
 
 ### Follow-Up Issues
 
 - #2 `harness ui`
-- #4 `harness plan list` / docs navigation
-- #5 skill-system expansion
+- #4 `harness plan list` and docs navigation
+- #5 later skill-system expansion beyond the first dogfoodable pack
 - #6 shared test infrastructure

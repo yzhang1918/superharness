@@ -45,6 +45,29 @@ Use a compact JSON shape like:
 }
 ```
 
+Field rules:
+
+- `kind`
+  - enum: `delta` or `full`
+  - `delta` is for a completed step or narrow follow-up change
+  - `full` is for an archive candidate or another broad branch-level pass
+- `target`
+  - free-form description of what this round is reviewing
+- `trigger`
+  - free-form tag describing why the round exists
+  - it is not a CLI enum today
+  - useful common values include:
+    - `step_closeout`
+    - `review_feedback`
+    - `review_fix`
+    - `pre_archive`
+    - `human_feedback`
+    - `ci_repair`
+    - `conflict_repair`
+- `dimensions`
+  - one reviewer slot per dimension after normalization
+  - each dimension should have a short name and a concrete instruction
+
 Suggested dimensions:
 
 - `correctness`
@@ -89,6 +112,11 @@ round to use the same set.
 
 ## Fixed Reviewer Prompt Template
 
+The returned `manifest_path` is for the controller, not the reviewer. Use it
+when you need to inspect the CLI-normalized slots, expected artifact paths, or
+ledger-owned review metadata. Reviewer subagents do not need it unless your
+runtime prefers passing a single manifest pointer.
+
 Use this controller prompt shape when spawning a reviewer subagent:
 
 ```text
@@ -98,17 +126,8 @@ Use the harness-reviewer skill and follow it exactly.
 
 Round ID: <round-id>
 Slot: <slot>
-Manifest path: <manifest-path>
 Assigned dimension: <dimension-name>
 Instructions: <dimension-instructions>
-
-Review the current change for this slot only. Inspect the relevant diff, plan,
-and local artifacts. Submit your result with:
-
-harness review submit --round <round-id> --slot <slot> --input <path>
-
-After a successful submit, report the receipt back to the controller and stop.
-Do not call any other harness commands.
 ```
 
 ## Codex-Specific Subagent Rules

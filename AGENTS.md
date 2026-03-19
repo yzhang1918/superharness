@@ -84,6 +84,8 @@ When entering the repo or resuming after compaction:
 - commits: small and reviewable
 - append `Co-authored-by: Codex <codex@openai.com>` unless the human requests
   otherwise
+- when writing multi-line git or gh bodies, prefer heredocs so shell quoting
+  does not eat backticks or other structured text
 - default merge strategy: `Merge commit`
 - do not rewrite shared history without explicit approval
 

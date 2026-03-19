@@ -23,12 +23,29 @@ in [review-orchestration.md](references/review-orchestration.md).
 1. Run `harness status`.
 2. Open the current tracked plan from `plan_path`.
 3. Identify the active or next plan step.
-4. Read only the references needed for the current part of the loop.
+4. Use the status output to answer four questions:
+   - which tracked plan is current
+   - which lifecycle it is in
+   - which step is active or next
+   - whether local state already shows review, CI, or conflict work in flight
+5. If `harness` is unavailable or resolves to the wrong binary, first follow
+   the repository's documented setup path. If no setup path is documented, ask
+   the human to install or expose the correct `harness` command.
+6. Read only the references needed for the current part of the loop.
+
+## Lifecycle Hints
+
+- `awaiting_plan_approval`
+  - wait for approval or update the plan if scope changed
+- `executing`
+  - continue the current plan step and use `step_state` as a local hint
+- `blocked`
+  - resolve the blocker or get human input
+- `awaiting_merge_approval`
+  - wait for merge approval or switch to `harness-land` only when asked
 
 ## Reference Guide
 
-- Read [resume-and-status.md](references/resume-and-status.md) at the start of
-  every execute session or handoff.
 - Read [step-inner-loop.md](references/step-inner-loop.md) when implementing or
   validating the current plan step.
 - Read [review-orchestration.md](references/review-orchestration.md) whenever a
