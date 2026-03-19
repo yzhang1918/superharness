@@ -34,9 +34,7 @@ Use the status output to answer four questions:
 - `awaiting_merge_approval`
   - wait for merge approval or switch to `land` only when asked
 
-If `harness` is unavailable, bootstrap it before doing more work:
-
-```bash
-scripts/install-dev-harness
-```
-
+If `harness` is unavailable or resolves to the wrong binary, first look for the
+repository's documented setup path and follow it when one exists. If no
+repository setup path is documented, ask the human to install or expose the
+correct `harness` command before doing more work.

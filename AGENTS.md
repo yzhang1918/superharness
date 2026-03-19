@@ -66,32 +66,24 @@ new feedback, remote changes, or other invalidation.
 
 When entering the repo or resuming after compaction:
 
-1. Read [README.md](./README.md).
-2. Read [docs/specs/index.md](./docs/specs/index.md).
-3. Run `harness status`.
-4. Open the current tracked plan named by `harness status`.
-5. Follow the repo-local skill that matches the current lifecycle.
-
-## Local Skills
-
-The first repo-local skill pack lives under `.agents/skills/`:
-
-- `discovery`
-- `plan`
-- `execute`
-- `land`
-- `reviewer`
-
-`execute` owns the main loop. Detailed review orchestration, publish/CI/sync
-work, and archive closeout live in its references instead of separate peer
-skills. During an active review round, the controller agent still stays in
-`execute`; `reviewer` is only for the spawned reviewer subagents.
+1. Read [README.md](./README.md) if you need repository purpose or setup
+   context.
+2. Run `harness status`.
+3. Open the current tracked plan named by `harness status`.
+4. Most resumed work should continue in `harness-execute`.
+5. Switch only when the lifecycle clearly calls for a different skill:
+   - `harness-discovery` when direction is unclear
+   - `harness-plan` when creating or revising a tracked plan
+   - `harness-land` only after explicit human merge approval
+   - `harness-reviewer` only inside spawned reviewer subagents
 
 ## Git and PR Rules
 
 - main branch: `main`
 - working branches: `codex/<topic>`
 - commits: small and reviewable
+- append `Co-authored-by: Codex <codex@openai.com>` unless the human requests
+  otherwise
 - default merge strategy: `Merge commit`
 - do not rewrite shared history without explicit approval
 
