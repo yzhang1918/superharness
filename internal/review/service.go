@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 )
 
 var slotNamePattern = regexp.MustCompile(`[^a-z0-9]+`)
+var compactRoundIDPattern = regexp.MustCompile(`^review-([0-9]+)-([a-z0-9-]+)$`)
 
 type Service struct {
 	Workdir string
@@ -686,13 +688,24 @@ func nextRoundSequence(workdir, planStem string) (int, error) {
 		return 0, err
 	}
 
-	count := 0
+	maxSequence := 0
 	for _, entry := range entries {
-		if entry.IsDir() {
-			count++
+		if !entry.IsDir() {
+			continue
+		}
+		matches := compactRoundIDPattern.FindStringSubmatch(entry.Name())
+		if matches == nil {
+			continue
+		}
+		sequence, err := strconv.Atoi(matches[1])
+		if err != nil {
+			return 0, fmt.Errorf("parse compact review round sequence from %q: %w", entry.Name(), err)
+		}
+		if sequence > maxSequence {
+			maxSequence = sequence
 		}
 	}
-	return count + 1, nil
+	return maxSequence + 1, nil
 }
 
 func formatRoundID(sequence int, kind string) string {

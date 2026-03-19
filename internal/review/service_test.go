@@ -57,7 +57,7 @@ func TestStartCreatesRoundAndUpdatesState(t *testing.T) {
 	}
 }
 
-func TestStartUsesNextPlanLocalReviewSequence(t *testing.T) {
+func TestStartIgnoresLegacyTimestampReviewDirectoriesForCompactSequence(t *testing.T) {
 	root := t.TempDir()
 	planStem := "2026-03-18-review-contract"
 	writeExecutingPlan(t, root, "docs/plans/active/"+planStem+".md")
@@ -85,8 +85,47 @@ func TestStartUsesNextPlanLocalReviewSequence(t *testing.T) {
 	if !result.OK {
 		t.Fatalf("expected start success, got %#v", result)
 	}
-	if result.Artifacts == nil || result.Artifacts.RoundID != "review-002-full" {
-		t.Fatalf("expected second compact round id, got %#v", result.Artifacts)
+	if result.Artifacts == nil || result.Artifacts.RoundID != "review-001-full" {
+		t.Fatalf("expected first compact round id when only legacy history exists, got %#v", result.Artifacts)
+	}
+}
+
+func TestStartUsesMaxExistingCompactReviewSequence(t *testing.T) {
+	root := t.TempDir()
+	planStem := "2026-03-18-review-contract"
+	writeExecutingPlan(t, root, "docs/plans/active/"+planStem+".md")
+
+	sparseCompactDirs := []string{
+		"review-001-delta",
+		"review-003-full",
+		"review-20260318t010000000000000z-delta",
+	}
+	for _, dir := range sparseCompactDirs {
+		if err := os.MkdirAll(filepath.Join(root, ".local", "harness", "plans", planStem, "reviews", dir), 0o755); err != nil {
+			t.Fatalf("mkdir review round dir %q: %v", dir, err)
+		}
+	}
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 45, 0, 0, time.UTC)
+		},
+	}
+
+	result := svc.Start(mustJSON(t, review.Spec{
+		Kind:    "delta",
+		Target:  "Follow-up delta review after sparse history",
+		Trigger: "step_closeout",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !result.OK {
+		t.Fatalf("expected start success, got %#v", result)
+	}
+	if result.Artifacts == nil || result.Artifacts.RoundID != "review-004-delta" {
+		t.Fatalf("expected next round after max compact sequence, got %#v", result.Artifacts)
 	}
 }
 

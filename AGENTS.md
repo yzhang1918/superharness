@@ -62,6 +62,13 @@ For medium or large work:
 Use `reopen` when an archived candidate is no longer merge-ready because of
 new feedback, remote changes, or other invalidation.
 
+## Review Execution
+
+When work enters review orchestration, spawned reviewer subagents are the
+default and required path. The controller agent stays in `harness-execute`,
+reviewer work belongs to spawned `harness-reviewer` subagents, and the
+repo-local review skills must be followed strictly.
+
 ## Start Points
 
 When entering the repo or resuming after compaction:
