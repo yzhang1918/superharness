@@ -27,8 +27,12 @@ scripts/install-dev-harness
 By default the installer:
 
 - builds the binary at `.local/bin/harness`
-- links `harness` into the first writable directory already on `PATH`
-- falls back to `~/.local/bin` when no writable `PATH` directory is available
+- installs a small worktree-aware `harness` wrapper in a user-local bin dir
+- uses `~/.local/bin` by default, or `~/bin` when that is already on `PATH`
+- keeps parallel worktrees isolated by dispatching to the current worktree's
+  `.local/bin/harness`
+- falls back outside `superharness` worktrees to the binary from the worktree
+  that last installed the wrapper
 
 Useful options:
 

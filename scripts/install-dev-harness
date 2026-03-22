@@ -5,11 +5,11 @@ usage() {
   cat <<'EOF'
 Usage: scripts/install-dev-harness [--install-dir <path>] [--force]
 
-Build the current repo's harness binary into .local/bin and expose `harness`
-from a writable directory on PATH.
+Build the current repo's harness binary into .local/bin and install a
+worktree-aware `harness` wrapper from a user-local directory.
 
 Options:
-  --install-dir <path>  Override the target directory for the harness symlink.
+  --install-dir <path>  Override the target directory for the harness wrapper.
   --force               Replace an existing non-matching harness entry.
   -h, --help            Show this help text.
 EOF
@@ -47,10 +47,46 @@ done
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 binary_dir="${repo_root}/.local/bin"
 binary_path="${binary_dir}/harness"
+repo_module_line="module github.com/yzhang1918/superharness"
+
+is_superharness_root() {
+  local dir="$1"
+  [[ -n "${dir}" ]] || return 1
+  [[ -f "${dir}/scripts/install-dev-harness" ]] || return 1
+  [[ -f "${dir}/cmd/harness/main.go" ]] || return 1
+  [[ -f "${dir}/go.mod" ]] || return 1
+  grep -Fqx "${repo_module_line}" "${dir}/go.mod"
+}
+
+path_has_entry() {
+  local candidate="$1"
+  local dir
+  IFS=':' read -r -a path_entries <<< "${PATH:-}"
+  for dir in "${path_entries[@]}"; do
+    [[ -z "${dir}" ]] && continue
+    if [[ "${dir%/}" == "${candidate%/}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 choose_install_dir() {
   if [[ -n "${install_dir}" ]]; then
     printf '%s\n' "${install_dir}"
+    return
+  fi
+
+  if [[ -n "${HOME:-}" ]]; then
+    if path_has_entry "${HOME}/.local/bin"; then
+      printf '%s\n' "${HOME}/.local/bin"
+      return
+    fi
+    if path_has_entry "${HOME}/bin"; then
+      printf '%s\n' "${HOME}/bin"
+      return
+    fi
+    printf '%s\n' "${HOME}/.local/bin"
     return
   fi
 
@@ -69,36 +105,166 @@ choose_install_dir() {
     fi
   done
 
-  printf '%s\n' "${HOME}/.local/bin"
+  printf '%s\n' "${repo_root}/.local/dev-bin"
 }
 
 target_dir="$(choose_install_dir)"
-link_path="${target_dir}/harness"
+command_path="${target_dir}/harness"
+
+if [[ "${command_path}" == "${binary_path}" ]]; then
+  echo "Refusing to install the wrapper over the repo-local binary at ${binary_path}." >&2
+  echo "Choose a different --install-dir." >&2
+  exit 2
+fi
+
+wrapper_content() {
+  local fallback_binary_path template
+  fallback_binary_path="$(printf '%q' "${binary_path}")"
+  template="$(cat <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# superharness-install-dev-wrapper
+fallback_binary_path=__FALLBACK_BINARY_PATH__
+repo_module_line='module github.com/yzhang1918/superharness'
+
+is_superharness_root() {
+  local dir="$1"
+  [[ -n "${dir}" ]] || return 1
+  [[ -f "${dir}/scripts/install-dev-harness" ]] || return 1
+  [[ -f "${dir}/cmd/harness/main.go" ]] || return 1
+  [[ -f "${dir}/go.mod" ]] || return 1
+  grep -Fqx "${repo_module_line}" "${dir}/go.mod"
+}
+
+find_repo_root() {
+  local root=""
+  if command -v git >/dev/null 2>&1; then
+    root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if is_superharness_root "${root}"; then
+      printf '%s\n' "${root}"
+      return 0
+    fi
+  fi
+
+  local dir="${PWD}"
+  while :; do
+    if is_superharness_root "${dir}"; then
+      printf '%s\n' "${dir}"
+      return 0
+    fi
+    if [[ "${dir}" == "/" ]]; then
+      break
+    fi
+    dir="$(dirname "${dir}")"
+  done
+
+  return 1
+}
+
+binary_path=""
+if repo_root="$(find_repo_root)"; then
+  binary_path="${repo_root}/.local/bin/harness"
+  if [[ ! -x "${binary_path}" ]]; then
+    echo "No repo-local harness binary found at ${binary_path}." >&2
+    echo "Run scripts/install-dev-harness from this worktree first." >&2
+    exit 1
+  fi
+elif [[ -x "${fallback_binary_path}" ]]; then
+  binary_path="${fallback_binary_path}"
+else
+  echo "Could not find a superharness worktree from ${PWD}, and the fallback harness binary is unavailable at ${fallback_binary_path}." >&2
+  echo "Run scripts/install-dev-harness from a superharness worktree first." >&2
+  exit 1
+fi
+
+exec "${binary_path}" "$@"
+EOF
+)"
+  printf '%s\n' "${template//__FALLBACK_BINARY_PATH__/${fallback_binary_path}}"
+}
+
+legacy_superharness_link() {
+  local path="$1"
+  [[ -L "${path}" ]] || return 1
+
+  local target
+  target="$(readlink "${path}")"
+  [[ -n "${target}" ]] || return 1
+
+  if [[ "${target}" == "${binary_path}" ]]; then
+    return 0
+  fi
+
+  case "${target}" in
+    */.local/bin/harness)
+      local candidate_root=""
+      candidate_root="$(cd "$(dirname "${target}")/../.." 2>/dev/null && pwd || true)"
+      if is_superharness_root "${candidate_root}"; then
+        return 0
+      fi
+      ;;
+  esac
+
+  return 1
+}
+
+command_contents_match() {
+  local path="$1"
+  [[ -f "${path}" && ! -L "${path}" ]] || return 1
+
+  local current_contents
+  current_contents="$(cat "${path}")"
+  [[ "${current_contents}" == "$(wrapper_content)" ]]
+}
+
+managed_superharness_wrapper() {
+  local path="$1"
+  [[ -f "${path}" && ! -L "${path}" ]] || return 1
+
+  if grep -Fq '# superharness-install-dev-wrapper' "${path}"; then
+    return 0
+  fi
+
+  grep -Fq 'fallback_binary_path=' "${path}" &&
+    grep -Fq 'find_repo_root()' "${path}" &&
+    grep -Fq 'cmd/harness/main.go' "${path}"
+}
 
 mkdir -p "${binary_dir}"
 (
   cd "${repo_root}"
   go build -o "${binary_path}" ./cmd/harness
 )
+"${binary_path}" --help >/dev/null
 
 mkdir -p "${target_dir}"
-if [[ -e "${link_path}" || -L "${link_path}" ]]; then
+if [[ -e "${command_path}" || -L "${command_path}" ]]; then
   if [[ "${force}" -eq 1 ]]; then
-    rm -f "${link_path}"
-  elif [[ -L "${link_path}" && "$(readlink "${link_path}")" == "${binary_path}" ]]; then
-    :
+    rm -f "${command_path}"
+  elif legacy_superharness_link "${command_path}"; then
+    rm -f "${command_path}"
+  elif command_contents_match "${command_path}"; then
+    chmod 755 "${command_path}"
+  elif managed_superharness_wrapper "${command_path}"; then
+    rm -f "${command_path}"
   else
-    echo "Refusing to replace existing ${link_path}. Re-run with --force if you want to overwrite it." >&2
+    echo "Refusing to replace existing ${command_path}. Re-run with --force if you want to overwrite it." >&2
     exit 1
   fi
 fi
 
-ln -sfn "${binary_path}" "${link_path}"
+if [[ ! -e "${command_path}" && ! -L "${command_path}" ]]; then
+  wrapper_tmp="${command_path}.tmp.$$"
+  wrapper_content > "${wrapper_tmp}"
+  chmod 755 "${wrapper_tmp}"
+  mv "${wrapper_tmp}" "${command_path}"
+fi
 
 echo "Built dev harness binary at ${binary_path}"
-echo "Linked harness at ${link_path}"
-"${link_path}" --help >/dev/null
-echo "Verified the installed binary directly at ${link_path}"
+echo "Installed harness wrapper at ${command_path}"
+echo "Verified the repo-local binary directly at ${binary_path}"
+echo "Wrapper fallback binary outside superharness worktrees: ${binary_path}"
 
 if [[ ":${PATH}:" == *":${target_dir}:"* ]]; then
   resolved_path="$(command -v harness || true)"
@@ -107,8 +273,8 @@ if [[ ":${PATH}:" == *":${target_dir}:"* ]]; then
     echo "Open a new shell and verify with: command -v harness" >&2
     exit 1
   fi
-  if [[ "${resolved_path}" != "${link_path}" ]]; then
-    echo "The repo build was installed at ${link_path}, but \`harness\` currently resolves to ${resolved_path}." >&2
+  if [[ "${resolved_path}" != "${command_path}" ]]; then
+    echo "The worktree-aware wrapper was installed at ${command_path}, but \`harness\` currently resolves to ${resolved_path}." >&2
     echo "Choose an earlier install directory with --install-dir, or move ${target_dir} earlier in PATH." >&2
     exit 1
   fi
