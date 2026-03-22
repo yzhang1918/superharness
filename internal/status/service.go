@@ -205,8 +205,8 @@ func (s Service) Read() Result {
 	if state != nil && state.Revision > 0 {
 		facts.Revision = state.Revision
 	}
-	if state != nil && state.Reopen != nil {
-		facts.ReopenMode = state.Reopen.Mode
+	if reopenMode := effectiveReopenMode(doc, state); reopenMode != "" {
+		facts.ReopenMode = reopenMode
 	}
 	if reviewCtx != nil && isStructuralReviewTrigger(reviewCtx.Trigger) && !reviewCtx.UnsafeFallback {
 		facts.ReviewKind = reviewCtx.Kind
@@ -271,11 +271,11 @@ func (s Service) Read() Result {
 	}
 	missingStepReminder, reminderWarnings := loadMissingStepCloseoutReminder(s.Workdir, planStem, doc, reviewCtx, result.State.CurrentNode)
 	result.Warnings = append(result.Warnings, reminderWarnings...)
-	result.Summary = buildSummary(result.State.CurrentNode, facts, reviewCtx, blockers, currentPlan)
+	result.Summary = buildSummary(result.State.CurrentNode, facts, reviewCtx, blockers, missingStepReminder, currentPlan)
 	result.NextAction = buildNextActions(result.State.CurrentNode, facts, reviewCtx, blockers)
 	if missingStepReminder != nil {
 		result.Warnings = append(result.Warnings, buildMissingStepCloseoutWarnings(result.State.CurrentNode, missingStepReminder)...)
-		result.NextAction = prependMissingStepCloseoutActions(result.State.CurrentNode, result.NextAction, reviewCtx, missingStepReminder)
+		result.NextAction = prependMissingStepCloseoutActions(result.State.CurrentNode, result.NextAction, facts, reviewCtx, missingStepReminder)
 	}
 	if facts.empty() {
 		result.Facts = nil
@@ -378,6 +378,19 @@ func finalizeReviewSatisfied(reviewCtx *reviewContext, revision int) bool {
 		return false
 	}
 	return true
+}
+
+func effectiveReopenMode(doc *plan.Document, state *runstate.State) string {
+	if state == nil || state.Reopen == nil {
+		return ""
+	}
+	if state.Reopen.Mode != "new-step" {
+		return state.Reopen.Mode
+	}
+	if state.Reopen.BaseStepCount > 0 && doc != nil && len(doc.Steps) > state.Reopen.BaseStepCount {
+		return ""
+	}
+	return state.Reopen.Mode
 }
 
 func loadReviewContext(workdir, planStem string, doc *plan.Document, state *runstate.State) (*reviewContext, []string) {
@@ -704,7 +717,11 @@ func archivedCandidateReadyForMerge(evidenceCtx *evidenceContext) bool {
 	return true
 }
 
-func buildSummary(node string, facts *Facts, reviewCtx *reviewContext, blockers []StatusError, currentPlan *runstate.CurrentPlan) string {
+func buildSummary(node string, facts *Facts, reviewCtx *reviewContext, blockers []StatusError, reminder *missingStepCloseoutReminder, currentPlan *runstate.CurrentPlan) string {
+	if strings.HasPrefix(node, "execution/finalize/") && reminder != nil && len(reminder.MissingTitles) > 0 && !pendingReopenedNewStep(node, facts) {
+		return buildMissingStepCloseoutSummary(node, reviewCtx, reminder)
+	}
+
 	switch node {
 	case "idle":
 		if currentPlan != nil && strings.TrimSpace(currentPlan.LastLandedPlanPath) != "" {
@@ -762,6 +779,35 @@ func buildSummary(node string, facts *Facts, reviewCtx *reviewContext, blockers 
 	}
 
 	return fmt.Sprintf("Plan is at %s.", node)
+}
+
+func pendingReopenedNewStep(node string, facts *Facts) bool {
+	return node == "execution/finalize/fix" &&
+		facts != nil &&
+		facts.ReopenMode == "new-step" &&
+		strings.TrimSpace(facts.CurrentStep) == ""
+}
+
+func buildMissingStepCloseoutSummary(node string, reviewCtx *reviewContext, reminder *missingStepCloseoutReminder) string {
+	earliestTitle := reminder.MissingTitles[0]
+
+	switch node {
+	case "execution/finalize/review":
+		if reviewCtx != nil && reviewCtx.InFlight {
+			return fmt.Sprintf("Finalize review is in flight, but earlier completed steps still need review-complete closeout; resolve %s before treating the candidate as finalize-ready.", earliestTitle)
+		}
+		return fmt.Sprintf("Earlier completed steps still need review-complete closeout; resolve %s before relying on finalize progression.", earliestTitle)
+	case "execution/finalize/fix":
+		return fmt.Sprintf("Earlier completed steps still need review-complete closeout; resolve %s before treating finalize repair as complete.", earliestTitle)
+	case "execution/finalize/archive":
+		return fmt.Sprintf("Plan has a clean finalize review, but earlier completed steps still need review-complete closeout; resolve %s before archive.", earliestTitle)
+	case "execution/finalize/publish":
+		return fmt.Sprintf("Plan is archived, but earlier completed steps still need review-complete closeout; reopen the candidate and resolve %s before merge-ready handoff.", earliestTitle)
+	case "execution/finalize/await_merge":
+		return fmt.Sprintf("Plan is archived, but earlier completed steps still need review-complete closeout; reopen the candidate and resolve %s before treating it as merge-ready.", earliestTitle)
+	default:
+		return ""
+	}
 }
 
 func buildNextActions(node string, facts *Facts, reviewCtx *reviewContext, blockers []StatusError) []NextAction {
@@ -903,13 +949,30 @@ func buildMissingStepCloseoutWarnings(node string, reminder *missingStepCloseout
 	return warnings
 }
 
-func prependMissingStepCloseoutActions(node string, actions []NextAction, reviewCtx *reviewContext, reminder *missingStepCloseoutReminder) []NextAction {
+func prependMissingStepCloseoutActions(node string, actions []NextAction, facts *Facts, reviewCtx *reviewContext, reminder *missingStepCloseoutReminder) []NextAction {
 	if reminder == nil || len(reminder.MissingTitles) == 0 {
+		return actions
+	}
+	if pendingReopenedNewStep(node, facts) {
 		return actions
 	}
 
 	earliestTitle := reminder.MissingTitles[0]
 	inFlight := reviewRoundAlreadyInFlight(node, reviewCtx)
+	if node == "execution/finalize/publish" || node == "execution/finalize/await_merge" {
+		prefixed := []NextAction{
+			{
+				Command:     nil,
+				Description: fmt.Sprintf("Earlier completed steps still need review-complete closeout before this archived candidate can be treated as merge-ready; reopen first, then resolve %s.", earliestTitle),
+			},
+			{
+				Command:     strPtr("harness reopen --mode finalize-fix"),
+				Description: fmt.Sprintf("Reopen the archived candidate before repairing missing closeout for %s or any other earlier completed step.", earliestTitle),
+			},
+		}
+		return append(prefixed, actions...)
+	}
+
 	description := fmt.Sprintf("%s is already marked done but still needs review-complete closeout; resolve it first by starting step-closeout review or recording NO_STEP_REVIEW_NEEDED: <reason> in Review Notes.", earliestTitle)
 	if inFlight {
 		description = fmt.Sprintf("%s is already marked done but still needs review-complete closeout; aggregate the active review round first, then resolve the closeout gap by recording NO_STEP_REVIEW_NEEDED: <reason> in Review Notes or starting step-closeout review once no other review round is active.", earliestTitle)
@@ -928,11 +991,26 @@ func prependMissingStepCloseoutActions(node string, actions []NextAction, review
 			Description: fmt.Sprintf("Start a fresh step-closeout review for %s once the closeout slice is ready.", earliestTitle),
 		})
 	}
+	if strings.HasPrefix(node, "execution/finalize/") {
+		if node == "execution/finalize/archive" && containsNextActionCommand(actions, "harness archive") {
+			return prefixed
+		}
+		return append(prefixed, actions...)
+	}
 	return append(prefixed, actions...)
 }
 
 func reviewRoundAlreadyInFlight(node string, reviewCtx *reviewContext) bool {
 	return reviewCtx != nil && reviewCtx.InFlight
+}
+
+func containsNextActionCommand(actions []NextAction, command string) bool {
+	for _, action := range actions {
+		if action.Command != nil && *action.Command == command {
+			return true
+		}
+	}
+	return false
 }
 
 func buildPublishNextActions(facts *Facts) []NextAction {

@@ -301,6 +301,9 @@ Mode-specific rules:
   - reopened work must be represented by a new unfinished step
   - the controller adds that new step after reopen rather than editing old
     completed steps
+  - once that first reopened step exists, later finalize-time repair may update
+    the reopened work in place instead of forcing yet another new unfinished
+    step by default
 
 ## Lint Expectations
 

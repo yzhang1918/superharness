@@ -273,7 +273,11 @@ Reopen must preserve audit history:
 - keep it obvious that the plan was once archived and is no longer current
 
 When reopen mode is `new-step`, the controller should add the new step after
-reopen and continue execution at that new step's `implement` node.
+reopen and continue execution at that new step's `implement` node. Once that
+first reopened step has been added, the `new-step` requirement is considered
+consumed: later finalize-time findings should repair the latest reopened work
+or resume finalize-scope repair instead of forcing another new unfinished step
+by default.
 
 ## Commits and Nodes
 

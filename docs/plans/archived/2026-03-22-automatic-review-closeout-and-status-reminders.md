@@ -4,6 +4,7 @@ created_at: "2026-03-22T00:00:00+08:00"
 source_type: issue
 source_refs:
     - '#22'
+    - '#28'
 ---
 
 # Clarify automatic review closeout and status reminders
@@ -46,6 +47,10 @@ warnings.
   an active review round is already in progress, and keeps plan/execute skills
   proactive about requesting explicit subagent approval before review
   orchestration needs it.
+- After later follow-up feedback, make archived-candidate reminder guidance
+  reopen-aware, rebuild readiness summaries after reminder debt is attached,
+  and consume `reopen --mode new-step` once the first new step lands so later
+  finalize-time fixes do not keep proliferating extra steps.
 - Remove the ad hoc review-discipline postmortem now that its durable guidance
   is tracked in specs, skills, tests, and issue history.
 
@@ -92,6 +97,16 @@ warnings.
 - [x] The temporary postmortem at
       `docs/postmortems/2026-03-22-review-discipline-postmortem.md` is removed
       once its durable lessons are preserved elsewhere.
+- [x] When archived `publish` or `await_merge` status discovers missing
+      step-closeout debt, `next_actions` tells the controller to reopen the
+      candidate before repairing it instead of suggesting an invalid direct
+      review start.
+- [x] `harness status` rebuilds finalize/archive/archived summaries after
+      missing-closeout reminders are attached so it does not claim archive- or
+      merge-readiness while warning that earlier closeout is still incomplete.
+- [x] `reopen --mode new-step` is treated as consumed once the first reopened
+      step has been added, so later finalize-time findings can be repaired
+      in-place instead of forcing another new unfinished step by default.
 
 ## Deferred Items
 
@@ -474,6 +489,89 @@ criteria sync and passed clean with no findings, confirming that the top-level
 checkboxes now match the completed revision 2 work and refreshed plan
 summaries.
 
+### Step 7: Consume reopened new-step mode and repair archived reminder guidance
+
+- Done: [x]
+
+#### Objective
+
+Fix the remaining archived/reminder correctness issues from PR review and make
+`reopen --mode new-step` stop forcing extra steps once the first reopened step
+has already landed.
+
+#### Details
+
+This revision 3 slice has three concrete outcomes:
+- archived `publish` and `await_merge` reminder guidance should tell the
+  controller to reopen before attempting step-closeout repair
+- readiness summaries should be recomputed after reminder debt is attached so
+  archived/finalize states do not still claim archive- or merge-readiness while
+  warnings say otherwise
+- once the first new step has been added after `reopen --mode new-step`, later
+  finalize-time findings should no longer force another new unfinished step by
+  default
+
+#### Expected Files
+
+- `internal/status/service.go`
+- `internal/status/service_test.go`
+- `docs/specs/state-model.md`
+- `docs/specs/plan-schema.md`
+
+#### Validation
+
+- `harness plan lint docs/plans/active/2026-03-22-automatic-review-closeout-and-status-reminders.md`
+- `go test ./internal/status -count=1`
+- `go test ./...`
+- the two unresolved PR review threads about archived reminder repair guidance
+  and stale summaries are replied to and resolved after the fixes land
+
+#### Execution Notes
+
+Updated `internal/status/service.go` so missing-closeout reminder guidance now
+rebuilds finalize/archive/archived summaries instead of still claiming
+archive-ready or merge-ready status, and archived `publish` / `await_merge`
+actions now tell the controller to `harness reopen --mode finalize-fix` before
+repairing earlier missing step-closeout debt. Tightened the `new-step`
+reopen-mode handling so the requirement is only pending before the first
+reopened step exists; once that step lands, later finalize-time findings no
+longer force another new unfinished step by default.
+
+Added regression coverage in `internal/status/service_test.go` for archived
+reopen-aware next actions, reminder-aware summary rebuilding, consumed
+`new-step` behavior after later findings, and the mixed case where
+missing-closeout warnings are still visible but the initial `new-step` cue
+must remain dominant until the first reopened step is added. Updated
+`docs/specs/state-model.md` and `docs/specs/plan-schema.md` so the documented
+reopen transition matches the new consumed-after-first-step state behavior.
+
+The first Step 7 delta review (`review-018-delta`) asked for one more explicit
+regression around the active unreadable-manifest rescue path. Added
+`TestLoadSatisfiedStepCloseoutTargetsUsesActiveInFlightReviewContextForUnreadableCurrentRound`
+to `internal/status/service_internal_test.go` so an unreadable current-round
+manifest with no aggregate still overrides an older pass via the active
+`reviewCtx` fallback. Revalidated with `go test ./internal/status -count=1`
+and `go test ./...`.
+
+Validation:
+- `go test ./internal/status -count=1`
+- `go test ./internal/lifecycle -run 'TestReopenNewStepRecordsModeAndStatusCue|TestArchiveMovesPlanAndUpdatesPointers|TestReopenMarkersMustBeClearedBeforeRearchive' -count=1`
+- `go test ./...`
+- `scripts/install-dev-harness --force`
+- `harness status`
+
+#### Review Notes
+
+`review-018-delta` found one important tests gap: the same-package coverage did
+not make the active in-flight unreadable-manifest rescue path explicit enough.
+Added a focused regression in `internal/status/service_internal_test.go` for
+that branch, reran the status package plus full Go test suite, and then
+reran step closeout.
+
+`review-019-delta` passed clean with `tests` and `docs_consistency`. Step 7
+now has explicit regression coverage for the active in-flight unreadable
+manifest rescue path, and the step-local notes match the follow-up repair.
+
 ## Validation Strategy
 
 - Run `harness plan lint` before execution starts and after any material scope
@@ -499,13 +597,21 @@ summaries.
 
 - `harness plan lint docs/plans/active/2026-03-22-automatic-review-closeout-and-status-reminders.md`
 - `go test ./internal/status -count=1`
-- `go test ./internal/cli -count=1`
+- `go test ./internal/lifecycle -run 'TestReopenNewStepRecordsModeAndStatusCue|TestArchiveMovesPlanAndUpdatesPointers|TestReopenMarkersMustBeClearedBeforeRearchive' -count=1`
 - `go test ./...`
-- Revision 2 kept a green focused and full Go baseline after each reopened
-  review finding was fixed, including the final helper-level regression added
-  after `review-011-delta`.
-- `review-017-full` passed clean after the archive-facing summaries and reopen
-  acceptance criteria were synchronized with the landed revision 2 work.
+- `scripts/install-dev-harness --force`
+- `harness status`
+- Revision 3 kept the focused status package, targeted lifecycle coverage, and
+  the full Go suite green while fixing the archived reopen guidance, consumed
+  `new-step` semantics, the active in-flight unreadable-manifest rescue path,
+  the finalize archive-closeout reminder assertions, and the mixed-debt
+  finalize/archive next-action overlay so reminder guidance no longer hides
+  blocker-specific or ordinary finalize repair follow-up.
+- The same revision 3 validation loop now also proves that archived
+  `publish` / `await_merge` reminder overlays prepend reopen guidance without
+  hiding the ordinary publish, CI, sync, or merge-follow-up actions.
+- `review-023-full` passed clean after the final reminder-overlay follow-up,
+  with the focused status suite and the full Go test suite both still green.
 
 ## Review Summary
 
@@ -539,18 +645,41 @@ summaries.
   clean for that docs-only slice, and `review-017-full` then passed clean
   across correctness, tests, and docs-consistency for the full archived
   candidate.
+- Revision 3 added Step 7 for the new-step-consumption and archived-reminder
+  follow-up. `review-018-delta` found one real tests gap in the active
+  in-flight unreadable-manifest rescue path, and `review-019-delta` passed
+  clean after the focused regression was added.
+- `review-020-full` then found two finalize-closeout gaps in the tracked
+  candidate: the revision 3 acceptance criteria still read as pending, and the
+  archive-closeout reminder test did not yet assert the replacement repair
+  guidance or warning path. Both findings are now fixed and the candidate is
+  ready for a fresh finalize review.
+- `review-021-full` then found one mixed-debt correctness edge and one matching
+  docs-consistency gap: the missing-closeout overlay could replace ordinary
+  finalize/archive guidance instead of prepending to it. The overlay merge
+  logic now preserves blocker-specific and repair guidance while still putting
+  the earliest closeout debt first, and the candidate is ready for another
+  fresh full review.
+- `review-022-full` then found one more archived-overlay consistency gap: the
+  `publish` / `await_merge` reminder path still replaced those nodes' ordinary
+  follow-up actions instead of prefixing the reopen-first reminder onto them.
+  That merge behavior is now fixed, and the candidate is ready for another
+  fresh full review.
+- `review-023-full` then passed clean across correctness, tests, and
+  docs-consistency for the full revision 3 finalize candidate.
 
 ## Archive Summary
 
-- Archived At: 2026-03-22T21:07:39+08:00
-- Revision: 2
+- Archived At: 2026-03-22T22:28:13+08:00
+- Revision: 3
 - PR: [#25](https://github.com/yzhang1918/superharness/pull/25) on
   `codex/automatic-review-closeout-status-reminders`.
-- Ready: the archived revision 2 candidate now includes the PR-review fixes,
-  proactive reviewer-subagent approval guidance, execute-time fallback
-  behavior, unreadable-history reminder repairs, refreshed archive-facing
-  summaries, synchronized acceptance criteria, and a clean finalize review
-  (`review-017-full`).
+- Ready: the revision 3 candidate now includes the PR-review fixes for
+  archived reminder guidance, summary rebuilding after missing-closeout debt,
+  consumed `reopen --mode new-step` semantics after the first reopened step,
+  explicit active in-flight unreadable-manifest recovery coverage, and the
+  archive-closeout reminder assertions needed to keep the new repair guidance
+  visible, with a clean finalize review in `review-023-full`.
 - Merge Handoff: commit and push the archived plan move plus the tracked
   code/doc changes, reply to and resolve the open PR review threads, refresh
   publish/CI/sync evidence on the existing PR branch, and then return to
@@ -586,6 +715,11 @@ summaries.
   warnings, archived publish/await-merge reminders, clean historical full
   reviews, `NO_STEP_REVIEW_NEEDED` suppression, and the active-`reviewCtx`
   unreadable-history rescue path, while keeping the broader Go suite green.
+- Revision 3 now also keeps archived `publish` / `await_merge` guidance
+  reopen-aware, rebuilds finalize/archive/archived summaries when earlier
+  closeout debt is still present, and consumes `reopen --mode new-step` once
+  the first reopened step lands so later finalize-time findings can repair in
+  place instead of proliferating extra steps.
 
 ### Not Delivered
 
@@ -598,3 +732,7 @@ summaries.
 
 - `#24` Decide whether missed step-closeout review should stay reminder-only or
   grow a stronger deterministic gate and/or retrospective closeout workflow.
+- `#26` Surface reopen placeholders before archive-time blockers so finalize
+  closeout does not have to discover them late.
+- `#27` Surface unchecked top-level acceptance criteria before archive-time
+  blockers so finalize closeout gets earlier guidance.

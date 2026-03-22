@@ -461,11 +461,116 @@ func TestStatusWarnsInFinalizeWhenCompletedStepStillLacksCloseout(t *testing.T) 
 	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "Finalize progression is continuing") || !strings.Contains(result.Warnings[0], stepOneTitle) {
 		t.Fatalf("expected finalize warning for missing earlier closeout, got %#v", result.Warnings)
 	}
+	if strings.Contains(result.Summary, "needs finalize review before archive") {
+		t.Fatalf("expected finalize summary to stop claiming readiness once reminder debt exists, got %q", result.Summary)
+	}
 	if strings.Contains(result.Warnings[0], stepTwoTitle) {
 		t.Fatalf("expected clean historical Step 2 closeout to stay out of finalize warnings, got %#v", result.Warnings)
 	}
 	if len(result.NextAction) < 2 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, stepOneTitle) {
 		t.Fatalf("expected finalize warning guidance to come first, got %#v", result.NextAction)
+	}
+	if result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness review start --spec <path>" {
+		t.Fatalf("expected finalize review guidance to remain available after the reminder, got %#v", result.NextAction)
+	}
+}
+
+func TestStatusFinalizeArchiveSummaryAndActionsDoNotPretendReadyWhenCloseoutDebtExists(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllStepsWithoutCloseout(content, true)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-005-full",
+			"kind":       "full",
+			"trigger":    "pre_archive",
+			"aggregated": true,
+			"decision":   "pass",
+		},
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-002-delta", map[string]any{
+		"target":  stepTwoTitle,
+		"trigger": "step_closeout",
+	})
+	writeReviewAggregate(t, root, "2026-03-18-status-plan", "review-002-delta", map[string]any{
+		"decision": "pass",
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/archive" {
+		t.Fatalf("expected archive node to stay stable, got %#v", result.State)
+	}
+	if !strings.Contains(result.Summary, "still need review-complete closeout") || !strings.Contains(result.Summary, stepOneTitle) {
+		t.Fatalf("expected archive summary to mention the missing closeout debt, got %q", result.Summary)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], stepOneTitle) {
+		t.Fatalf("expected archive warning to keep surfacing the missing closeout debt, got %#v", result.Warnings)
+	}
+	if len(result.NextAction) < 2 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, stepOneTitle) {
+		t.Fatalf("expected archive repair guidance to mention the missing closeout debt, got %#v", result.NextAction)
+	}
+	if result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness review start --spec <path>" {
+		t.Fatalf("expected archive repair flow to keep the step-closeout review action, got %#v", result.NextAction)
+	}
+	for _, action := range result.NextAction {
+		if action.Command != nil && *action.Command == "harness archive" {
+			t.Fatalf("did not expect archive action while missing closeout debt remains, got %#v", result.NextAction)
+		}
+	}
+}
+
+func TestStatusFinalizeArchiveKeepsBlockerGuidanceWhenCloseoutDebtAndArchiveBlockersCoexist(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllStepsWithoutCloseout(content, false)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-005-full",
+			"kind":       "full",
+			"trigger":    "pre_archive",
+			"aggregated": true,
+			"decision":   "pass",
+		},
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-002-delta", map[string]any{
+		"target":  stepTwoTitle,
+		"trigger": "step_closeout",
+	})
+	writeReviewAggregate(t, root, "2026-03-18-status-plan", "review-002-delta", map[string]any{
+		"decision": "pass",
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/archive" {
+		t.Fatalf("expected archive node to stay stable, got %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.ArchiveBlockerCount == 0 {
+		t.Fatalf("expected archive blockers to remain visible, got %#v", result.Facts)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], stepOneTitle) {
+		t.Fatalf("expected mixed-debt archive warning to remain visible, got %#v", result.Warnings)
+	}
+	if len(result.NextAction) < 2 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, stepOneTitle) {
+		t.Fatalf("expected reminder guidance first for mixed-debt archive state, got %#v", result.NextAction)
+	}
+	foundBlockerGuidance := false
+	for _, action := range result.NextAction[1:] {
+		if action.Command == nil && strings.Contains(action.Description, "Fix the archive blockers surfaced below") {
+			foundBlockerGuidance = true
+			break
+		}
+	}
+	if !foundBlockerGuidance {
+		t.Fatalf("expected archive blocker guidance to remain after the reminder, got %#v", result.NextAction)
+	}
+	for _, action := range result.NextAction {
+		if action.Command != nil && *action.Command == "harness archive" {
+			t.Fatalf("did not expect archive action while mixed debt remains, got %#v", result.NextAction)
+		}
 	}
 }
 
@@ -995,14 +1100,30 @@ func TestStatusWarnsInArchivedPublishWhenCompletedStepStillLacksCloseout(t *test
 	if result.State.CurrentNode != "execution/finalize/publish" {
 		t.Fatalf("expected publish node to stay stable, got %#v", result.State)
 	}
+	if !strings.Contains(result.Summary, "reopen the candidate") || !strings.Contains(result.Summary, stepOneTitle) {
+		t.Fatalf("expected publish summary to require reopen before merge-ready handoff, got %q", result.Summary)
+	}
 	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], stepOneTitle) {
 		t.Fatalf("expected archived publish warning for unresolved Step 1 closeout, got %#v", result.Warnings)
 	}
 	if strings.Contains(result.Warnings[0], stepTwoTitle) {
 		t.Fatalf("expected clean historical Step 2 closeout to stay out of archived publish warnings, got %#v", result.Warnings)
 	}
-	if len(result.NextAction) < 2 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, stepOneTitle) {
+	if len(result.NextAction) < 3 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, stepOneTitle) {
 		t.Fatalf("expected archived publish repair guidance first, got %#v", result.NextAction)
+	}
+	if result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness reopen --mode finalize-fix" {
+		t.Fatalf("expected archived publish flow to require reopen before repair, got %#v", result.NextAction)
+	}
+	foundPublishGuidance := false
+	for _, action := range result.NextAction[2:] {
+		if strings.Contains(action.Description, "Open or update the PR for the archived candidate") {
+			foundPublishGuidance = true
+			break
+		}
+	}
+	if !foundPublishGuidance {
+		t.Fatalf("expected ordinary publish follow-up to remain after the reopen guidance, got %#v", result.NextAction)
 	}
 }
 
@@ -1075,14 +1196,30 @@ func TestStatusWarnsInAwaitMergeWhenCompletedStepStillLacksCloseout(t *testing.T
 	if result.State.CurrentNode != "execution/finalize/await_merge" {
 		t.Fatalf("expected await_merge node to stay stable, got %#v", result.State)
 	}
+	if !strings.Contains(result.Summary, "reopen the candidate") || !strings.Contains(result.Summary, stepOneTitle) {
+		t.Fatalf("expected await_merge summary to require reopen before merge-ready handoff, got %q", result.Summary)
+	}
 	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], stepOneTitle) {
 		t.Fatalf("expected await_merge warning for unresolved Step 1 closeout, got %#v", result.Warnings)
 	}
 	if strings.Contains(result.Warnings[0], stepTwoTitle) {
 		t.Fatalf("expected clean historical Step 2 closeout to stay out of await_merge warnings, got %#v", result.Warnings)
 	}
-	if len(result.NextAction) < 2 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, stepOneTitle) {
+	if len(result.NextAction) < 3 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, stepOneTitle) {
 		t.Fatalf("expected await_merge repair guidance first, got %#v", result.NextAction)
+	}
+	if result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness reopen --mode finalize-fix" {
+		t.Fatalf("expected await_merge flow to require reopen before repair, got %#v", result.NextAction)
+	}
+	foundAwaitMergeGuidance := false
+	for _, action := range result.NextAction[2:] {
+		if action.Command == nil && strings.Contains(action.Description, "Wait for explicit human approval before merging the PR.") {
+			foundAwaitMergeGuidance = true
+			break
+		}
+	}
+	if !foundAwaitMergeGuidance {
+		t.Fatalf("expected ordinary await_merge follow-up to remain after the reopen guidance, got %#v", result.NextAction)
 	}
 }
 
@@ -1381,6 +1518,35 @@ func TestStatusReopenedNewStepPendingPromptsForNewStep(t *testing.T) {
 	}
 }
 
+func TestStatusReopenedNewStepPendingKeepsNewStepCueEvenWithMissingCloseoutWarnings(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllStepsWithoutCloseout(content, true)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"reopen": map[string]any{
+			"mode":            "new-step",
+			"reopened_at":     "2026-03-18T11:00:00+08:00",
+			"base_step_count": 2,
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/fix" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if !strings.Contains(result.Summary, "needs a new unfinished step") {
+		t.Fatalf("unexpected summary: %q", result.Summary)
+	}
+	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Add a new unfinished step") {
+		t.Fatalf("unexpected next actions: %#v", result.NextAction)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(strings.Join(result.Warnings, "\n"), "still lack review-complete closeout") {
+		t.Fatalf("expected missing closeout warnings to remain visible, got %#v", result.Warnings)
+	}
+}
+
 func TestStatusReopenedNewStepContinuesOnceStepExists(t *testing.T) {
 	root := t.TempDir()
 	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
@@ -1402,6 +1568,47 @@ func TestStatusReopenedNewStepContinuesOnceStepExists(t *testing.T) {
 	}
 	if result.Facts == nil || result.Facts.CurrentStep != "Step 3: Follow-up reopened work" {
 		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+}
+
+func TestStatusConsumedReopenedNewStepDoesNotForceAnotherStepAfterLaterFinding(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		content = completeAllSteps(content, true)
+		content = appendThirdStep(content)
+		content = replaceOnce(content, "- Done: [ ]", "- Done: [x]")
+		content = replaceOnce(content, "PENDING_STEP_EXECUTION", "Done.")
+		content = replaceOnce(content, "PENDING_STEP_REVIEW", "Reviewed.")
+		return content
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"reopen": map[string]any{
+			"mode":            "new-step",
+			"reopened_at":     "2026-03-18T11:00:00+08:00",
+			"base_step_count": 2,
+		},
+		"active_review_round": map[string]any{
+			"round_id":   "review-005-full",
+			"kind":       "full",
+			"trigger":    "pre_archive",
+			"aggregated": true,
+			"decision":   "changes_requested",
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/fix" {
+		t.Fatalf("expected finalize fix node, got %#v", result.State)
+	}
+	if strings.Contains(result.Summary, "needs a new unfinished step") {
+		t.Fatalf("expected consumed new-step reopen mode to stop forcing another step, got %q", result.Summary)
+	}
+	if len(result.NextAction) == 0 || strings.Contains(result.NextAction[0].Description, "Add a new unfinished step") {
+		t.Fatalf("expected finalize repair guidance instead of another new-step demand, got %#v", result.NextAction)
+	}
+	if result.Facts != nil && result.Facts.ReopenMode == "new-step" {
+		t.Fatalf("expected consumed reopen mode to stop surfacing raw new-step guidance, got %#v", result.Facts)
 	}
 }
 

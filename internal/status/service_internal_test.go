@@ -58,6 +58,47 @@ func TestLoadSatisfiedStepCloseoutTargetsUsesActiveReviewContextForUnreadableCur
 	}
 }
 
+func TestLoadSatisfiedStepCloseoutTargetsUsesActiveInFlightReviewContextForUnreadableCurrentRound(t *testing.T) {
+	root := t.TempDir()
+	planStem := "2026-03-18-status-plan"
+	doc := &plan.Document{
+		Steps: []plan.DocumentStep{
+			{Title: internalStepOneTitle},
+			{Title: internalStepTwoTitle},
+		},
+	}
+
+	writeHistoricalReviewJSON(t, root, planStem, "review-001-delta", "manifest.json", map[string]any{
+		"target":  internalStepOneTitle,
+		"trigger": "step_closeout",
+	})
+	writeHistoricalReviewJSON(t, root, planStem, "review-001-delta", "aggregate.json", map[string]any{
+		"decision": "pass",
+	})
+
+	dir := filepath.Join(root, ".local", "harness", "plans", planStem, "reviews", "review-002-delta")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir unreadable manifest dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte("{not-json"), 0o644); err != nil {
+		t.Fatalf("write unreadable manifest: %v", err)
+	}
+
+	reviewCtx := &reviewContext{
+		RoundID:         "review-002-delta",
+		Trigger:         "step_closeout",
+		TargetStepIndex: 0,
+		InFlight:        true,
+	}
+	satisfied, warnings := loadSatisfiedStepCloseoutTargets(root, planStem, doc, reviewCtx)
+	if satisfied[normalizeReviewTarget(internalStepOneTitle)] {
+		t.Fatalf("expected active in-flight reviewCtx fallback to keep step 1 unsatisfied, got %#v", satisfied)
+	}
+	if len(warnings) == 0 {
+		t.Fatalf("expected unreadable manifest warning, got none")
+	}
+}
+
 func writeHistoricalReviewJSON(t *testing.T, root, planStem, roundID, name string, payload any) {
 	t.Helper()
 
