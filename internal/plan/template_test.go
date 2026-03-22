@@ -23,10 +23,10 @@ func TestRenderTemplateSeedsFields(t *testing.T) {
 	for _, want := range []string{
 		"# Superharness Test Plan",
 		"created_at: 2026-03-17T13:50:00+08:00",
-		"updated_at: 2026-03-17T13:50:00+08:00",
 		"source_type: issue",
 		`source_refs: ["#12","https://example.com/item"]`,
-		"template_version: 0.1.0",
+		"template_version: 0.2.0",
+		"- Done: [ ]",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered template missing %q\n%s", want, rendered)

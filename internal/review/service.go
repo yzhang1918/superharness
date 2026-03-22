@@ -280,6 +280,7 @@ func (s Service) Start(specBytes []byte) StartResult {
 	state.ActiveReviewRound = &runstate.ReviewRound{
 		RoundID:    roundID,
 		Kind:       spec.Kind,
+		Trigger:    spec.Trigger,
 		Aggregated: false,
 		Decision:   "",
 	}
@@ -526,6 +527,7 @@ func (s Service) Aggregate(roundID string) AggregateResult {
 	state.ActiveReviewRound = &runstate.ReviewRound{
 		RoundID:    manifest.RoundID,
 		Kind:       manifest.Kind,
+		Trigger:    manifest.Trigger,
 		Aggregated: true,
 		Decision:   decision,
 	}
@@ -572,17 +574,6 @@ func (s Service) loadCurrentExecutingPlan() (string, *plan.Document, string, str
 			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
 		}
 	}
-	if doc.Frontmatter.Status != "active" || doc.Frontmatter.Lifecycle != "executing" {
-		return "", nil, "", "", nil, "", &StartResult{
-			OK:      false,
-			Command: "review",
-			Summary: "Review commands require an active executing plan.",
-			Errors: []CommandError{{
-				Path:    "plan.lifecycle",
-				Message: fmt.Sprintf("current plan is status=%q lifecycle=%q", doc.Frontmatter.Status, doc.Frontmatter.Lifecycle),
-			}},
-		}
-	}
 
 	planStem := strings.TrimSuffix(filepath.Base(planPath), filepath.Ext(planPath))
 	relPlanPath, err := filepath.Rel(s.Workdir, planPath)
@@ -602,6 +593,17 @@ func (s Service) loadCurrentExecutingPlan() (string, *plan.Document, string, str
 			Command: "review",
 			Summary: "Unable to read local harness state.",
 			Errors:  []CommandError{{Path: "state", Message: err.Error()}},
+		}
+	}
+	if doc.DerivedPlanStatus() != "active" || doc.DerivedLifecycle(state) != "executing" {
+		return "", nil, "", "", nil, "", &StartResult{
+			OK:      false,
+			Command: "review",
+			Summary: "Review commands require an active executing plan.",
+			Errors: []CommandError{{
+				Path:    "plan.lifecycle",
+				Message: fmt.Sprintf("current plan is status=%q lifecycle=%q", doc.DerivedPlanStatus(), doc.DerivedLifecycle(state)),
+			}},
 		}
 	}
 	return planPath, doc, planStem, relPlanPath, state, statePath, nil

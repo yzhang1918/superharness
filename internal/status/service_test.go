@@ -8,13 +8,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yzhang1918/superharness/internal/evidence"
 	"github.com/yzhang1918/superharness/internal/plan"
+	"github.com/yzhang1918/superharness/internal/runstate"
 	"github.com/yzhang1918/superharness/internal/status"
 )
 
-func TestStatusMinimalActivePlan(t *testing.T) {
+const (
+	stepOneTitle = "Step 1: Replace with first step title"
+	stepTwoTitle = "Step 2: Replace with second step title"
+)
+
+func TestStatusPlanNodeForActivePlan(t *testing.T) {
 	root := t.TempDir()
-	planPath := writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
 		return content
 	})
 
@@ -22,557 +29,735 @@ func TestStatusMinimalActivePlan(t *testing.T) {
 	if !result.OK {
 		t.Fatalf("expected OK status result, got %#v", result)
 	}
-	if result.State.PlanStatus != "active" || result.State.Lifecycle != "awaiting_plan_approval" {
-		t.Fatalf("unexpected state: %#v", result.State)
+	if result.State.CurrentNode != "plan" {
+		t.Fatalf("unexpected node: %#v", result.State)
 	}
-	if result.State.Step != "Step 1: Replace with first step title" {
-		t.Fatalf("unexpected step: %#v", result.State)
+	if result.NextAction[0].Command == nil || *result.NextAction[0].Command != "harness execute start" {
+		t.Fatalf("expected execute-start guidance, got %#v", result.NextAction)
 	}
-	if result.State.StepState != "" {
-		t.Fatalf("expected no step_state outside executing, got %#v", result.State)
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-status-plan")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
 	}
-	if result.Artifacts.PlanPath != planPath {
-		t.Fatalf("unexpected plan path: %#v", result.Artifacts)
+	if state == nil || state.CurrentNode != "plan" {
+		t.Fatalf("expected cached plan node, got %#v", state)
+	}
+
+	doc, err := plan.LoadFile(filepath.Join(root, "docs/plans/active/2026-03-18-status-plan.md"))
+	if err != nil {
+		t.Fatalf("load plan: %v", err)
+	}
+	if got := doc.DerivedLifecycle(state); got != "awaiting_plan_approval" {
+		t.Fatalf("expected cached plan node to preserve awaiting_plan_approval, got %q", got)
 	}
 }
 
-func TestStatusReviewInProgress(t *testing.T) {
+func TestStatusExecutionStepImplementNode(t *testing.T) {
 	root := t.TempDir()
-	planPath := writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: executing")
-		content = replaceOnce(t, content, "- Status: pending", "- Status: in_progress")
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
 		return content
 	})
-	writeCurrentPlan(t, root, "docs/plans/active/2026-03-18-status-plan.md")
 	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-1/implement" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.CurrentStep != stepOneTitle {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-status-plan")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state == nil || state.CurrentNode != "execution/step-1/implement" {
+		t.Fatalf("expected cached execution node, got %#v", state)
+	}
+}
+
+func TestStatusIgnoresNonStructuralReviewFactsForCurrentStep(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return content
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
 		"active_review_round": map[string]any{
-			"round_id":   "round-1",
+			"round_id":   "review-011-delta",
 			"kind":       "delta",
-			"aggregated": false,
-		},
-	})
-
-	result := status.Service{Workdir: root}.Read()
-	if !result.OK || result.State.StepState != "reviewing" {
-		t.Fatalf("unexpected result: %#v", result)
-	}
-	if result.Artifacts.PlanPath != planPath || result.Artifacts.ReviewRoundID != "round-1" {
-		t.Fatalf("unexpected artifacts: %#v", result.Artifacts)
-	}
-}
-
-func TestStatusWaitingCI(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: executing")
-		content = replaceOnce(t, content, "- Status: pending", "- Status: in_progress")
-		return content
-	})
-	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"latest_ci": map[string]any{
-			"snapshot_id": "ci-1",
-			"status":      "pending",
-		},
-	})
-
-	result := status.Service{Workdir: root}.Read()
-	if result.State.StepState != "waiting_ci" {
-		t.Fatalf("unexpected step state: %#v", result.State)
-	}
-}
-
-func TestStatusFixRequiredAfterAggregatedReviewFailure(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: executing")
-		content = replaceOnce(t, content, "- Status: pending", "- Status: in_progress")
-		return content
-	})
-	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"active_review_round": map[string]any{
-			"round_id":   "review-005-delta",
-			"kind":       "delta",
-			"aggregated": true,
-			"decision":   "changes_requested",
-		},
-	})
-
-	result := status.Service{Workdir: root}.Read()
-	if result.State.StepState != "fix_required" {
-		t.Fatalf("unexpected step state: %#v", result.State)
-	}
-	if !strings.Contains(result.Summary, "requested changes") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
-	}
-	if len(result.NextAction) < 2 {
-		t.Fatalf("expected multiple next actions, got %#v", result.NextAction)
-	}
-	if !strings.Contains(result.NextAction[0].Description, "review-005-delta") {
-		t.Fatalf("expected round-specific guidance, got %#v", result.NextAction)
-	}
-	if result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness review start --spec <path>" {
-		t.Fatalf("unexpected second next action: %#v", result.NextAction)
-	}
-}
-
-func TestStatusUsesAggregateArtifactForLegacyReviewDecision(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: executing")
-		content = replaceOnce(t, content, "- Status: pending", "- Status: in_progress")
-		return content
-	})
-	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"active_review_round": map[string]any{
-			"round_id":   "review-004-full",
-			"kind":       "full",
-			"aggregated": true,
-		},
-	})
-	writeAggregate(t, root, "2026-03-18-status-plan", "review-004-full", map[string]any{
-		"decision": "changes_requested",
-	})
-
-	result := status.Service{Workdir: root}.Read()
-	if result.State.StepState != "fix_required" {
-		t.Fatalf("unexpected step state: %#v", result.State)
-	}
-	if !strings.Contains(result.Summary, "review-004-full") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
-	}
-}
-
-func TestStatusFixRequiredBeatsCloseoutGuidance(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: executing")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
-		content = stringsReplaceAll(content, "PENDING_UNTIL_ARCHIVE", "Ready.")
-		return content
-	})
-	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"active_review_round": map[string]any{
-			"round_id":   "review-007-delta",
-			"kind":       "delta",
-			"aggregated": true,
-			"decision":   "changes_requested",
-		},
-	})
-
-	result := status.Service{Workdir: root}.Read()
-	if result.State.StepState != "fix_required" {
-		t.Fatalf("unexpected step state: %#v", result.State)
-	}
-	if len(result.NextAction) < 2 {
-		t.Fatalf("expected fix-required next actions, got %#v", result.NextAction)
-	}
-	if strings.Contains(result.NextAction[0].Description, "Validation, Review, Archive, and Outcome summaries") {
-		t.Fatalf("expected fix guidance to win over closeout guidance, got %#v", result.NextAction)
-	}
-	if !strings.Contains(result.NextAction[0].Description, "review-007-delta") {
-		t.Fatalf("expected round-specific fix guidance, got %#v", result.NextAction)
-	}
-}
-
-func TestStatusUnknownAggregatedReviewDecisionBlocksCloseoutGuidance(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: executing")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
-		content = stringsReplaceAll(content, "PENDING_UNTIL_ARCHIVE", "Ready.")
-		return content
-	})
-	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"active_review_round": map[string]any{
-			"round_id":   "review-008-delta",
-			"kind":       "delta",
-			"aggregated": true,
-		},
-	})
-
-	result := status.Service{Workdir: root}.Read()
-	if result.State.StepState != "fix_required" {
-		t.Fatalf("unexpected step state: %#v", result.State)
-	}
-	if !strings.Contains(result.Summary, "could not be recovered") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
-	}
-	if len(result.NextAction) < 2 {
-		t.Fatalf("expected conservative next actions, got %#v", result.NextAction)
-	}
-	if !strings.Contains(result.NextAction[0].Description, "Recover or rerun review-008-delta") {
-		t.Fatalf("unexpected first next action: %#v", result.NextAction)
-	}
-	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "could not be recovered") {
-		t.Fatalf("expected recovery warning, got %#v", result.Warnings)
-	}
-}
-
-func TestStatusResolvingConflicts(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: executing")
-		content = replaceOnce(t, content, "- Status: pending", "- Status: in_progress")
-		return content
-	})
-	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"sync": map[string]any{
-			"freshness": "stale",
-			"conflicts": true,
-		},
-	})
-
-	result := status.Service{Workdir: root}.Read()
-	if result.State.StepState != "resolving_conflicts" {
-		t.Fatalf("unexpected step state: %#v", result.State)
-	}
-	if len(result.Warnings) == 0 {
-		t.Fatalf("expected remote freshness warning")
-	}
-}
-
-func TestStatusReadyForArchive(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: executing")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
-		content = stringsReplaceAll(content, "## Validation Summary\n\nPENDING_UNTIL_ARCHIVE", "## Validation Summary\n\nValidated the implementation.")
-		content = stringsReplaceAll(content, "## Review Summary\n\nPENDING_UNTIL_ARCHIVE", "## Review Summary\n\nNo blocking review findings remain.")
-		content = stringsReplaceAll(content, "## Archive Summary\n\nPENDING_UNTIL_ARCHIVE", "## Archive Summary\n\n- PR: NONE\n- Ready: The candidate satisfies the acceptance criteria and is ready for merge approval.\n- Merge Handoff: Commit and push the archive move before treating this candidate as awaiting merge approval.")
-		content = stringsReplaceAll(content, "### Delivered\n\nPENDING_UNTIL_ARCHIVE", "### Delivered\n\nDelivered the planned slice.")
-		content = stringsReplaceAll(content, "### Not Delivered\n\nPENDING_UNTIL_ARCHIVE", "### Not Delivered\n\nNONE.")
-		return content
-	})
-	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"active_review_round": map[string]any{
-			"round_id":   "review-001-full",
-			"kind":       "full",
+			"trigger":    "review_fix",
 			"aggregated": true,
 			"decision":   "pass",
 		},
 	})
 
 	result := status.Service{Workdir: root}.Read()
-	if result.State.StepState != "ready_for_archive" {
-		t.Fatalf("unexpected step state: %#v", result.State)
+	if result.State.CurrentNode != "execution/step-1/implement" {
+		t.Fatalf("unexpected node: %#v", result.State)
 	}
-	if len(result.NextAction) == 0 || result.NextAction[0].Command != nil {
-		t.Fatalf("expected archive-ready guidance, got %#v", result.NextAction)
+	if result.Facts == nil || result.Facts.ReviewStatus != "" || result.Facts.ReviewTrigger != "" {
+		t.Fatalf("expected non-structural review facts to be ignored, got %#v", result.Facts)
 	}
-	if len(result.NextAction) < 2 || result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness archive" {
-		t.Fatalf("expected archive command guidance, got %#v", result.NextAction)
-	}
-	if !strings.Contains(result.Summary, "ready to archive") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
+	if strings.Contains(result.Summary, "clean review") {
+		t.Fatalf("expected non-structural review round to stay out of summary, got %q", result.Summary)
 	}
 }
 
-func TestStatusCloseoutBeforeArchive(t *testing.T) {
+func TestStatusExecutionStepReviewNode(t *testing.T) {
 	root := t.TempDir()
 	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: executing")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
 		return content
 	})
-
-	result := status.Service{Workdir: root}.Read()
-	if result.State.Step != "" {
-		t.Fatalf("expected no current step, got %#v", result.State)
-	}
-	if len(result.Blockers) == 0 {
-		t.Fatalf("expected archive blockers, got %#v", result)
-	}
-	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Fix the archive blockers") {
-		t.Fatalf("unexpected next actions: %#v", result.NextAction)
-	}
-	if !strings.Contains(result.Summary, "archive blocker") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
-	}
-}
-
-func TestStatusArchivedPlanNeedsPublishHandoff(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "status: active", "status: archived")
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
-		content = stringsReplaceAll(content, "PENDING_UNTIL_ARCHIVE", "Ready.")
-		return content
-	})
-	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
-
-	result := status.Service{Workdir: root}.Read()
-	if !result.OK || result.State.PlanStatus != "archived" || result.State.Lifecycle != "awaiting_merge_approval" {
-		t.Fatalf("unexpected result: %#v", result)
-	}
-	if result.State.StepState != "" {
-		t.Fatalf("expected no step_state for archived plan, got %#v", result.State)
-	}
-	if result.State.HandoffState != "pending_publish" {
-		t.Fatalf("expected pending_publish handoff state, got %#v", result.State)
-	}
-	if !strings.Contains(result.Summary, "archived locally") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
-	}
-	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "open or update the PR") {
-		t.Fatalf("unexpected next actions: %#v", result.NextAction)
-	}
-}
-
-func TestStatusArchivedPlanWaitingForPostArchiveCI(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "status: active", "status: archived")
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
-		content = stringsReplaceAll(content, "PENDING_UNTIL_ARCHIVE", "Ready.")
-		return content
-	})
-	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
 	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"latest_publish": map[string]any{
-			"attempt_id": "publish-001",
-			"pr_url":     "https://github.com/yzhang1918/superharness/pull/13",
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-001-delta",
+			"kind":       "delta",
+			"trigger":    "step_closeout",
+			"aggregated": false,
 		},
-		"latest_ci": map[string]any{
-			"snapshot_id": "ci-001",
-			"status":      "pending",
-		},
-		"sync": map[string]any{
-			"freshness": "fresh",
-			"conflicts": false,
-		},
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-001-delta", map[string]any{
+		"target":  stepOneTitle,
+		"trigger": "step_closeout",
 	})
 
 	result := status.Service{Workdir: root}.Read()
-	if result.State.HandoffState != "waiting_post_archive_ci" {
-		t.Fatalf("expected waiting_post_archive_ci handoff state, got %#v", result.State)
+	if result.State.CurrentNode != "execution/step-1/review" {
+		t.Fatalf("unexpected node: %#v", result.State)
 	}
-	if !strings.Contains(result.Summary, "post-archive CI") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
+	if result.Facts == nil || result.Facts.ReviewStatus != "in_progress" || result.Facts.CurrentStep != stepOneTitle || result.Facts.ReviewTarget != stepOneTitle || result.Facts.ReviewTrigger != "step_closeout" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
 	}
-	if result.Artifacts == nil || result.Artifacts.PRURL != "https://github.com/yzhang1918/superharness/pull/13" {
+	if result.Artifacts == nil || result.Artifacts.ReviewRoundID != "review-001-delta" {
 		t.Fatalf("unexpected artifacts: %#v", result.Artifacts)
 	}
 }
 
-func TestStatusArchivedPlanNeedsCIEvidenceBeforeMergeApproval(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "status: active", "status: archived")
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
-		content = stringsReplaceAll(content, "PENDING_UNTIL_ARCHIVE", "Ready.")
-		return content
-	})
-	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
-	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"latest_publish": map[string]any{
-			"attempt_id": "publish-001",
-			"pr_url":     "https://github.com/yzhang1918/superharness/pull/13",
-		},
-		"sync": map[string]any{
-			"freshness": "fresh",
-			"conflicts": false,
-		},
-	})
-
-	result := status.Service{Workdir: root}.Read()
-	if result.State.HandoffState != "waiting_post_archive_ci" {
-		t.Fatalf("expected waiting_post_archive_ci without CI evidence, got %#v", result.State)
-	}
-	if !strings.Contains(result.Summary, "post-archive CI") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
-	}
-}
-
-func TestStatusArchivedPlanReadyForMergeApproval(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "status: active", "status: archived")
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
-		content = stringsReplaceAll(content, "PENDING_UNTIL_ARCHIVE", "Ready.")
-		return content
-	})
-	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
-	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"latest_publish": map[string]any{
-			"attempt_id": "publish-001",
-			"pr_url":     "https://github.com/yzhang1918/superharness/pull/13",
-		},
-		"latest_ci": map[string]any{
-			"snapshot_id": "ci-001",
-			"status":      "success",
-		},
-		"sync": map[string]any{
-			"freshness": "fresh",
-			"conflicts": false,
-		},
-	})
-
-	result := status.Service{Workdir: root}.Read()
-	if result.State.HandoffState != "ready_for_merge_approval" {
-		t.Fatalf("expected ready_for_merge_approval handoff state, got %#v", result.State)
-	}
-	if !strings.Contains(result.Summary, "ready to wait for merge approval") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
-	}
-	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Wait for merge approval") {
-		t.Fatalf("unexpected next actions: %#v", result.NextAction)
-	}
-}
-
-func TestStatusArchivedPlanRequiresSyncEvidenceBeforeMergeApproval(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "status: active", "status: archived")
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
-		content = stringsReplaceAll(content, "PENDING_UNTIL_ARCHIVE", "Ready.")
-		return content
-	})
-	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
-	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"latest_publish": map[string]any{
-			"attempt_id": "publish-001",
-			"pr_url":     "https://github.com/yzhang1918/superharness/pull/13",
-		},
-		"latest_ci": map[string]any{
-			"snapshot_id": "ci-001",
-			"status":      "success",
-		},
-	})
-
-	result := status.Service{Workdir: root}.Read()
-	if result.State.HandoffState != "followup_required" {
-		t.Fatalf("expected followup_required without sync evidence, got %#v", result.State)
-	}
-	if !strings.Contains(result.Summary, "needs follow-up") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
-	}
-}
-
-func TestStatusArchivedPlanRequiresFollowupWhenSyncIsNotClean(t *testing.T) {
-	root := t.TempDir()
-	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "status: active", "status: archived")
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
-		content = stringsReplaceAll(content, "PENDING_UNTIL_ARCHIVE", "Ready.")
-		return content
-	})
-	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
-	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"latest_publish": map[string]any{
-			"attempt_id": "publish-001",
-			"pr_url":     "https://github.com/yzhang1918/superharness/pull/13",
-		},
-		"latest_ci": map[string]any{
-			"snapshot_id": "ci-001",
-			"status":      "success",
-		},
-		"sync": map[string]any{
-			"freshness": "stale",
-			"conflicts": false,
-		},
-	})
-
-	result := status.Service{Workdir: root}.Read()
-	if result.State.HandoffState != "followup_required" {
-		t.Fatalf("expected followup_required handoff state, got %#v", result.State)
-	}
-	if !strings.Contains(result.Summary, "needs follow-up") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
-	}
-	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Refresh remote state") {
-		t.Fatalf("expected remote follow-up guidance, got %#v", result.NextAction)
-	}
-}
-
-func TestStatusSurfacesArchiveBlockersBeforeArchive(t *testing.T) {
+func TestStatusStepReviewMatchesTargetWithoutMarkdownPunctuation(t *testing.T) {
 	root := t.TempDir()
 	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: executing")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
-		content = stringsReplaceAll(content, "## Deferred Items\n\n- None.\n", "## Deferred Items\n\n- Deferred cleanup still needs a durable handoff.\n")
-		content = stringsReplaceAll(content, "## Validation Summary\n\nPENDING_UNTIL_ARCHIVE", "## Validation Summary\n\nValidated the implementation.")
-		content = stringsReplaceAll(content, "## Review Summary\n\nPENDING_UNTIL_ARCHIVE", "## Review Summary\n\nNo blocking review findings remain.")
-		content = stringsReplaceAll(content, "## Archive Summary\n\nPENDING_UNTIL_ARCHIVE", "## Archive Summary\n\n- Ready: Closeout is nearly done.\n- Merge Handoff: Commit and push the archive move before merge approval.")
-		content = stringsReplaceAll(content, "### Delivered\n\nPENDING_UNTIL_ARCHIVE", "### Delivered\n\nDelivered the planned slice.")
-		content = stringsReplaceAll(content, "### Not Delivered\n\nPENDING_UNTIL_ARCHIVE", "### Not Delivered\n\nDeferred cleanup remains.")
-		return content
+		return strings.Replace(content, "### Step 1: Replace with first step title", "### Step 1: Resolve `current_node`", 1)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-001-delta",
+			"kind":       "delta",
+			"trigger":    "step_closeout",
+			"aggregated": false,
+		},
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-001-delta", map[string]any{
+		"target":  "Step 1: Resolve current_node",
+		"trigger": "step_closeout",
 	})
 
 	result := status.Service{Workdir: root}.Read()
-	if !result.OK {
-		t.Fatalf("expected OK status result, got %#v", result)
+	if result.State.CurrentNode != "execution/step-1/review" {
+		t.Fatalf("unexpected node: %#v", result.State)
 	}
-	if result.State.StepState == "ready_for_archive" {
-		t.Fatalf("expected blockers to prevent ready_for_archive, got %#v", result.State)
+	if len(result.Warnings) != 0 {
+		t.Fatalf("expected normalized target match to avoid warnings, got %#v", result.Warnings)
 	}
-	if len(result.Blockers) < 2 {
-		t.Fatalf("expected multiple archive blockers, got %#v", result.Blockers)
+}
+
+func TestStatusFailedStepReviewUsesCachedStepWhenManifestIsMissing(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeFirstStep(content)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"current_node":         "execution/step-1/implement",
+		"active_review_round": map[string]any{
+			"round_id":   "review-001-delta",
+			"kind":       "delta",
+			"trigger":    "step_closeout",
+			"aggregated": true,
+			"decision":   "changes_requested",
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-1/implement" {
+		t.Fatalf("unexpected node: %#v", result.State)
 	}
-	if !hasBlockerPath(result.Blockers, "section.Archive Summary") {
-		t.Fatalf("expected Archive Summary blocker, got %#v", result.Blockers)
+	state, _, err := runstate.LoadState(root, "2026-03-18-status-plan")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
 	}
-	if !hasBlockerPath(result.Blockers, "section.Outcome Summary.Follow-Up Issues") {
-		t.Fatalf("expected follow-up blocker, got %#v", result.Blockers)
+	if state == nil || state.CurrentNode != "execution/step-1/implement" {
+		t.Fatalf("expected cache to stay pinned to the reviewed step, got %#v", state)
 	}
-	if !strings.Contains(result.Summary, "archive blocker") {
-		t.Fatalf("unexpected summary: %q", result.Summary)
+}
+
+func TestStatusMissingReviewTriggerStaysConservativeOnCachedStep(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeFirstStep(content)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"current_node":         "execution/step-1/implement",
+		"active_review_round": map[string]any{
+			"round_id":   "review-001-delta",
+			"kind":       "delta",
+			"aggregated": true,
+			"decision":   "changes_requested",
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-1/implement" {
+		t.Fatalf("expected missing trigger metadata to stay on the cached step, got %#v", result.State)
 	}
-	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Fix the archive blockers") {
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "trigger metadata was missing") {
+		t.Fatalf("expected conservative trigger warning, got %#v", result.Warnings)
+	}
+}
+
+func TestStatusMissingReviewTriggerWithTargetSkipsCacheWrite(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeFirstStep(content)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-001-delta",
+			"kind":       "delta",
+			"aggregated": true,
+			"decision":   "changes_requested",
+		},
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-001-delta", map[string]any{
+		"target": stepOneTitle,
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-1/implement" {
+		t.Fatalf("expected conservative fallback to the reviewed step, got %#v", result.State)
+	}
+	state, _, err := runstate.LoadState(root, "2026-03-18-status-plan")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state == nil || state.CurrentNode != "" {
+		t.Fatalf("expected unsafe fallback to skip current_node cache refresh, got %#v", state)
+	}
+}
+
+func TestStatusStepReviewTargetMismatchSkipsCacheWrite(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeFirstStep(content)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-001-delta",
+			"kind":       "delta",
+			"trigger":    "step_closeout",
+			"aggregated": true,
+			"decision":   "pass",
+		},
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-001-delta", map[string]any{
+		"target":  "Step 99: Unknown reviewed step",
+		"trigger": "step_closeout",
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-1/implement" {
+		t.Fatalf("expected target mismatch to stay conservative on the fallback step, got %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.CurrentStep != stepOneTitle || result.Facts.ReviewStatus != "" || result.Facts.ReviewTrigger != "" {
+		t.Fatalf("expected unsafe fallback to hide structural review facts, got %#v", result.Facts)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "did not match a tracked step title") {
+		t.Fatalf("expected target mismatch warning, got %#v", result.Warnings)
+	}
+	state, _, err := runstate.LoadState(root, "2026-03-18-status-plan")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state == nil || state.CurrentNode != "" {
+		t.Fatalf("expected unsafe fallback to skip current_node cache refresh, got %#v", state)
+	}
+}
+
+func TestStatusUnknownAggregatedReviewDecisionStaysConservative(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return content
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-001-delta",
+			"kind":       "delta",
+			"trigger":    "step_closeout",
+			"aggregated": true,
+		},
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-001-delta", map[string]any{
+		"target":  stepOneTitle,
+		"trigger": "step_closeout",
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-1/implement" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.ReviewStatus != "unknown" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Recover or rerun review-001-delta") {
 		t.Fatalf("unexpected next actions: %#v", result.NextAction)
 	}
 }
 
-func TestStatusReportsIdleAfterLandMarker(t *testing.T) {
+func TestStatusFailedStepReviewPinsReviewedStep(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeFirstStep(content)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-002-delta",
+			"kind":       "delta",
+			"trigger":    "step_closeout",
+			"aggregated": true,
+			"decision":   "changes_requested",
+		},
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-002-delta", map[string]any{
+		"target":  stepOneTitle,
+		"trigger": "step_closeout",
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-1/implement" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.CurrentStep != stepOneTitle || result.Facts.ReviewStatus != "changes_requested" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+	if len(result.NextAction) < 2 || result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness review start --spec <path>" {
+		t.Fatalf("unexpected next actions: %#v", result.NextAction)
+	}
+}
+
+func TestStatusAdvancesToNextStepAfterCleanStepReview(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeFirstStep(content)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-003-delta",
+			"kind":       "delta",
+			"trigger":    "step_closeout",
+			"aggregated": true,
+			"decision":   "pass",
+		},
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-003-delta", map[string]any{
+		"target":  stepOneTitle,
+		"trigger": "step_closeout",
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-2/implement" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.CurrentStep != stepTwoTitle {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+}
+
+func TestStatusFinalizeReviewNode(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, false)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/review" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if len(result.NextAction) == 0 || result.NextAction[0].Command == nil || *result.NextAction[0].Command != "harness review start --spec <path>" {
+		t.Fatalf("unexpected next actions: %#v", result.NextAction)
+	}
+}
+
+func TestStatusFinalizeReviewInFlightIncludesReviewFacts(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-004-full",
+			"kind":       "full",
+			"trigger":    "pre_archive",
+			"aggregated": false,
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/review" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.ReviewTrigger != "pre_archive" || result.Facts.ReviewStatus != "in_progress" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+}
+
+func TestStatusFinalizeFixNodeAfterFailedFinalizeReview(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-004-full",
+			"kind":       "full",
+			"trigger":    "pre_archive",
+			"aggregated": true,
+			"decision":   "changes_requested",
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/fix" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.ReviewStatus != "changes_requested" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+}
+
+func TestStatusFinalizeArchiveNodeAfterCleanFinalizeReview(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"active_review_round": map[string]any{
+			"round_id":   "review-005-full",
+			"kind":       "full",
+			"trigger":    "pre_archive",
+			"aggregated": true,
+			"decision":   "pass",
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/archive" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if len(result.Blockers) != 0 {
+		t.Fatalf("expected no archive blockers, got %#v", result.Blockers)
+	}
+	if len(result.NextAction) < 2 || result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness archive" {
+		t.Fatalf("unexpected next actions: %#v", result.NextAction)
+	}
+}
+
+func TestStatusArchivedPlanNeedsPublishEvidence(t *testing.T) {
 	root := t.TempDir()
 	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
-		content = replaceOnce(t, content, "status: active", "status: archived")
-		content = replaceOnce(t, content, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval")
-		content = stringsReplaceAll(content, "- Status: pending", "- Status: completed")
-		content = stringsReplaceAll(content, "- [ ]", "- [x]")
-		content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
-		content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
-		content = stringsReplaceAll(content, "PENDING_UNTIL_ARCHIVE", "Ready.")
-		return content
+		return completeAllSteps(content, true)
 	})
+	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/publish" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if len(result.NextAction) < 2 || result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness evidence submit --kind publish --input <json>" {
+		t.Fatalf("unexpected next actions: %#v", result.NextAction)
+	}
+}
+
+func TestStatusArchivedPlanReadyForAwaitMerge(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
+
+	svc := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
+		},
+	}
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/superharness/pull/13"}`)); !result.OK {
+		t.Fatalf("publish evidence: %#v", result)
+	}
+	if result := svc.Submit("ci", []byte(`{"status":"not_applied","reason":"repository has no hosted CI in this test"}`)); !result.OK {
+		t.Fatalf("ci evidence: %#v", result)
+	}
+	if result := svc.Submit("sync", []byte(`{"status":"fresh","base_ref":"main","head_ref":"codex/test"}`)); !result.OK {
+		t.Fatalf("sync evidence: %#v", result)
+	}
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/await_merge" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.PRURL != "https://github.com/yzhang1918/superharness/pull/13" || result.Facts.CIStatus != "not_applied" || result.Facts.SyncStatus != "fresh" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+	if result.Artifacts == nil || result.Artifacts.PublishRecordID == "" || result.Artifacts.CIRecordID == "" || result.Artifacts.SyncRecordID == "" {
+		t.Fatalf("unexpected artifacts: %#v", result.Artifacts)
+	}
+}
+
+func TestStatusArchivedPlanReadyForAwaitMergeFromLegacyEvidenceCache(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"latest_publish": map[string]any{
+			"attempt_id": "publish-legacy-001",
+			"pr_url":     "https://github.com/yzhang1918/superharness/pull/13",
+		},
+		"latest_ci": map[string]any{
+			"snapshot_id": "ci-legacy-001",
+			"status":      "success",
+		},
+		"sync": map[string]any{
+			"freshness": "fresh",
+			"conflicts": false,
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/await_merge" {
+		t.Fatalf("expected legacy evidence fallback to reach await_merge, got %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.PRURL != "https://github.com/yzhang1918/superharness/pull/13" || result.Facts.CIStatus != "success" || result.Facts.SyncStatus != "fresh" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+	if result.Artifacts == nil || result.Artifacts.PublishRecordID != "publish-legacy-001" || result.Artifacts.CIRecordID != "ci-legacy-001" {
+		t.Fatalf("unexpected artifacts: %#v", result.Artifacts)
+	}
+}
+
+func TestStatusArchivedPlanReadyForAwaitMergeWithSyncNotApplied(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
+
+	svc := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
+		},
+	}
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/superharness/pull/13"}`)); !result.OK {
+		t.Fatalf("publish evidence: %#v", result)
+	}
+	if result := svc.Submit("ci", []byte(`{"status":"success","provider":"github-actions"}`)); !result.OK {
+		t.Fatalf("ci evidence: %#v", result)
+	}
+	if result := svc.Submit("sync", []byte(`{"status":"not_applied","reason":"repository has no meaningful merge-base freshness signal in this test"}`)); !result.OK {
+		t.Fatalf("sync evidence: %#v", result)
+	}
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/await_merge" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.CIStatus != "success" || result.Facts.SyncStatus != "not_applied" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+}
+
+func TestStatusArchivedPlanReadyForAwaitMergeWhenCIAndSyncAreBothNotApplied(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
+
+	svc := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
+		},
+	}
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/superharness/pull/13"}`)); !result.OK {
+		t.Fatalf("publish evidence: %#v", result)
+	}
+	if result := svc.Submit("ci", []byte(`{"status":"not_applied","reason":"repository has no hosted CI in this test"}`)); !result.OK {
+		t.Fatalf("ci evidence: %#v", result)
+	}
+	if result := svc.Submit("sync", []byte(`{"status":"not_applied","reason":"repository has no meaningful merge-base freshness signal in this test"}`)); !result.OK {
+		t.Fatalf("sync evidence: %#v", result)
+	}
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/await_merge" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.CIStatus != "not_applied" || result.Facts.SyncStatus != "not_applied" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+}
+
+func TestStatusArchivedPlanStaysInPublishFromLegacyEvidenceCacheWhenDirty(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"latest_publish": map[string]any{
+			"attempt_id": "publish-legacy-001",
+			"pr_url":     "https://github.com/yzhang1918/superharness/pull/13",
+		},
+		"latest_ci": map[string]any{
+			"snapshot_id": "ci-legacy-001",
+			"status":      "failed",
+		},
+		"sync": map[string]any{
+			"freshness": "fresh",
+			"conflicts": false,
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/publish" {
+		t.Fatalf("expected dirty legacy evidence fallback to stay in publish, got %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.CIStatus != "failed" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Fix the CI failures") {
+		t.Fatalf("unexpected next actions: %#v", result.NextAction)
+	}
+}
+
+func TestStatusArchivedPlanStaysInPublishWhenEvidenceIsDirty(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
+
+	svc := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
+		},
+	}
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/superharness/pull/13"}`)); !result.OK {
+		t.Fatalf("publish evidence: %#v", result)
+	}
+	if result := svc.Submit("ci", []byte(`{"status":"pending","provider":"github-actions"}`)); !result.OK {
+		t.Fatalf("ci evidence: %#v", result)
+	}
+	if result := svc.Submit("sync", []byte(`{"status":"fresh","base_ref":"main","head_ref":"codex/test"}`)); !result.OK {
+		t.Fatalf("sync evidence: %#v", result)
+	}
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/publish" {
+		t.Fatalf("expected dirty evidence to stay in publish, got %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.CIStatus != "pending" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Wait for the relevant post-archive CI") {
+		t.Fatalf("unexpected next actions: %#v", result.NextAction)
+	}
+}
+
+func TestStatusArchivedPlanStaysInPublishWhenSyncIsDirty(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
+
+	svc := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
+		},
+	}
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/superharness/pull/13"}`)); !result.OK {
+		t.Fatalf("publish evidence: %#v", result)
+	}
+	if result := svc.Submit("ci", []byte(`{"status":"success","provider":"github-actions"}`)); !result.OK {
+		t.Fatalf("ci evidence: %#v", result)
+	}
+	if result := svc.Submit("sync", []byte(`{"status":"conflicted","base_ref":"main","head_ref":"codex/test"}`)); !result.OK {
+		t.Fatalf("sync evidence: %#v", result)
+	}
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/publish" {
+		t.Fatalf("expected dirty sync evidence to stay in publish, got %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.SyncStatus != "conflicted" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Resolve merge conflicts") {
+		t.Fatalf("unexpected next actions: %#v", result.NextAction)
+	}
+}
+
+func TestStatusLandNode(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"current_node": "land",
+		"land": map[string]any{
+			"pr_url":    "https://github.com/yzhang1918/superharness/pull/99",
+			"commit":    "abc123",
+			"landed_at": "2026-03-18T12:00:00Z",
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "land" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.LandPRURL == "" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+	if len(result.NextAction) < 2 || result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness land complete" {
+		t.Fatalf("unexpected next actions: %#v", result.NextAction)
+	}
+}
+
+func TestStatusIdleNodeAfterLand(t *testing.T) {
+	root := t.TempDir()
 	writeCurrentPlanPayload(t, root, map[string]any{
 		"last_landed_plan_path": "docs/plans/archived/2026-03-18-status-plan.md",
 		"last_landed_at":        "2026-03-19T12:00:00Z",
@@ -580,19 +765,86 @@ func TestStatusReportsIdleAfterLandMarker(t *testing.T) {
 
 	result := status.Service{Workdir: root}.Read()
 	if !result.OK {
-		t.Fatalf("expected OK idle-after-land result, got %#v", result)
+		t.Fatalf("expected idle result, got %#v", result)
 	}
-	if result.State.WorktreeState != "idle_after_land" {
-		t.Fatalf("unexpected worktree state: %#v", result.State)
-	}
-	if result.State.PlanStatus != "" || result.State.Lifecycle != "" {
-		t.Fatalf("expected no active current plan state, got %#v", result.State)
+	if result.State.CurrentNode != "idle" {
+		t.Fatalf("unexpected node: %#v", result.State)
 	}
 	if result.Artifacts == nil || result.Artifacts.LastLandedPlanPath != "docs/plans/archived/2026-03-18-status-plan.md" {
 		t.Fatalf("unexpected artifacts: %#v", result.Artifacts)
 	}
-	if !strings.Contains(result.Summary, "most recent landed candidate") {
+}
+
+func TestStatusReopenedFinalizeFixNeedsReview(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"reopen": map[string]any{
+			"mode":            "finalize-fix",
+			"reopened_at":     "2026-03-18T11:00:00+08:00",
+			"base_step_count": 2,
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/fix" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.ReopenMode != "finalize-fix" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
+	}
+}
+
+func TestStatusReopenedNewStepPendingPromptsForNewStep(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"reopen": map[string]any{
+			"mode":            "new-step",
+			"reopened_at":     "2026-03-18T11:00:00+08:00",
+			"base_step_count": 2,
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/fix" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if !strings.Contains(result.Summary, "needs a new unfinished step") {
 		t.Fatalf("unexpected summary: %q", result.Summary)
+	}
+	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Add a new unfinished step") {
+		t.Fatalf("unexpected next actions: %#v", result.NextAction)
+	}
+}
+
+func TestStatusReopenedNewStepContinuesOnceStepExists(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		content = completeAllSteps(content, true)
+		return appendThirdStep(content)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"reopen": map[string]any{
+			"mode":            "new-step",
+			"reopened_at":     "2026-03-18T11:00:00+08:00",
+			"base_step_count": 2,
+		},
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-3/implement" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.CurrentStep != "Step 3: Follow-up reopened work" {
+		t.Fatalf("unexpected facts: %#v", result.Facts)
 	}
 }
 
@@ -652,43 +904,80 @@ func writeState(t *testing.T, root, planStem string, payload map[string]any) {
 	}
 }
 
-func writeAggregate(t *testing.T, root, planStem, roundID string, payload map[string]any) {
+func writeReviewManifest(t *testing.T, root, planStem, roundID string, payload map[string]any) {
 	t.Helper()
 	dir := filepath.Join(root, ".local", "harness", "plans", planStem, "reviews", roundID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir aggregate dir: %v", err)
+		t.Fatalf("mkdir manifest dir: %v", err)
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		t.Fatalf("marshal aggregate: %v", err)
+		t.Fatalf("marshal manifest: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "aggregate.json"), data, 0o644); err != nil {
-		t.Fatalf("write aggregate: %v", err)
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
 	}
 }
 
-func replaceOnce(t *testing.T, content, old, new string) string {
-	t.Helper()
-	updated := stringsReplaceOnce(content, old, new)
-	if updated == content {
-		t.Fatalf("expected replacement %q -> %q", old, new)
-	}
-	return updated
+func completeFirstStep(content string) string {
+	content = replaceOnce(content, "- Done: [ ]", "- Done: [x]")
+	content = replaceOnce(content, "PENDING_STEP_EXECUTION", "Done.")
+	content = replaceOnce(content, "PENDING_STEP_REVIEW", "Reviewed.")
+	return content
 }
 
-func stringsReplaceOnce(content, old, new string) string {
+func completeAllSteps(content string, archiveReady bool) string {
+	content = stringsReplaceAll(content, "- Done: [ ]", "- Done: [x]")
+	content = stringsReplaceAll(content, "- [ ]", "- [x]")
+	content = stringsReplaceAll(content, "PENDING_STEP_EXECUTION", "Done.")
+	content = stringsReplaceAll(content, "PENDING_STEP_REVIEW", "Reviewed.")
+	if archiveReady {
+		content = stringsReplaceAll(content, "## Validation Summary\n\nPENDING_UNTIL_ARCHIVE", "## Validation Summary\n\nValidated the implementation.")
+		content = stringsReplaceAll(content, "## Review Summary\n\nPENDING_UNTIL_ARCHIVE", "## Review Summary\n\nNo blocking review findings remain.")
+		content = stringsReplaceAll(content, "## Archive Summary\n\nPENDING_UNTIL_ARCHIVE", "## Archive Summary\n\n- PR: NONE\n- Ready: The candidate is ready for archive.\n- Merge Handoff: Commit and push the archive move before merge approval.")
+		content = stringsReplaceAll(content, "### Delivered\n\nPENDING_UNTIL_ARCHIVE", "### Delivered\n\nDelivered the planned slice.")
+		content = stringsReplaceAll(content, "### Not Delivered\n\nPENDING_UNTIL_ARCHIVE", "### Not Delivered\n\nNONE.")
+	}
+	return content
+}
+
+func appendThirdStep(content string) string {
+	insert := `### Step 3: Follow-up reopened work
+
+- Done: [ ]
+
+#### Objective
+
+Carry the reopened follow-up work as a proper third step.
+
+#### Details
+
+NONE
+
+#### Expected Files
+
+- ` + "`path/to/file`" + `
+
+#### Validation
+
+- Verify the reopened scope is complete.
+
+#### Execution Notes
+
+PENDING_STEP_EXECUTION
+
+#### Review Notes
+
+PENDING_STEP_REVIEW
+
+## Validation Strategy`
+	return strings.Replace(content, "## Validation Strategy", insert, 1)
+}
+
+func replaceOnce(content, old, new string) string {
 	return strings.Replace(content, old, new, 1)
 }
 
 func stringsReplaceAll(content, old, new string) string {
 	return strings.ReplaceAll(content, old, new)
-}
-
-func hasBlockerPath(blockers []status.StatusError, path string) bool {
-	for _, blocker := range blockers {
-		if blocker.Path == path {
-			return true
-		}
-	}
-	return false
 }

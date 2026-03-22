@@ -47,7 +47,8 @@ Use this skill to create or update the tracked plan that will drive execution.
 The plan is ready when:
 
 - lint passes
-- lifecycle is `awaiting_plan_approval`
+- the resulting tracked plan would resolve to `plan` until
+  `harness execute start` is recorded
 - the human can approve or challenge it without hidden context
 - a future agent could continue the work from the plan alone
 

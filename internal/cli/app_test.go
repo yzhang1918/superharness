@@ -3,12 +3,15 @@ package cli_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/yzhang1918/superharness/internal/cli"
+	"github.com/yzhang1918/superharness/internal/evidence"
 	"github.com/yzhang1918/superharness/internal/plan"
 	"github.com/yzhang1918/superharness/internal/runstate"
 	"github.com/yzhang1918/superharness/internal/status"
@@ -141,7 +144,43 @@ func TestStatusCommandReturnsJSON(t *testing.T) {
 	}
 }
 
-func TestLandRecordCommandReturnsJSON(t *testing.T) {
+func TestExecuteStartCommandReturnsJSON(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 15, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+
+	outputPath := filepath.Join(root, "docs/plans/active/2026-03-18-test-plan.md")
+	if exitCode := app.Run([]string{
+		"plan", "template",
+		"--title", "CLI Generated Plan",
+		"--output", outputPath,
+	}); exitCode != 0 {
+		t.Fatalf("template command failed with %d: %s", exitCode, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+
+	exitCode := app.Run([]string{"execute", "start"})
+	if exitCode != 0 {
+		t.Fatalf("execute start command failed with %d: %s", exitCode, stderr.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON execute-start output: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "execute start" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+}
+
+func TestEvidenceSubmitCommandReturnsJSON(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
 	app := cli.New(stdout, stderr)
@@ -156,21 +195,369 @@ func TestLandRecordCommandReturnsJSON(t *testing.T) {
 		t.Fatalf("save current plan: %v", err)
 	}
 
-	exitCode := app.Run([]string{"land", "record"})
+	app.Stdin = bytes.NewBufferString(`{"status":"success","provider":"github-actions"}`)
+	exitCode := app.Run([]string{"evidence", "submit", "--kind", "ci"})
 	if exitCode != 0 {
-		t.Fatalf("land record command failed with %d: %s", exitCode, stderr.String())
+		t.Fatalf("evidence submit command failed with %d: %s", exitCode, stderr.String())
 	}
 
 	var payload map[string]any
 	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
-		t.Fatalf("expected JSON land record output: %v\n%s", err, stdout.String())
+		t.Fatalf("expected JSON evidence submit output: %v\n%s", err, stdout.String())
 	}
-	if payload["command"] != "land record" {
+	if payload["command"] != "evidence submit" {
 		t.Fatalf("unexpected payload: %#v", payload)
 	}
 }
 
-func TestLandRecordCommandRejectsActivePlanWithoutWritingLandedMarker(t *testing.T) {
+func TestLandCommandReturnsJSON(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
+	}
+
+	writeArchivedPlanForCLI(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	seedMergeReadyEvidenceForCLI(t, root)
+
+	stdout.Reset()
+	stderr.Reset()
+
+	exitCode := app.Run([]string{"land", "--pr", "https://github.com/yzhang1918/superharness/pull/99"})
+	if exitCode != 0 {
+		t.Fatalf("land command failed with %d: %s", exitCode, stderr.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON land output: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "land" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+}
+
+func TestReopenNewStepCommandReturnsJSON(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 7, 0, 0, 0, time.UTC)
+	}
+
+	writeArchivedPlanForCLI(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	exitCode := app.Run([]string{"reopen", "--mode", "new-step"})
+	if exitCode != 0 {
+		t.Fatalf("reopen command failed with %d: %s", exitCode, stderr.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON reopen output: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "reopen" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-landed-plan")
+	if err != nil {
+		t.Fatalf("load reopened state: %v", err)
+	}
+	if state == nil || state.Reopen == nil || state.Reopen.Mode != "new-step" {
+		t.Fatalf("expected reopen mode to persist, got %#v", state)
+	}
+	current, err := runstate.LoadCurrentPlan(root)
+	if err != nil {
+		t.Fatalf("load current plan: %v", err)
+	}
+	if current == nil || current.PlanPath != "docs/plans/active/2026-03-18-landed-plan.md" {
+		t.Fatalf("expected reopened current-plan pointer to move back to active path, got %#v", current)
+	}
+
+	statusResult := status.Service{Workdir: root}.Read()
+	if !statusResult.OK {
+		t.Fatalf("expected status after reopen, got %#v", statusResult)
+	}
+	if statusResult.State.CurrentNode != "execution/finalize/fix" {
+		t.Fatalf("unexpected node after reopen: %#v", statusResult.State)
+	}
+	if !strings.Contains(statusResult.Summary, "needs a new unfinished step") {
+		t.Fatalf("unexpected reopen summary: %q", statusResult.Summary)
+	}
+	if len(statusResult.NextAction) == 0 || !strings.Contains(statusResult.NextAction[0].Description, "Add a new unfinished step") {
+		t.Fatalf("expected new-step guidance after reopen, got %#v", statusResult.NextAction)
+	}
+}
+
+func TestReopenFinalizeFixCommandReturnsJSON(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 7, 15, 0, 0, time.UTC)
+	}
+
+	writeArchivedPlanForCLI(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	exitCode := app.Run([]string{"reopen", "--mode", "finalize-fix"})
+	if exitCode != 0 {
+		t.Fatalf("reopen command failed with %d: %s", exitCode, stderr.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON reopen output: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "reopen" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-landed-plan")
+	if err != nil {
+		t.Fatalf("load reopened state: %v", err)
+	}
+	if state == nil || state.Reopen == nil || state.Reopen.Mode != "finalize-fix" {
+		t.Fatalf("expected finalize-fix reopen mode to persist, got %#v", state)
+	}
+
+	statusResult := status.Service{Workdir: root}.Read()
+	if !statusResult.OK {
+		t.Fatalf("expected status after reopen, got %#v", statusResult)
+	}
+	if statusResult.State.CurrentNode != "execution/finalize/fix" {
+		t.Fatalf("unexpected node after reopen: %#v", statusResult.State)
+	}
+	if !strings.Contains(statusResult.Summary, "needs follow-up fixes") {
+		t.Fatalf("unexpected reopen summary: %q", statusResult.Summary)
+	}
+	if len(statusResult.NextAction) == 0 || !strings.Contains(statusResult.NextAction[0].Description, "review-023-full") && !strings.Contains(strings.ToLower(statusResult.NextAction[0].Description), "review") {
+		t.Fatalf("expected finalize-fix guidance after reopen, got %#v", statusResult.NextAction)
+	}
+}
+
+func TestReopenCommandRequiresMode(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+
+	exitCode := app.Run([]string{"reopen"})
+	if exitCode != 2 {
+		t.Fatalf("expected missing-mode exit code 2, got %d", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout for usage error, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Usage: harness reopen --mode <finalize-fix|new-step>") {
+		t.Fatalf("expected reopen usage text, got %q", stderr.String())
+	}
+}
+
+func TestReopenCommandRejectsInvalidMode(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 7, 30, 0, 0, time.UTC)
+	}
+
+	writeArchivedPlanForCLI(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	exitCode := app.Run([]string{"reopen", "--mode", "bogus"})
+	if exitCode != 1 {
+		t.Fatalf("expected invalid-mode exit code 1, got %d", exitCode)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON reopen output: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "reopen" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	if ok, _ := payload["ok"].(bool); ok {
+		t.Fatalf("expected invalid reopen mode to fail, got %#v", payload)
+	}
+}
+
+func TestReopenCommandRejectsMalformedModeFlag(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+
+	exitCode := app.Run([]string{"reopen", "--mode"})
+	if exitCode != 2 {
+		t.Fatalf("expected malformed-mode exit code 2, got %d", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout for parse error, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "flag needs an argument: -mode") {
+		t.Fatalf("expected parse error for missing mode value, got %q", stderr.String())
+	}
+}
+
+func TestReopenHelpExitsZero(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+
+	exitCode := app.Run([]string{"reopen", "--help"})
+	if exitCode != 0 {
+		t.Fatalf("expected reopen help exit code 0, got %d", exitCode)
+	}
+	if !strings.Contains(stderr.String(), "Usage: harness reopen --mode <finalize-fix|new-step>") {
+		t.Fatalf("expected reopen help text, got %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout for help, got %q", stdout.String())
+	}
+}
+
+func TestReopenCommandRejectsExtraPositionalArgs(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+
+	exitCode := app.Run([]string{"reopen", "--mode", "finalize-fix", "extra"})
+	if exitCode != 2 {
+		t.Fatalf("expected extra-args exit code 2, got %d", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout for usage error, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Usage: harness reopen --mode <finalize-fix|new-step>") {
+		t.Fatalf("expected reopen usage text, got %q", stderr.String())
+	}
+}
+
+func TestReopenCommandReportsGetwdFailure(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	app.Getwd = func() (string, error) {
+		return "", errors.New("boom")
+	}
+
+	exitCode := app.Run([]string{"reopen", "--mode", "finalize-fix"})
+	if exitCode != 1 {
+		t.Fatalf("expected getwd failure exit code 1, got %d", exitCode)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on getwd failure, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "resolve working directory: boom") {
+		t.Fatalf("expected getwd failure in stderr, got %q", stderr.String())
+	}
+}
+
+func TestReopenCommandRejectsLandCleanupInProgress(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 7, 45, 0, 0, time.UTC)
+	}
+
+	writeArchivedPlanForCLI(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	seedMergeReadyEvidenceForCLI(t, root)
+	if exitCode := app.Run([]string{"land", "--pr", "https://github.com/yzhang1918/superharness/pull/99"}); exitCode != 0 {
+		t.Fatalf("land command failed with %d: %s", exitCode, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+
+	exitCode := app.Run([]string{"reopen", "--mode", "finalize-fix"})
+	if exitCode != 1 {
+		t.Fatalf("expected reopen failure during land cleanup, got %d", exitCode)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON reopen output: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "reopen" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	if ok, _ := payload["ok"].(bool); ok {
+		t.Fatalf("expected reopen failure during land cleanup, got %#v", payload)
+	}
+
+	statusResult := status.Service{Workdir: root}.Read()
+	if !statusResult.OK || statusResult.State.CurrentNode != "land" {
+		t.Fatalf("expected land status to remain after failed reopen, got %#v", statusResult)
+	}
+}
+
+func TestLandCompleteCommandReturnsJSON(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
+	}
+
+	writeArchivedPlanForCLI(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	seedMergeReadyEvidenceForCLI(t, root)
+	if exitCode := app.Run([]string{"land", "--pr", "https://github.com/yzhang1918/superharness/pull/99"}); exitCode != 0 {
+		t.Fatalf("land command failed with %d: %s", exitCode, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+
+	exitCode := app.Run([]string{"land", "complete"})
+	if exitCode != 0 {
+		t.Fatalf("land complete command failed with %d: %s", exitCode, stderr.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON land complete output: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "land complete" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+
+	statusResult := status.Service{Workdir: root}.Read()
+	if !statusResult.OK || statusResult.State.CurrentNode != "idle" {
+		t.Fatalf("expected idle status after land complete, got %#v", statusResult)
+	}
+}
+
+func TestLandCommandRejectsActivePlanWithoutWritingLandedMarker(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
 	app := cli.New(stdout, stderr)
@@ -195,16 +582,16 @@ func TestLandRecordCommandRejectsActivePlanWithoutWritingLandedMarker(t *testing
 	stdout.Reset()
 	stderr.Reset()
 
-	exitCode := app.Run([]string{"land", "record"})
+	exitCode := app.Run([]string{"land", "--pr", "https://github.com/yzhang1918/superharness/pull/99"})
 	if exitCode != 1 {
-		t.Fatalf("expected land record failure exit code, got %d", exitCode)
+		t.Fatalf("expected land failure exit code, got %d", exitCode)
 	}
 
 	var payload map[string]any
 	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
-		t.Fatalf("expected JSON land record output: %v\n%s", err, stdout.String())
+		t.Fatalf("expected JSON land output: %v\n%s", err, stdout.String())
 	}
-	if payload["command"] != "land record" {
+	if payload["command"] != "land" {
 		t.Fatalf("unexpected payload: %#v", payload)
 	}
 	if ok, _ := payload["ok"].(bool); ok {
@@ -224,10 +611,29 @@ func TestLandRecordCommandRejectsActivePlanWithoutWritingLandedMarker(t *testing
 
 	statusResult := status.Service{Workdir: root}.Read()
 	if !statusResult.OK {
-		t.Fatalf("expected active-plan status after failed land record, got %#v", statusResult)
+		t.Fatalf("expected active-plan status after failed land, got %#v", statusResult)
 	}
-	if statusResult.State.WorktreeState == "idle_after_land" {
-		t.Fatalf("failed land record should not switch status to idle_after_land: %#v", statusResult)
+	if statusResult.State.CurrentNode == "idle" {
+		t.Fatalf("failed land should not switch status to idle: %#v", statusResult)
+	}
+}
+
+func seedMergeReadyEvidenceForCLI(t *testing.T, root string) {
+	t.Helper()
+	svc := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 5, 55, 0, 0, time.UTC)
+		},
+	}
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/superharness/pull/99"}`)); !result.OK {
+		t.Fatalf("seed publish evidence: %#v", result)
+	}
+	if result := svc.Submit("ci", []byte(`{"status":"success","provider":"github-actions"}`)); !result.OK {
+		t.Fatalf("seed ci evidence: %#v", result)
+	}
+	if result := svc.Submit("sync", []byte(`{"status":"fresh","base_ref":"main","head_ref":"codex/test"}`)); !result.OK {
+		t.Fatalf("seed sync evidence: %#v", result)
 	}
 }
 
@@ -245,6 +651,7 @@ func writeArchivedPlanForCLI(t *testing.T, root, relPath string) string {
 	content = bytes.NewBufferString(content).String()
 	content = replaceCLI(content, "status: active", "status: archived")
 	content = replaceCLI(content, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval")
+	content = replaceCLIAll(content, "- Done: [ ]", "- Done: [x]")
 	content = replaceCLIAll(content, "- Status: pending", "- Status: completed")
 	content = replaceCLIAll(content, "- [ ]", "- [x]")
 	content = replaceCLIAll(content, "PENDING_STEP_EXECUTION", "Done.")

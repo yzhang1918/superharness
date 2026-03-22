@@ -8,7 +8,9 @@ Archive is a freeze-and-summarize step, not just a file move.
    - If `status` returns `blockers`, fix those first instead of learning them
      from a failing `harness archive`.
 2. Make sure acceptance criteria are checked and steps are completed.
-3. Read the latest review, CI, sync, and publish artifacts under `.local`.
+3. Read the latest finalize review artifacts under `.local` and confirm the
+   branch really is in `execution/finalize/archive` rather than still needing
+   review or repair.
 4. Update the tracked plan's durable summaries from those artifacts:
    - `Validation Summary`
    - `Review Summary`
@@ -37,13 +39,14 @@ Archive changes tracked files, so it still needs the normal git flow:
 2. Push the branch.
 3. Open or update the PR.
 4. Run `harness status` again to confirm the archived candidate now reports the
-   expected `handoff_state` for this worktree.
-5. Let CI re-run if the repository requires it.
+   expected `execution/finalize/publish` or
+   `execution/finalize/await_merge` node for this worktree.
+5. Record publish, CI, and sync facts through `harness evidence submit`.
 6. Wait for human merge approval or switch to `harness-land` only when asked
-   once status says the archived candidate is truly ready.
+   once status reaches `execution/finalize/await_merge`.
 
 If new feedback or remote changes invalidate the archived candidate, use:
 
 ```bash
-harness reopen
+harness reopen --mode <finalize-fix|new-step>
 ```

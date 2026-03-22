@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yzhang1918/superharness/internal/evidence"
 	"github.com/yzhang1918/superharness/internal/lifecycle"
 	"github.com/yzhang1918/superharness/internal/plan"
 	"github.com/yzhang1918/superharness/internal/runstate"
@@ -19,11 +20,13 @@ func TestArchiveMovesPlanAndUpdatesPointers(t *testing.T) {
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	activePath := writeActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath: activeRelPath,
-		PlanStem: "2026-03-18-archive-smoke",
+		PlanPath:           activeRelPath,
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
 			Kind:       "full",
+			Trigger:    "pre_archive",
 			Aggregated: true,
 			Decision:   "pass",
 		},
@@ -68,6 +71,150 @@ func TestArchiveMovesPlanAndUpdatesPointers(t *testing.T) {
 	}
 }
 
+func TestExecuteStartPersistsMilestoneAndPointer(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-execute-start-smoke.md"
+	writeFile(t, filepath.Join(root, activeRelPath), buildAwaitingPlan(t, "Execute Start Smoke"))
+
+	result := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}.ExecuteStart()
+	if !result.OK {
+		t.Fatalf("expected execute start success, got %#v", result)
+	}
+
+	current, err := runstate.LoadCurrentPlan(root)
+	if err != nil {
+		t.Fatalf("load current plan: %v", err)
+	}
+	if current == nil || current.PlanPath != activeRelPath {
+		t.Fatalf("unexpected current plan pointer: %#v", current)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-execute-start-smoke")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state == nil || state.ExecutionStartedAt != "2026-03-18T01:00:00Z" {
+		t.Fatalf("expected execution-start milestone, got %#v", state)
+	}
+	if state.PlanPath != activeRelPath {
+		t.Fatalf("unexpected plan path in state: %#v", state)
+	}
+}
+
+func TestExecuteStartBackfillsLegacyExecutingPlan(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-execute-start-legacy.md"
+	writeFile(t, filepath.Join(root, activeRelPath), buildAwaitingPlan(t, "Legacy Execute Start"))
+	if _, err := runstate.SaveState(root, "2026-03-18-execute-start-legacy", &runstate.State{
+		PlanPath:    activeRelPath,
+		PlanStem:    "2026-03-18-execute-start-legacy",
+		Revision:    2,
+		CurrentNode: "execution/step-1/implement",
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-legacy-delta",
+			Kind:       "delta",
+			Aggregated: false,
+		},
+	}); err != nil {
+		t.Fatalf("save legacy state: %v", err)
+	}
+	seeded, _, err := runstate.LoadState(root, "2026-03-18-execute-start-legacy")
+	if err != nil {
+		t.Fatalf("load seeded state: %v", err)
+	}
+	if seeded == nil || seeded.ExecutionStartedAt != "" {
+		t.Fatalf("expected legacy state to start without execution_started_at, got %#v", seeded)
+	}
+
+	result := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 5, 0, 0, time.UTC)
+		},
+	}.ExecuteStart()
+	if !result.OK {
+		t.Fatalf("expected execute start success, got %#v", result)
+	}
+	if !strings.Contains(result.Summary, "Execution started") {
+		t.Fatalf("unexpected summary: %#v", result)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-execute-start-legacy")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state == nil || state.ExecutionStartedAt != "2026-03-18T01:05:00Z" {
+		t.Fatalf("expected backfilled execution-start milestone, got %#v", state)
+	}
+	if state.ActiveReviewRound == nil || state.ActiveReviewRound.RoundID != "review-legacy-delta" {
+		t.Fatalf("expected legacy executing state to remain otherwise intact, got %#v", state)
+	}
+}
+
+func TestExecuteStartIsIdempotent(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-execute-start-idempotent.md"
+	writeFile(t, filepath.Join(root, activeRelPath), buildAwaitingPlan(t, "Execute Start Idempotent"))
+
+	svc := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 10, 0, 0, time.UTC)
+		},
+	}
+	first := svc.ExecuteStart()
+	if !first.OK {
+		t.Fatalf("expected first execute start success, got %#v", first)
+	}
+
+	svc.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 1, 20, 0, 0, time.UTC)
+	}
+	second := svc.ExecuteStart()
+	if !second.OK {
+		t.Fatalf("expected second execute start success, got %#v", second)
+	}
+	if !strings.Contains(second.Summary, "already started") {
+		t.Fatalf("unexpected second summary: %#v", second)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-execute-start-idempotent")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state == nil || state.ExecutionStartedAt != "2026-03-18T01:10:00Z" {
+		t.Fatalf("expected original execution-start timestamp to remain, got %#v", state)
+	}
+}
+
+func TestExecuteStartRollsBackWhenCurrentPlanWriteFails(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-execute-start-rollback.md"
+	writeFile(t, filepath.Join(root, activeRelPath), buildAwaitingPlan(t, "Execute Start Rollback"))
+	currentPlanAsDir := filepath.Join(root, ".local", "harness", "current-plan.json")
+	if err := os.MkdirAll(currentPlanAsDir, 0o755); err != nil {
+		t.Fatalf("mkdir current-plan dir: %v", err)
+	}
+
+	result := lifecycle.Service{Workdir: root}.ExecuteStart()
+	if result.OK {
+		t.Fatalf("expected execute start failure, got %#v", result)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-execute-start-rollback")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state != nil {
+		t.Fatalf("expected state rollback after pointer write failure, got %#v", state)
+	}
+}
+
 func TestArchiveRejectsMissingArchiveSummaryFields(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "docs/plans/active/2026-03-18-archive-smoke.md")
@@ -75,11 +222,13 @@ func TestArchiveRejectsMissingArchiveSummaryFields(t *testing.T) {
 	content = strings.Replace(content, "- PR: NONE\n", "", 1)
 	writeFile(t, path, content)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath: "docs/plans/active/2026-03-18-archive-smoke.md",
-		PlanStem: "2026-03-18-archive-smoke",
+		PlanPath:           "docs/plans/active/2026-03-18-archive-smoke.md",
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
 			Kind:       "full",
+			Trigger:    "pre_archive",
 			Aggregated: true,
 			Decision:   "pass",
 		},
@@ -107,11 +256,13 @@ func TestArchivePreflightFailureLeavesPlanAndPointersUntouched(t *testing.T) {
 		t.Fatalf("save current plan: %v", err)
 	}
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath: activeRelPath,
-		PlanStem: "2026-03-18-archive-smoke",
+		PlanPath:           activeRelPath,
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
 			Kind:       "full",
+			Trigger:    "pre_archive",
 			Aggregated: true,
 			Decision:   "pass",
 		},
@@ -153,11 +304,13 @@ func TestArchiveRollsBackWhenCurrentPlanWriteFails(t *testing.T) {
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	activePath := writeActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath: activeRelPath,
-		PlanStem: "2026-03-18-archive-smoke",
+		PlanPath:           activeRelPath,
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
 			Kind:       "full",
+			Trigger:    "pre_archive",
 			Aggregated: true,
 			Decision:   "pass",
 		},
@@ -203,30 +356,6 @@ func TestArchiveRejectsUnresolvedLocalState(t *testing.T) {
 			errorPath:  "state.active_review_round",
 			errorMatch: "aggregate or clear",
 		},
-		{
-			name: "non-green ci",
-			state: &runstate.State{
-				LatestCI: &runstate.CIState{SnapshotID: "ci-1", Status: "pending"},
-			},
-			errorPath:  "state.latest_ci",
-			errorMatch: "not archive-ready",
-		},
-		{
-			name: "stale sync",
-			state: &runstate.State{
-				Sync: &runstate.SyncState{Freshness: "stale"},
-			},
-			errorPath:  "state.sync",
-			errorMatch: "refresh remote state",
-		},
-		{
-			name: "merge conflicts",
-			state: &runstate.State{
-				Sync: &runstate.SyncState{Freshness: "fresh", Conflicts: true},
-			},
-			errorPath:  "state.sync",
-			errorMatch: "resolve merge conflicts",
-		},
 	}
 
 	for _, tc := range testCases {
@@ -236,10 +365,12 @@ func TestArchiveRejectsUnresolvedLocalState(t *testing.T) {
 			writeActiveArchiveCandidate(t, root, activeRelPath)
 			tc.state.PlanPath = activeRelPath
 			tc.state.PlanStem = "2026-03-18-archive-smoke"
+			tc.state.ExecutionStartedAt = "2026-03-18T03:30:00Z"
 			if tc.state.ActiveReviewRound == nil && tc.errorPath != "state.active_review_round" {
 				tc.state.ActiveReviewRound = &runstate.ReviewRound{
 					RoundID:    "review-001-full",
 					Kind:       "full",
+					Trigger:    "pre_archive",
 					Aggregated: true,
 					Decision:   "pass",
 				}
@@ -267,7 +398,7 @@ func TestArchiveRequiresPassingReviewForRevisionOne(t *testing.T) {
 		{
 			name:       "missing review",
 			state:      &runstate.State{},
-			errorMatch: "passing full review",
+			errorMatch: "passing full finalize review",
 		},
 		{
 			name: "passing delta is not enough",
@@ -275,11 +406,12 @@ func TestArchiveRequiresPassingReviewForRevisionOne(t *testing.T) {
 				ActiveReviewRound: &runstate.ReviewRound{
 					RoundID:    "review-001-delta",
 					Kind:       "delta",
+					Trigger:    "pre_archive",
 					Aggregated: true,
 					Decision:   "pass",
 				},
 			},
-			errorMatch: "passing full review",
+			errorMatch: "passing full finalize review",
 		},
 		{
 			name: "failed full review still blocks",
@@ -287,6 +419,7 @@ func TestArchiveRequiresPassingReviewForRevisionOne(t *testing.T) {
 				ActiveReviewRound: &runstate.ReviewRound{
 					RoundID:    "review-001-full",
 					Kind:       "full",
+					Trigger:    "pre_archive",
 					Aggregated: true,
 					Decision:   "changes_requested",
 				},
@@ -302,6 +435,7 @@ func TestArchiveRequiresPassingReviewForRevisionOne(t *testing.T) {
 			writeActiveArchiveCandidate(t, root, activeRelPath)
 			tc.state.PlanPath = activeRelPath
 			tc.state.PlanStem = "2026-03-18-archive-smoke"
+			tc.state.ExecutionStartedAt = "2026-03-18T03:30:00Z"
 			if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", tc.state); err != nil {
 				t.Fatalf("save state: %v", err)
 			}
@@ -319,20 +453,17 @@ func TestArchiveRequiresPassingReviewForRevisionOne(t *testing.T) {
 func TestArchiveAllowsPassingDeltaReviewForReopenedRevision(t *testing.T) {
 	root := t.TempDir()
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
-	activePath := writeActiveArchiveCandidate(t, root, activeRelPath)
-	data, err := os.ReadFile(activePath)
-	if err != nil {
-		t.Fatalf("read active plan: %v", err)
-	}
-	updated := strings.Replace(string(data), "revision: 1", "revision: 2", 1)
-	writeFile(t, activePath, updated)
+	writeActiveArchiveCandidate(t, root, activeRelPath)
 
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath: activeRelPath,
-		PlanStem: "2026-03-18-archive-smoke",
+		PlanPath:           activeRelPath,
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T03:55:00Z",
+		Revision:           2,
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-002-delta",
 			Kind:       "delta",
+			Trigger:    "pre_archive",
 			Aggregated: true,
 			Decision:   "pass",
 		},
@@ -351,16 +482,51 @@ func TestArchiveAllowsPassingDeltaReviewForReopenedRevision(t *testing.T) {
 	}
 }
 
+func TestArchiveIgnoresCIPublishSyncSignalsOnceFinalizeReviewPasses(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
+	writeActiveArchiveCandidate(t, root, activeRelPath)
+
+	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
+		PlanPath:           activeRelPath,
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T04:05:00Z",
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-001-full",
+			Kind:       "full",
+			Trigger:    "pre_archive",
+			Aggregated: true,
+			Decision:   "pass",
+		},
+		LatestCI: &runstate.CIState{SnapshotID: "ci-001", Status: "pending"},
+		Sync:     &runstate.SyncState{Freshness: "stale", Conflicts: true},
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	result := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 4, 10, 0, 0, time.UTC)
+		},
+	}.Archive()
+	if !result.OK {
+		t.Fatalf("expected archive success despite CI/sync signals, got %#v", result)
+	}
+}
+
 func TestArchiveUsesAggregateArtifactForLegacyReviewDecision(t *testing.T) {
 	root := t.TempDir()
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	writeActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath: activeRelPath,
-		PlanStem: "2026-03-18-archive-smoke",
+		PlanPath:           activeRelPath,
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T04:25:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
 			Kind:       "full",
+			Trigger:    "pre_archive",
 			Aggregated: true,
 		},
 	}); err != nil {
@@ -385,11 +551,13 @@ func TestReopenMovesArchivedPlanBackToActiveAndResetsSummaries(t *testing.T) {
 	root := t.TempDir()
 	writeActiveArchiveCandidate(t, root, "docs/plans/active/2026-03-18-archive-smoke.md")
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath: "docs/plans/active/2026-03-18-archive-smoke.md",
-		PlanStem: "2026-03-18-archive-smoke",
+		PlanPath:           "docs/plans/active/2026-03-18-archive-smoke.md",
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
 			Kind:       "full",
+			Trigger:    "pre_archive",
 			Aggregated: true,
 			Decision:   "pass",
 		},
@@ -411,7 +579,7 @@ func TestReopenMovesArchivedPlanBackToActiveAndResetsSummaries(t *testing.T) {
 	svc.Now = func() time.Time {
 		return time.Date(2026, 3, 18, 3, 0, 0, 0, time.UTC)
 	}
-	reopen := svc.Reopen()
+	reopen := svc.Reopen("finalize-fix")
 	if !reopen.OK {
 		t.Fatalf("reopen failed: %#v", reopen)
 	}
@@ -428,14 +596,169 @@ func TestReopenMovesArchivedPlanBackToActiveAndResetsSummaries(t *testing.T) {
 		t.Fatalf("read reopened plan: %v", err)
 	}
 	text := string(data)
-	if !strings.Contains(text, "revision: 2") {
-		t.Fatalf("expected revision bump, got:\n%s", text)
+	if !strings.Contains(text, "UPDATE_REQUIRED_AFTER_REOPEN") {
+		t.Fatalf("expected reopen update-required markers, got:\n%s", text)
 	}
-	if !strings.Contains(text, "## Archive Summary\n\nPENDING_UNTIL_ARCHIVE") {
-		t.Fatalf("expected Archive Summary reset, got:\n%s", text)
+	state, _, err := runstate.LoadState(root, "2026-03-18-archive-smoke")
+	if err != nil {
+		t.Fatalf("load reopened state: %v", err)
 	}
-	if !strings.Contains(text, "### Follow-Up Issues\n\nNONE") {
-		t.Fatalf("expected follow-up reset, got:\n%s", text)
+	if state == nil || state.Reopen == nil || state.Reopen.Mode != "finalize-fix" {
+		t.Fatalf("expected reopen mode to be recorded, got %#v", state)
+	}
+	if state.Revision != 2 {
+		t.Fatalf("expected revision bump in state, got %#v", state)
+	}
+	current, err := runstate.LoadCurrentPlan(root)
+	if err != nil {
+		t.Fatalf("load current plan: %v", err)
+	}
+	if current == nil || current.PlanPath != "docs/plans/active/2026-03-18-archive-smoke.md" {
+		t.Fatalf("expected reopened current-plan pointer to move back to active path, got %#v", current)
+	}
+}
+
+func TestReopenNewStepRecordsModeAndStatusCue(t *testing.T) {
+	root := t.TempDir()
+	writeActiveArchiveCandidate(t, root, "docs/plans/active/2026-03-18-archive-smoke.md")
+	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
+		PlanPath:           "docs/plans/active/2026-03-18-archive-smoke.md",
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-001-full",
+			Kind:       "full",
+			Trigger:    "pre_archive",
+			Aggregated: true,
+			Decision:   "pass",
+		},
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	svc := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 2, 0, 0, 0, time.UTC)
+		},
+	}
+	archive := svc.Archive()
+	if !archive.OK {
+		t.Fatalf("archive failed: %#v", archive)
+	}
+
+	svc.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 3, 0, 0, 0, time.UTC)
+	}
+	reopen := svc.Reopen("new-step")
+	if !reopen.OK {
+		t.Fatalf("reopen failed: %#v", reopen)
+	}
+	if len(reopen.NextAction) == 0 || !strings.Contains(reopen.NextAction[len(reopen.NextAction)-1].Description, "Add a new unfinished step") {
+		t.Fatalf("unexpected reopen next actions: %#v", reopen.NextAction)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-archive-smoke")
+	if err != nil {
+		t.Fatalf("load reopened state: %v", err)
+	}
+	if state == nil || state.Reopen == nil || state.Reopen.Mode != "new-step" {
+		t.Fatalf("expected reopen mode to be recorded, got %#v", state)
+	}
+	if state.Reopen.BaseStepCount != 2 {
+		t.Fatalf("expected reopen to capture original step count, got %#v", state.Reopen)
+	}
+
+	statusResult := status.Service{Workdir: root}.Read()
+	if !statusResult.OK {
+		t.Fatalf("expected status after reopen, got %#v", statusResult)
+	}
+	if statusResult.State.CurrentNode != "execution/finalize/fix" {
+		t.Fatalf("unexpected current node after reopen: %#v", statusResult.State)
+	}
+	if !strings.Contains(statusResult.Summary, "needs a new unfinished step") {
+		t.Fatalf("unexpected status summary: %q", statusResult.Summary)
+	}
+}
+
+func TestReopenMarkersMustBeClearedBeforeRearchive(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
+	writeActiveArchiveCandidate(t, root, activeRelPath)
+	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
+		PlanPath:           activeRelPath,
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-001-full",
+			Kind:       "full",
+			Trigger:    "pre_archive",
+			Aggregated: true,
+			Decision:   "pass",
+		},
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	svc := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 2, 0, 0, 0, time.UTC)
+		},
+	}
+	archive := svc.Archive()
+	if !archive.OK {
+		t.Fatalf("archive failed: %#v", archive)
+	}
+
+	svc.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 3, 0, 0, 0, time.UTC)
+	}
+	reopen := svc.Reopen("finalize-fix")
+	if !reopen.OK {
+		t.Fatalf("reopen failed: %#v", reopen)
+	}
+
+	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
+		PlanPath:           activeRelPath,
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T03:05:00Z",
+		Revision:           2,
+		Reopen:             &runstate.ReopenState{Mode: "finalize-fix", ReopenedAt: "2026-03-18T03:00:00Z"},
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-002-delta",
+			Kind:       "delta",
+			Trigger:    "pre_archive",
+			Aggregated: true,
+			Decision:   "pass",
+		},
+	}); err != nil {
+		t.Fatalf("save reopened state: %v", err)
+	}
+
+	svc.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 4, 0, 0, 0, time.UTC)
+	}
+	rearchive := svc.Archive()
+	if rearchive.OK {
+		t.Fatalf("expected rearchive to fail while reopen markers remain, got %#v", rearchive)
+	}
+	assertErrorPath(t, rearchive.Errors, "section.Validation Summary")
+
+	activePath := filepath.Join(root, activeRelPath)
+	data, err := os.ReadFile(activePath)
+	if err != nil {
+		t.Fatalf("read reopened plan: %v", err)
+	}
+	cleared := strings.ReplaceAll(string(data), "UPDATE_REQUIRED_AFTER_REOPEN\n\n", "")
+	writeFile(t, activePath, cleared)
+
+	svc.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 4, 10, 0, 0, time.UTC)
+	}
+	rearchive = svc.Archive()
+	if !rearchive.OK {
+		t.Fatalf("expected rearchive success after clearing markers, got %#v", rearchive)
 	}
 }
 
@@ -444,11 +767,13 @@ func TestReopenClearsStaleCIAndSyncSignals(t *testing.T) {
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	writeActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath: activeRelPath,
-		PlanStem: "2026-03-18-archive-smoke",
+		PlanPath:           activeRelPath,
+		PlanStem:           "2026-03-18-archive-smoke",
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
 			Kind:       "full",
+			Trigger:    "pre_archive",
 			Aggregated: true,
 			Decision:   "pass",
 		},
@@ -470,11 +795,24 @@ func TestReopenClearsStaleCIAndSyncSignals(t *testing.T) {
 	}
 
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:          "docs/plans/archived/2026-03-18-archive-smoke.md",
-		PlanStem:          "2026-03-18-archive-smoke",
-		ActiveReviewRound: &runstate.ReviewRound{RoundID: "review-001-full", Kind: "full", Aggregated: true, Decision: "pass"},
-		LatestCI:          &runstate.CIState{SnapshotID: "ci-2", Status: "failed"},
-		Sync:              &runstate.SyncState{Freshness: "stale", Conflicts: true},
+		PlanPath: "docs/plans/archived/2026-03-18-archive-smoke.md",
+		PlanStem: "2026-03-18-archive-smoke",
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-001-full",
+			Kind:       "full",
+			Trigger:    "pre_archive",
+			Aggregated: true,
+			Decision:   "pass",
+		},
+		LatestEvidence: &runstate.EvidenceSet{
+			CI:      &runstate.EvidencePointer{Kind: "ci", RecordID: "ci-2", Path: ".local/harness/plans/2026-03-18-archive-smoke/evidence/ci/ci-002.json"},
+			Publish: &runstate.EvidencePointer{Kind: "publish", RecordID: "publish-1", Path: ".local/harness/plans/2026-03-18-archive-smoke/evidence/publish/publish-001.json"},
+			Sync:    &runstate.EvidencePointer{Kind: "sync", RecordID: "sync-2", Path: ".local/harness/plans/2026-03-18-archive-smoke/evidence/sync/sync-002.json"},
+		},
+		CurrentNode:   "execution/finalize/await_merge",
+		LatestCI:      &runstate.CIState{SnapshotID: "ci-2", Status: "failed"},
+		Sync:          &runstate.SyncState{Freshness: "stale", Conflicts: true},
+		LatestPublish: &runstate.Publish{AttemptID: "publish-1", PRURL: "https://github.com/yzhang1918/superharness/pull/99"},
 	}); err != nil {
 		t.Fatalf("save archived state: %v", err)
 	}
@@ -482,7 +820,7 @@ func TestReopenClearsStaleCIAndSyncSignals(t *testing.T) {
 	svc.Now = func() time.Time {
 		return time.Date(2026, 3, 18, 3, 0, 0, 0, time.UTC)
 	}
-	reopen := svc.Reopen()
+	reopen := svc.Reopen("finalize-fix")
 	if !reopen.OK {
 		t.Fatalf("reopen failed: %#v", reopen)
 	}
@@ -494,26 +832,75 @@ func TestReopenClearsStaleCIAndSyncSignals(t *testing.T) {
 	if state == nil {
 		t.Fatalf("expected reopened state")
 	}
-	if state.ActiveReviewRound != nil || state.LatestCI != nil || state.Sync != nil {
-		t.Fatalf("expected reopened state to clear stale review/ci/sync signals, got %#v", state)
+	if state.ActiveReviewRound != nil || state.CurrentNode != "" || state.Land != nil || state.LatestEvidence != nil || state.LatestCI != nil || state.Sync != nil || state.LatestPublish != nil {
+		t.Fatalf("expected reopened state to clear stale review/evidence/cache signals, got %#v", state)
 	}
 }
 
-func TestRecordLandedWritesIdleMarkerForStatus(t *testing.T) {
+func TestReopenRejectsLandCleanupInProgress(t *testing.T) {
 	root := t.TempDir()
 	writeArchivedLandedPlan(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
 	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
 		t.Fatalf("save current plan: %v", err)
 	}
+	seedMergeReadyEvidenceForLifecycle(t, root)
 
-	result := lifecycle.Service{
+	svc := lifecycle.Service{
 		Workdir: root,
 		Now: func() time.Time {
 			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
 		},
-	}.RecordLanded()
+	}
+	land := svc.Land("https://github.com/yzhang1918/superharness/pull/99", "abc123")
+	if !land.OK {
+		t.Fatalf("expected land success, got %#v", land)
+	}
+
+	reopen := svc.Reopen("finalize-fix")
+	if reopen.OK {
+		t.Fatalf("expected reopen to fail during land cleanup, got %#v", reopen)
+	}
+	assertErrorPath(t, reopen.Errors, "state.current_node")
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-landed-plan")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state == nil || state.CurrentNode != "land" || state.Land == nil || state.Land.CompletedAt != "" {
+		t.Fatalf("expected land cleanup state to remain intact, got %#v", state)
+	}
+
+	current, err := runstate.LoadCurrentPlan(root)
+	if err != nil {
+		t.Fatalf("load current plan: %v", err)
+	}
+	if current == nil || current.PlanPath != "docs/plans/archived/2026-03-18-landed-plan.md" {
+		t.Fatalf("expected archived current plan to remain intact, got %#v", current)
+	}
+}
+
+func TestLandCompleteWritesIdleMarkerForStatus(t *testing.T) {
+	root := t.TempDir()
+	writeArchivedLandedPlan(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	seedMergeReadyEvidenceForLifecycle(t, root)
+
+	svc := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
+		},
+	}
+	land := svc.Land("https://github.com/yzhang1918/superharness/pull/99", "abc123")
+	if !land.OK {
+		t.Fatalf("expected land success, got %#v", land)
+	}
+
+	result := svc.LandComplete()
 	if !result.OK {
-		t.Fatalf("expected landed record success, got %#v", result)
+		t.Fatalf("expected land complete success, got %#v", result)
 	}
 
 	current, err := runstate.LoadCurrentPlan(root)
@@ -528,8 +915,182 @@ func TestRecordLandedWritesIdleMarkerForStatus(t *testing.T) {
 	if !statusResult.OK {
 		t.Fatalf("expected idle-after-land status, got %#v", statusResult)
 	}
-	if statusResult.State.WorktreeState != "idle_after_land" {
-		t.Fatalf("unexpected worktree state: %#v", statusResult.State)
+	if statusResult.State.CurrentNode != "idle" {
+		t.Fatalf("unexpected current node: %#v", statusResult.State)
+	}
+}
+
+func TestLandCompleteRejectsMissingLandEntry(t *testing.T) {
+	root := t.TempDir()
+	writeArchivedLandedPlan(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	seedMergeReadyEvidenceForLifecycle(t, root)
+
+	result := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
+		},
+	}.LandComplete()
+	if result.OK {
+		t.Fatalf("expected land complete failure without prior land entry, got %#v", result)
+	}
+}
+
+func TestLandUsesLegacyEvidenceCachesWhenPointersAreMissing(t *testing.T) {
+	root := t.TempDir()
+	writeArchivedLandedPlan(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	if _, err := runstate.SaveState(root, "2026-03-18-landed-plan", &runstate.State{
+		PlanPath:       "docs/plans/archived/2026-03-18-landed-plan.md",
+		PlanStem:       "2026-03-18-landed-plan",
+		Revision:       3,
+		LatestCI:       &runstate.CIState{SnapshotID: "ci-legacy", Status: "success"},
+		LatestPublish:  &runstate.Publish{AttemptID: "publish-legacy", PRURL: "https://github.com/yzhang1918/superharness/pull/99"},
+		Sync:           &runstate.SyncState{Freshness: "fresh", Conflicts: false},
+		LatestEvidence: nil,
+	}); err != nil {
+		t.Fatalf("save legacy state: %v", err)
+	}
+
+	result := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
+		},
+	}.Land("https://github.com/yzhang1918/superharness/pull/99", "")
+	if !result.OK {
+		t.Fatalf("expected land success from legacy caches, got %#v", result)
+	}
+}
+
+func TestLandRejectsOverwriteDuringCleanup(t *testing.T) {
+	root := t.TempDir()
+	writeArchivedLandedPlan(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	seedMergeReadyEvidenceForLifecycle(t, root)
+
+	svc := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
+		},
+	}
+	first := svc.Land("https://github.com/yzhang1918/superharness/pull/99", "abc123")
+	if !first.OK {
+		t.Fatalf("expected initial land success, got %#v", first)
+	}
+
+	second := svc.Land("https://github.com/yzhang1918/superharness/pull/100", "def456")
+	if second.OK {
+		t.Fatalf("expected second land entry to fail, got %#v", second)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-landed-plan")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state == nil || state.Land == nil || state.Land.PRURL != "https://github.com/yzhang1918/superharness/pull/99" || state.Land.Commit != "abc123" {
+		t.Fatalf("expected original land record to remain intact, got %#v", state)
+	}
+}
+
+func TestLandAllowsCommitEnrichmentDuringCleanup(t *testing.T) {
+	root := t.TempDir()
+	writeArchivedLandedPlan(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	seedMergeReadyEvidenceForLifecycle(t, root)
+
+	svc := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
+		},
+	}
+	first := svc.Land("https://github.com/yzhang1918/superharness/pull/99", "")
+	if !first.OK {
+		t.Fatalf("expected initial land success, got %#v", first)
+	}
+
+	second := svc.Land("https://github.com/yzhang1918/superharness/pull/99", "abc123")
+	if !second.OK {
+		t.Fatalf("expected commit enrichment success, got %#v", second)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-landed-plan")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state == nil || state.Land == nil || state.Land.PRURL != "https://github.com/yzhang1918/superharness/pull/99" || state.Land.Commit != "abc123" {
+		t.Fatalf("expected commit enrichment to update the existing land record, got %#v", state)
+	}
+}
+
+func TestLandCompleteRollsBackStateWhenCurrentPlanWriteFails(t *testing.T) {
+	root := t.TempDir()
+	writeArchivedLandedPlan(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	seedMergeReadyEvidenceForLifecycle(t, root)
+
+	svc := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
+		},
+	}
+	land := svc.Land("https://github.com/yzhang1918/superharness/pull/99", "abc123")
+	if !land.OK {
+		t.Fatalf("expected land success, got %#v", land)
+	}
+
+	currentPlanPath := filepath.Join(root, ".local", "harness", "current-plan.json")
+	if err := os.Remove(currentPlanPath); err != nil {
+		t.Fatalf("remove current-plan file: %v", err)
+	}
+	if err := os.MkdirAll(currentPlanPath, 0o755); err != nil {
+		t.Fatalf("mkdir current-plan dir: %v", err)
+	}
+
+	result := svc.LandComplete()
+	if result.OK {
+		t.Fatalf("expected land complete failure when current-plan write fails, got %#v", result)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-landed-plan")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state == nil || state.CurrentNode != "land" || state.Land == nil || state.Land.CompletedAt != "" {
+		t.Fatalf("expected land state rollback after pointer write failure, got %#v", state)
+	}
+}
+
+func seedMergeReadyEvidenceForLifecycle(t *testing.T, root string) {
+	t.Helper()
+	svc := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 5, 50, 0, 0, time.UTC)
+		},
+	}
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/superharness/pull/99"}`)); !result.OK {
+		t.Fatalf("seed publish evidence: %#v", result)
+	}
+	if result := svc.Submit("ci", []byte(`{"status":"success","provider":"github-actions"}`)); !result.OK {
+		t.Fatalf("seed ci evidence: %#v", result)
+	}
+	if result := svc.Submit("sync", []byte(`{"status":"fresh","base_ref":"main","head_ref":"codex/test"}`)); !result.OK {
+		t.Fatalf("seed sync evidence: %#v", result)
 	}
 }
 
@@ -551,9 +1112,7 @@ func writeArchivedLandedPlan(t *testing.T, root, relPath string) string {
 	if err != nil {
 		t.Fatalf("render template: %v", err)
 	}
-	rendered = strings.Replace(rendered, "status: active", "status: archived", 1)
-	rendered = strings.Replace(rendered, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval", 1)
-	rendered = strings.ReplaceAll(rendered, "- Status: pending", "- Status: completed")
+	rendered = strings.ReplaceAll(rendered, "- Done: [ ]", "- Done: [x]")
 	rendered = strings.ReplaceAll(rendered, "- [ ]", "- [x]")
 	rendered = strings.ReplaceAll(rendered, "PENDING_STEP_EXECUTION", "Done.")
 	rendered = strings.ReplaceAll(rendered, "PENDING_STEP_REVIEW", "Reviewed.")
@@ -568,16 +1127,8 @@ func writeArchivedLandedPlan(t *testing.T, root, relPath string) string {
 
 func buildActiveArchiveCandidate(t *testing.T) string {
 	t.Helper()
-	rendered, err := plan.RenderTemplate(plan.TemplateOptions{
-		Title:      "Archive Smoke",
-		Timestamp:  time.Date(2026, 3, 18, 2, 0, 0, 0, time.UTC),
-		SourceType: "direct_request",
-	})
-	if err != nil {
-		t.Fatalf("render template: %v", err)
-	}
-	rendered = strings.Replace(rendered, "lifecycle: awaiting_plan_approval", "lifecycle: executing", 1)
-	rendered = strings.ReplaceAll(rendered, "- Status: pending", "- Status: completed")
+	rendered := buildAwaitingPlan(t, "Archive Smoke")
+	rendered = strings.ReplaceAll(rendered, "- Done: [ ]", "- Done: [x]")
 	rendered = strings.ReplaceAll(rendered, "- [ ]", "- [x]")
 	rendered = strings.ReplaceAll(rendered, "PENDING_STEP_EXECUTION", "Completed execution notes.")
 	rendered = strings.ReplaceAll(rendered, "PENDING_STEP_REVIEW", "Completed review notes.")
@@ -586,6 +1137,19 @@ func buildActiveArchiveCandidate(t *testing.T) string {
 	rendered = strings.Replace(rendered, "## Archive Summary\n\nPENDING_UNTIL_ARCHIVE", "## Archive Summary\n\n- PR: NONE\n- Ready: The candidate satisfies the acceptance criteria and is ready for merge approval.\n- Merge Handoff: Commit and push the archive move before treating this candidate as awaiting merge approval.", 1)
 	rendered = strings.Replace(rendered, "### Delivered\n\nPENDING_UNTIL_ARCHIVE", "### Delivered\n\nDelivered the planned CLI slice.", 1)
 	rendered = strings.Replace(rendered, "### Not Delivered\n\nPENDING_UNTIL_ARCHIVE", "### Not Delivered\n\nNONE.", 1)
+	return rendered
+}
+
+func buildAwaitingPlan(t *testing.T, title string) string {
+	t.Helper()
+	rendered, err := plan.RenderTemplate(plan.TemplateOptions{
+		Title:      title,
+		Timestamp:  time.Date(2026, 3, 18, 2, 0, 0, 0, time.UTC),
+		SourceType: "direct_request",
+	})
+	if err != nil {
+		t.Fatalf("render template: %v", err)
+	}
 	return rendered
 }
 

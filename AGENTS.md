@@ -40,10 +40,10 @@ If you change Go CLI code, rerun the installer before relying on the direct
 
 The source-of-truth split in this repository is:
 
-- tracked plan in `docs/plans/`: scope, lifecycle, archive-ready summaries
+- tracked plan in `docs/plans/`: scope, durable step closeout, archive-ready summaries
 - specs in `docs/specs/`: normative harness contracts
-- `.local/harness/`: disposable runtime state, review artifacts, CI snapshots,
-  sync snapshots, and trajectory
+- `.local/harness/`: disposable runtime state, review artifacts, evidence
+  artifacts, and trajectory
 - skills in `.agents/skills/`: how Codex should operate inside those contracts
 
 If a skill conflicts with a tracked spec or approved plan, the spec or plan
@@ -56,11 +56,12 @@ For medium or large work:
 1. Discovery
 2. Plan
 3. Execute
-4. Archive / await merge approval
+4. Archive / publish / await merge approval
 5. Land
 
-Use `reopen` when an archived candidate is no longer merge-ready because of
-new feedback, remote changes, or other invalidation.
+Use `harness reopen --mode finalize-fix|new-step` when an archived candidate
+is no longer merge-ready because of new feedback, remote changes, or other
+invalidation.
 
 ## Review Execution
 
@@ -76,12 +77,16 @@ When entering the repo or resuming after compaction:
 1. Read [README.md](./README.md) if you need repository purpose or setup
    context.
 2. Run `harness status`.
-3. Open the current tracked plan named by `harness status`.
+3. If `harness status` reports a current plan artifact, open that tracked
+   plan. If status reports `idle`, there is no current plan to resume yet.
 4. Most resumed work should continue in `harness-execute`.
-5. Switch only when the lifecycle clearly calls for a different skill:
+5. Switch only when `harness status` and the workflow boundary clearly call
+   for a different skill:
    - `harness-discovery` when direction is unclear
    - `harness-plan` when creating or revising a tracked plan
-   - `harness-land` only after explicit human merge approval
+   - `harness-land` only when `state.current_node` is
+     `execution/finalize/await_merge` and a human has explicitly approved
+     merge
    - `harness-reviewer` only inside spawned reviewer subagents
 
 ## Git and PR Rules

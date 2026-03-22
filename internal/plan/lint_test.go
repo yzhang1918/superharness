@@ -23,6 +23,36 @@ func TestLintFileAcceptsValidActivePlan(t *testing.T) {
 	}
 }
 
+func TestLintFileAcceptsDoneMarkers(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-done-marker-plan.md")
+	content := mustRenderTemplate(t, "Done Marker Plan")
+	content = strings.Replace(content, "- Done: [ ]", "- Done: [x]", 1)
+	writeFile(t, path, content)
+
+	result := plan.LintFile(path)
+	if !result.OK {
+		t.Fatalf("expected lint success, got %#v", result)
+	}
+}
+
+func TestLintFileRejectsLegacyRuntimeFrontmatter(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-legacy-frontmatter-plan.md")
+	content := mustRenderTemplate(t, "Legacy Runtime Frontmatter")
+	content = strings.Replace(content, "template_version: 0.2.0\n", "status: active\nlifecycle: awaiting_plan_approval\nrevision: 1\nupdated_at: 2026-03-17T14:00:00+08:00\ntemplate_version: 0.2.0\n", 1)
+	writeFile(t, path, content)
+
+	result := plan.LintFile(path)
+	if result.OK {
+		t.Fatalf("expected lint failure, got %#v", result)
+	}
+	assertHasError(t, result, "frontmatter.status")
+	assertHasError(t, result, "frontmatter.lifecycle")
+	assertHasError(t, result, "frontmatter.revision")
+	assertHasError(t, result, "frontmatter.updated_at")
+}
+
 func TestLintFileRejectsMissingDeferredItemsSection(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "docs/plans/active/2026-03-17-superharness-cli-and-plan-foundations.md")
@@ -55,9 +85,7 @@ func TestLintFileRejectsArchivedPlanWithPlaceholders(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "docs/plans/archived/2026-03-17-superharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Archived Placeholder Plan")
-	content = strings.Replace(content, "status: active", "status: archived", 1)
-	content = strings.Replace(content, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval", 1)
-	content = strings.ReplaceAll(content, "- Status: pending", "- Status: completed")
+	content = strings.ReplaceAll(content, "- Done: [ ]", "- Done: [x]")
 	content = checkAllBoxes(content)
 	writeFile(t, path, content)
 
@@ -69,14 +97,41 @@ func TestLintFileRejectsArchivedPlanWithPlaceholders(t *testing.T) {
 	assertHasError(t, result, "step.Step 1: Replace with first step title.Execution Notes")
 }
 
+func TestLintFileRejectsArchivedPlanWithUncheckedDoneMarker(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/archived/2026-03-17-archived-done-plan.md")
+	content := mustRenderTemplate(t, "Archived Done Plan")
+	content = strings.Replace(content, "- Done: [ ]", "- Done: [x]", 1)
+	content = makeArchiveReady(checkAllBoxes(content))
+	writeFile(t, path, content)
+
+	result := plan.LintFile(path)
+	if result.OK {
+		t.Fatal("expected lint failure")
+	}
+	assertHasError(t, result, "step.Step 2: Replace with second step title.done")
+}
+
+func TestLintFileRejectsLegacyStepStatusMarkers(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-mixed-step-encodings.md")
+	content := mustRenderTemplate(t, "Mixed Step Encodings")
+	content = strings.Replace(content, "- Done: [ ]", "- Status: in_progress", 1)
+	writeFile(t, path, content)
+
+	result := plan.LintFile(path)
+	if result.OK {
+		t.Fatalf("expected lint failure, got %#v", result)
+	}
+	assertHasError(t, result, "step.Step 1: Replace with first step title")
+}
+
 func TestLintFileRejectsArchivedDeferredItemsWithoutOutcomeSummaryWithoutPanic(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "docs/plans/archived/2026-03-17-superharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Archived Missing Outcome Summary")
-	content = strings.Replace(content, "status: active", "status: archived", 1)
-	content = strings.Replace(content, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval", 1)
 	content = strings.Replace(content, "- None.", "- `harness ui` is intentionally deferred.", 1)
-	content = makeArchiveReady(checkAllBoxes(strings.ReplaceAll(content, "- Status: pending", "- Status: completed")))
+	content = makeArchiveReady(checkAllBoxes(strings.ReplaceAll(content, "- Done: [ ]", "- Done: [x]")))
 	content = strings.Replace(content, "## Outcome Summary\n\n### Delivered\n\nShipped the planned slice.\n\n### Not Delivered\n\nNONE.\n\n### Follow-Up Issues\n\nNONE\n", "", 1)
 	writeFile(t, path, content)
 
@@ -91,10 +146,8 @@ func TestLintFileRejectsArchivedDeferredItemsWithoutFollowUpIssue(t *testing.T) 
 	root := t.TempDir()
 	path := filepath.Join(root, "docs/plans/archived/2026-03-17-superharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Archived Deferred Item Plan")
-	content = strings.Replace(content, "status: active", "status: archived", 1)
-	content = strings.Replace(content, "lifecycle: awaiting_plan_approval", "lifecycle: awaiting_merge_approval", 1)
 	content = strings.Replace(content, "- None.", "- `harness ui` is intentionally deferred.", 1)
-	content = makeArchiveReady(checkAllBoxes(strings.ReplaceAll(content, "- Status: pending", "- Status: completed")))
+	content = makeArchiveReady(checkAllBoxes(strings.ReplaceAll(content, "- Done: [ ]", "- Done: [x]")))
 	writeFile(t, path, content)
 
 	result := plan.LintFile(path)
@@ -108,7 +161,7 @@ func TestLintFileAcceptsHistoricalTemplateVersion(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "docs/plans/active/2026-03-17-superharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Historical Template Version")
-	content = strings.Replace(content, "template_version: 0.1.0", "template_version: 0.0.1", 1)
+	content = strings.Replace(content, "template_version: 0.2.0", "template_version: 0.0.1", 1)
 	writeFile(t, path, content)
 
 	result := plan.LintFile(path)
@@ -121,7 +174,7 @@ func TestLintFileRejectsFutureTemplateVersion(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "docs/plans/active/2026-03-17-superharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Future Template Version")
-	content = strings.Replace(content, "template_version: 0.1.0", "template_version: 9.9.9", 1)
+	content = strings.Replace(content, "template_version: 0.2.0", "template_version: 9.9.9", 1)
 	writeFile(t, path, content)
 
 	result := plan.LintFile(path)

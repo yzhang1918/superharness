@@ -167,7 +167,7 @@ Typical `superharness` E2E scenarios should include:
 - happy-path plan creation and lint
 - review-round start, submit, and aggregate flow
 - archive and reopen lifecycle roundtrip
-- landed-state reporting after `land record`
+- landed-state reporting after `harness land --pr ...` and `harness land complete`
 
 ### Resilience Tests
 

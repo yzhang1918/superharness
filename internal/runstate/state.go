@@ -15,19 +15,55 @@ type CurrentPlan struct {
 }
 
 type State struct {
-	PlanPath          string       `json:"plan_path,omitempty"`
-	PlanStem          string       `json:"plan_stem,omitempty"`
-	ActiveReviewRound *ReviewRound `json:"active_review_round,omitempty"`
-	LatestCI          *CIState     `json:"latest_ci,omitempty"`
-	Sync              *SyncState   `json:"sync,omitempty"`
-	LatestPublish     *Publish     `json:"latest_publish,omitempty"`
+	ExecutionStartedAt string       `json:"execution_started_at,omitempty"`
+	CurrentNode        string       `json:"current_node,omitempty"`
+	PlanPath           string       `json:"plan_path,omitempty"`
+	PlanStem           string       `json:"plan_stem,omitempty"`
+	Revision           int          `json:"revision,omitempty"`
+	Reopen             *ReopenState `json:"reopen,omitempty"`
+	ActiveReviewRound  *ReviewRound `json:"active_review_round,omitempty"`
+	LatestEvidence     *EvidenceSet `json:"latest_evidence,omitempty"`
+	Land               *LandState   `json:"land,omitempty"`
+
+	// Transitional cache fields retained until status fully stops reading v0.1
+	// handoff signals directly from state.json.
+	LatestCI      *CIState   `json:"latest_ci,omitempty"`
+	Sync          *SyncState `json:"sync,omitempty"`
+	LatestPublish *Publish   `json:"latest_publish,omitempty"`
+}
+
+type ReopenState struct {
+	Mode          string `json:"mode"`
+	ReopenedAt    string `json:"reopened_at,omitempty"`
+	BaseStepCount int    `json:"base_step_count,omitempty"`
 }
 
 type ReviewRound struct {
 	RoundID    string `json:"round_id"`
 	Kind       string `json:"kind"`
+	Trigger    string `json:"trigger,omitempty"`
 	Aggregated bool   `json:"aggregated"`
 	Decision   string `json:"decision,omitempty"`
+}
+
+type EvidenceSet struct {
+	CI      *EvidencePointer `json:"ci,omitempty"`
+	Publish *EvidencePointer `json:"publish,omitempty"`
+	Sync    *EvidencePointer `json:"sync,omitempty"`
+}
+
+type EvidencePointer struct {
+	Kind       string `json:"kind"`
+	RecordID   string `json:"record_id"`
+	Path       string `json:"path"`
+	RecordedAt string `json:"recorded_at,omitempty"`
+}
+
+type LandState struct {
+	PRURL       string `json:"pr_url,omitempty"`
+	Commit      string `json:"commit,omitempty"`
+	LandedAt    string `json:"landed_at,omitempty"`
+	CompletedAt string `json:"completed_at,omitempty"`
 }
 
 type CIState struct {
@@ -47,6 +83,11 @@ type Publish struct {
 
 type reviewAggregate struct {
 	Decision string `json:"decision"`
+}
+
+type reviewManifest struct {
+	Trigger string `json:"trigger"`
+	Target  string `json:"target"`
 }
 
 func LoadCurrentPlan(workdir string) (*CurrentPlan, error) {
@@ -122,6 +163,13 @@ func SaveState(workdir, planStem string, state *State) (string, error) {
 	return path, nil
 }
 
+func CurrentRevision(state *State) int {
+	if state == nil || state.Revision <= 0 {
+		return 1
+	}
+	return state.Revision
+}
+
 func EffectiveReviewDecision(workdir, planStem string, round *ReviewRound) (string, bool, error) {
 	if round == nil {
 		return "", false, nil
@@ -148,6 +196,60 @@ func EffectiveReviewDecision(workdir, planStem string, round *ReviewRound) (stri
 	}
 	if decision := strings.TrimSpace(aggregate.Decision); decision != "" {
 		return decision, true, nil
+	}
+	return "", false, nil
+}
+
+func EffectiveReviewTrigger(workdir, planStem string, round *ReviewRound) (string, bool, error) {
+	if round == nil {
+		return "", false, nil
+	}
+	if trigger := strings.TrimSpace(round.Trigger); trigger != "" {
+		return trigger, true, nil
+	}
+	if strings.TrimSpace(round.RoundID) == "" {
+		return "", false, nil
+	}
+
+	path := filepath.Join(workdir, ".local", "harness", "plans", planStem, "reviews", round.RoundID, "manifest.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("read manifest.json for %s: %w", round.RoundID, err)
+	}
+
+	var manifest reviewManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return "", false, fmt.Errorf("parse manifest.json for %s: %w", round.RoundID, err)
+	}
+	if trigger := strings.TrimSpace(manifest.Trigger); trigger != "" {
+		return trigger, true, nil
+	}
+	return "", false, nil
+}
+
+func EffectiveReviewTarget(workdir, planStem string, round *ReviewRound) (string, bool, error) {
+	if round == nil || strings.TrimSpace(round.RoundID) == "" {
+		return "", false, nil
+	}
+
+	path := filepath.Join(workdir, ".local", "harness", "plans", planStem, "reviews", round.RoundID, "manifest.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("read manifest.json for %s: %w", round.RoundID, err)
+	}
+
+	var manifest reviewManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return "", false, fmt.Errorf("parse manifest.json for %s: %w", round.RoundID, err)
+	}
+	if target := strings.TrimSpace(manifest.Target); target != "" {
+		return target, true, nil
 	}
 	return "", false, nil
 }

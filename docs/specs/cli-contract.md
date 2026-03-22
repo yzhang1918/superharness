@@ -6,25 +6,27 @@
 agent decide what to do next, not dump long raw logs and force the model to
 reconstruct workflow state from scratch.
 
-This document defines the v0.1 CLI contract.
+This document defines the normative v0.2 CLI contract. The command surface and
+JSON envelopes described here assume the canonical-node runtime model from
+[State Model](./state-model.md) and the exact transition matrix from
+[State Transitions](./state-transitions.md).
 
 ## Command Surface
 
-The initial v0.1 command surface is:
+The current command surface is:
 
 - `harness plan template`
 - `harness plan lint`
+- `harness execute start`
+- `harness evidence submit`
 - `harness status`
 - `harness review start`
 - `harness review submit`
 - `harness review aggregate`
-- `harness land record`
 - `harness archive`
-- `harness reopen`
-
-Deferred from v0.1:
-
-- `harness ui`
+- `harness reopen --mode <finalize-fix|new-step>`
+- `harness land --pr <url> [--commit <sha>]`
+- `harness land complete`
 
 ## Design Principles
 
@@ -73,10 +75,10 @@ Stateful commands should return an envelope shaped like:
   "command": "status",
   "summary": "Plan is executing Step 3 and nothing is currently blocking continued work.",
   "state": {
-    "plan_status": "active",
-    "lifecycle": "executing",
-    "step": "Step 3: Implement local state and harness status",
-    "step_state": "implementing"
+    "current_node": "execution/step-3/implement"
+  },
+  "facts": {
+    "current_step": "Step 3: Implement local state and harness status"
   },
   "artifacts": {
     "plan_path": "docs/plans/active/2026-03-17-superharness-cli-and-plan-foundations.md"
@@ -119,95 +121,52 @@ artifact paths or IDs worth returning.
 `next_actions` should be short, concrete, non-empty, and ordered from the most
 likely next step to less common alternatives.
 
-## State Vocabulary
+## Status State Contract
 
-The CLI should use a small, consistent state vocabulary:
+The v0.2 CLI uses one canonical runtime state field:
+
+- `state.current_node`
+  - required for stateful commands that report workflow position
+  - examples: `plan`, `execution/step-2/implement`,
+    `execution/finalize/publish`, `land`, `idle`
+
+`facts` is optional and should carry only selected, high-signal fields that
+help explain the node:
+
+- `current_step`
+- `revision`
+- `reopen_mode`
+- `review_kind`
+- `review_trigger`
+- `review_target`
+- `review_status`
+- `archive_blocker_count`
+- `publish_status`
+- `pr_url`
+- `ci_status`
+- `sync_status`
+- `land_pr_url`
+- `land_commit`
+
+`artifacts` may include stable pointers such as:
+
+- `plan_path`
+- `local_state_path`
+- `review_round_id`
+- latest evidence record IDs
+- last-landed context
+
+Legacy v0.1 fields are not part of the contract and must not be emitted:
 
 - `plan_status`
-  - mirrors tracked plan placement and mutability
-  - expected values when a current plan exists: `active`, `archived`
 - `lifecycle`
-  - the coarse human-steer workflow stage from the tracked plan
 - `step`
-  - the current work-breakdown step when one can be inferred
 - `step_state`
-  - the current operating mode for the current step inside `executing`
-  - derived from current plan content plus local artifacts rather than tracked
-    directly in markdown
 - `handoff_state`
-  - optional archived-plan hint when `lifecycle: awaiting_merge_approval`
-  - derived from local publish, CI, and sync artifacts rather than tracked in
-    plan frontmatter
 - `worktree_state`
-  - optional worktree-level state when no current tracked plan is active
-  - v0.1 adds `idle_after_land` for worktrees that have completed land cleanup
-    and only retain last-landed context in `.local`
 
-Most humans and agents should read these together as one sentence, for example:
-
-- `plan_status: active`
-- `lifecycle: executing`
-- `step: Step 3: Implement local state and harness status`
-- `step_state: implementing`
-
-In plain language, that means: "the active plan is in the executing lifecycle,
-currently focused on Step 3, and the agent is implementing rather than waiting
-on review or CI."
-
-When `worktree_state: idle_after_land` is present, `plan_status` and
-`lifecycle` may be empty because the worktree is intentionally between plans.
-
-When `handoff_state` is present, `lifecycle: awaiting_merge_approval` should be
-read as a coarse archived phase, not as proof that publish handoff and CI are
-already done.
-
-### Step Inference
-
-`harness status` should infer `step` from the tracked plan:
-
-- prefer the first `in_progress` step
-- otherwise use the first `pending` step
-- otherwise omit `step`
-
-### Step-State Rules
-
-`step_state` is primarily useful when `lifecycle: executing`.
-
-If `lifecycle` is not `executing`, omit `step_state` unless a command has a
-very strong reason to surface an extra local hint.
-
-`step_state` is not a full state machine in v0.1. It is a best-effort local
-hint that answers one question: "What is the agent mainly doing around the
-current step right now?"
-
-Do not treat `step_state` values as a strict progression. For example,
-conflict-resolution work may happen mid-execution before a full review has ever
-run.
-
-v0.1 should keep `step_state` deliberately small:
-
-- `reviewing`
-  - an active review round exists and is not yet aggregated
-- `fix_required`
-  - the latest aggregated review requested changes, or its outcome could not be
-    recovered safely, so the current step should repair or rerun review before
-    continuing
-- `waiting_ci`
-  - the latest CI snapshot is still pending
-- `resolving_conflicts`
-  - local state explicitly says the branch is mid-conflict-resolution
-- `ready_for_archive`
-  - all steps are completed, all acceptance criteria are checked, and the
-    shared archive-readiness evaluation finds no remaining blockers
-- `implementing`
-  - the default executing mode when nothing stronger applies
-
-v0.1 does not need to infer a separate `testing` step state unless a CLI-owned
-command writes a reliable signal into local state.
-
-Remote freshness checks are usually too short-lived to deserve their own
-`step_state`. If remote sync is needed, surface it as a warning or next action;
-if it turns into real conflict work, use `resolving_conflicts`.
+When a current step exists, `harness status` should infer it from the first
+unfinished tracked step and return it as `facts.current_step`.
 
 ## Command Contracts
 
@@ -286,26 +245,25 @@ understand what is happening now and what to do next.
 Contract:
 
 - detect the current tracked plan
-- report durable `plan_status` and `lifecycle`
-- infer `step` from plan step status
-- infer a minimal `step_state` from local review/CI/publish/sync state when
-  `lifecycle: executing`
-- infer a minimal archived `handoff_state` from local publish/CI/sync state
-  when `lifecycle: awaiting_merge_approval` so local archive, publish handoff,
-  and true merge-ready waiting are not collapsed into one message
+- resolve the canonical `state.current_node` from the tracked plan,
+  execute-start milestones, review artifacts, append-only evidence, reopen
+  milestones, archive state, and land milestones
+- return pure v0.2 JSON centered on `state.current_node`, selected `facts`,
+  `artifacts`, `summary`, and `next_actions`
+- never emit legacy v0.1 fields such as `lifecycle`, `step_state`, or
+  `handoff_state`
 - surface aggregated review failures as a concrete repair signal rather than
-  falling back to a generic "implementing" state
-- if legacy aggregated review outcome cannot be recovered, degrade
-  conservatively to review-follow-up guidance instead of closeout or archive
-  guidance
+  falling back to a generic step summary
+- if review metadata cannot be recovered safely, degrade conservatively and do
+  not refresh the cached `current_node`
 - once all steps and acceptance criteria are complete, surface archive blockers
   early through a structured `blockers` list plus repair-first next actions
   instead of making the controller learn them only from `harness archive`
 - surface stale or unknown remote freshness as warnings and next actions rather
-  than as a long-lived `step_state`
+  than as a derived state layer
 - if no current plan is active but `.local/harness/current-plan.json` records a
-  landed candidate, return an `idle_after_land` worktree status instead of
-  pretending the archived candidate is still waiting for merge approval
+  landed candidate, return `state.current_node: idle` with landed context in
+  `artifacts`
 - return recommended next actions for both "continue work" and "wait/observe"
   situations
 
@@ -469,7 +427,7 @@ Recommended next action:
 - for a passing `full` review, move toward final CI and archive readiness
 - for a failing `full` review, fix findings before archive
 
-## Review Sequencing in v0.1
+## Review Sequencing
 
 The CLI contract should assume this review cadence:
 
@@ -486,10 +444,14 @@ Archive readiness requires:
 - a clean `full` review for the initial archive candidate (`revision: 1`)
 - a clean review result for later reopened revisions, where a narrow fix may
   use `delta` review instead of forcing another `full` review
-- required CI green for the pushed archived candidate
 - no unresolved active review round
-- no unresolved conflict-repair work
-- fresh remote sync evidence for the candidate
+- no unresolved finalize repair work
+
+Post-archive merge readiness additionally requires:
+
+- publish evidence with a PR URL
+- CI good enough or explicit `not_applied`
+- sync freshness or explicit `not_applied`
 
 ### `harness archive`
 
@@ -505,11 +467,12 @@ Contract:
   untouched
 - assume the plan's durable summary sections have already been written from the
   current plan plus local artifacts, not reconstructed from agent memory
+- require finalize review to be satisfied before archive succeeds
 - if the plan still contains `## Deferred Items`, require
   `## Outcome Summary > Follow-Up Issues` to be something other than `NONE`
   before allowing archive to succeed
-- reject archive when plan-local state still shows unresolved review, CI, or
-  sync work for the current candidate
+- reject archive when plan-local state still shows unresolved finalize review
+  or archive-closeout blockers for the current candidate
 - require plan-local review state to retain the latest review decision, or
   recover it from the latest review round's aggregate artifact for older local
   state, so archive can distinguish a failed aggregated review from a passing
@@ -517,11 +480,10 @@ Contract:
 - require the pre-archive `Archive Summary` to include structured `PR`,
   `Ready`, and `Merge Handoff` lines
 - move the plan from `docs/plans/active/` to `docs/plans/archived/`
-- update tracked fields such as `status`, `lifecycle`, and `updated_at`
-- stamp mechanical archive metadata such as `Archived At` and `Revision` into
-  the archived `Archive Summary`
 - update `.local/harness/current-plan.json` and any existing plan-local
   `state.json` pointers to the archived path
+- keep publish, CI, and sync follow-up out of the archive gate; those belong to
+  `execution/finalize/publish`
 - return next actions that explicitly include committing and pushing the archive
   change
 
@@ -530,11 +492,10 @@ Important note:
 - `harness archive` changes tracked files locally
 - the controller agent should commit and push the archive move before treating
   the plan as truly waiting for merge approval
-- until local publish evidence exists, `harness status` should describe the
-  archived candidate as pending publish handoff rather than already waiting for
-  merge approval
+- after archive, record publish, CI, and sync observations through
+  `harness evidence submit` instead of treating missing evidence as success
 - PR checks may rerun on that archive commit; if new feedback or check failures
-  appear, use `harness reopen`
+  appear, use `harness reopen --mode <finalize-fix|new-step>`
 - merge actor, merge timestamp, and other land-only notes should go to PR
   comments or remote history rather than back into the archived plan
 - if deferred items exist, the controller agent should replace `NONE` in
@@ -545,8 +506,10 @@ Recommended next action:
 - create or verify durable follow-up notes for deferred work
 - commit and push the archived plan
 - update the PR if needed
-- wait for post-archive CI or human merge approval once publish handoff is done
-- reopen if the archived candidate no longer looks merge-ready
+- wait for post-archive CI or human merge approval once publish, CI, and sync
+  evidence move the candidate into `execution/finalize/await_merge`
+- reopen with `harness reopen --mode finalize-fix` for narrow repair or
+  `harness reopen --mode new-step` when the invalidation deserves a new step
 
 ### `harness reopen`
 
@@ -557,12 +520,11 @@ Purpose:
 Contract:
 
 - move the plan from `docs/plans/archived/` back to `docs/plans/active/`
-- set `status: active`
-- set `lifecycle: executing`
-- increment `revision`
-- update `updated_at`
-- reset archive-only summary placeholders
-- clear stale review, CI, and sync signals from the prior archived candidate
+- increment command-owned revision state
+- require an explicit mode such as `finalize-fix` or `new-step`
+- preserve archive audit history via explicit update-required placeholders
+- clear stale review, evidence, and handoff cache signals from the prior
+  archived candidate
 - update `.local/harness/current-plan.json` and any existing plan-local
   `state.json` pointers back to the active path
 - return next actions that help the next agent resume work
@@ -571,19 +533,53 @@ Recommended next action:
 
 - review the feedback or remote change that caused reopen
 - update plan content if scope or acceptance criteria changed
-- continue the inferred current step, or set `awaiting_plan_approval` if the
-  plan contract itself needs fresh approval
+- continue finalize repair for `finalize-fix`, or add a new unfinished step
+  before resuming implementation for `new-step`
 
-### `harness land record`
+### `harness evidence submit`
 
 Purpose:
 
-- record post-merge local cleanup for the current archived candidate
+- record append-only publish, CI, or sync evidence for the current archived
+  candidate
 
 Contract:
 
-- require the current tracked plan to still be the archived
-  `awaiting_merge_approval` candidate that just landed
+- require the current tracked plan to be archived before accepting evidence
+- support `--kind <ci|publish|sync>` with JSON payloads documented in
+  `--help`
+- write a timestamped evidence artifact under
+  `.local/harness/plans/<plan-stem>/evidence/<kind>/`
+- update the thin `state.json` cache with the latest pointer for that kind
+- preserve trajectory by never editing older evidence artifacts in place
+- accept explicit `not_applied` payloads when a domain truly does not apply
+
+### `harness land --pr <url> [--commit <sha>]`
+
+Purpose:
+
+- record merge confirmation for the current archived candidate and enter land
+  cleanup
+
+Contract:
+
+- require the current tracked plan to still be the archived candidate
+- require `--pr <url>` and optionally accept `--commit <sha>`
+- validate that publish, CI, and sync evidence make the candidate merge-ready
+- record merge confirmation in plan-local runtime state
+- leave tracked plans untouched; this is a local-state milestone only
+- return next actions that guide post-merge cleanup
+
+### `harness land complete`
+
+Purpose:
+
+- record post-merge cleanup completion and restore idle worktree state
+
+Contract:
+
+- require prior `harness land --pr <url>` for the same archived candidate
+- persist local completion metadata in plan-local runtime state
 - rewrite `.local/harness/current-plan.json` so `plan_path` is cleared
 - record `last_landed_plan_path` and `last_landed_at` for worktree handoff
 - leave tracked plans untouched; this is local-state cleanup only
@@ -592,7 +588,7 @@ Contract:
 
 ## Review Runtime Boundary
 
-The CLI does not own subagent spawning in v0.1.
+The CLI does not own subagent spawning.
 
 The controller agent decides how to launch reviewer subagents. In Codex, that
 means using `spawn_agent` rather than trying to do reviewer work in the main
@@ -609,5 +605,5 @@ The CLI only owns deterministic local contracts:
 
 ## Deferred Commands
 
-`harness ui` is intentionally deferred until the CLI and local-state contracts
-are stable enough to support a useful read-only interface.
+No additional user-facing command is committed in this spec yet beyond the
+surface listed above.

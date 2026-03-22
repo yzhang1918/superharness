@@ -20,6 +20,7 @@ var (
 	planFilenamePattern    = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$`)
 	templateVersionPattern = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)$`)
 	checkboxPattern        = regexp.MustCompile(`^- \[( |x|X)\] .+`)
+	donePattern            = regexp.MustCompile(`^- Done:\s*\[( |x|X)\]\s*$`)
 	statusPattern          = regexp.MustCompile(`^- Status:\s*(\S+)\s*$`)
 )
 
@@ -54,23 +55,12 @@ var (
 		"Execution Notes":          5,
 		"Review Notes":             6,
 	}
-	allowedLifecycles = []string{
-		"awaiting_plan_approval",
-		"executing",
-		"blocked",
-		"awaiting_merge_approval",
-	}
-	allowedStatuses     = []string{"active", "archived"}
 	allowedStepStatuses = []string{"pending", "in_progress", "completed", "blocked"}
 )
 
 type Frontmatter struct {
-	Status          string   `yaml:"status"`
-	Lifecycle       string   `yaml:"lifecycle"`
-	Revision        int      `yaml:"revision"`
 	TemplateVersion string   `yaml:"template_version"`
 	CreatedAt       string   `yaml:"created_at"`
-	UpdatedAt       string   `yaml:"updated_at"`
 	SourceType      string   `yaml:"source_type"`
 	SourceRefs      []string `yaml:"source_refs"`
 }
@@ -111,6 +101,8 @@ type section struct {
 
 type step struct {
 	title                  string
+	done                   bool
+	usesDoneMarker         bool
 	status                 string
 	sections               map[string]*section
 	sectionOrder           []string
@@ -188,6 +180,7 @@ func parseAndValidate(path string) (*lintContext, []LintIssue) {
 	steps, stepIssues := parseSteps(ctx)
 	ctx.steps = steps
 	issues = append(issues, stepIssues...)
+	issues = append(issues, validateStepMarkers(ctx)...)
 
 	issues = append(issues, validatePathRules(ctx)...)
 	issues = append(issues, validateArchivedRules(ctx)...)
@@ -242,12 +235,8 @@ func parseTopSections(body string) (string, map[string]*section, []string) {
 func validateFrontmatter(ctx *lintContext) []LintIssue {
 	issues := make([]LintIssue, 0)
 	requiredKeys := []string{
-		"status",
-		"lifecycle",
-		"revision",
 		"template_version",
 		"created_at",
-		"updated_at",
 		"source_type",
 		"source_refs",
 	}
@@ -257,23 +246,22 @@ func validateFrontmatter(ctx *lintContext) []LintIssue {
 		}
 	}
 
-	if !slices.Contains(allowedStatuses, ctx.frontmatter.Status) {
-		issues = append(issues, LintIssue{Path: "frontmatter.status", Message: "must be active or archived"})
-	}
-	if !slices.Contains(allowedLifecycles, ctx.frontmatter.Lifecycle) {
-		issues = append(issues, LintIssue{Path: "frontmatter.lifecycle", Message: "invalid lifecycle"})
-	}
-	if ctx.frontmatter.Revision <= 0 {
-		issues = append(issues, LintIssue{Path: "frontmatter.revision", Message: "must be a positive integer"})
-	}
 	if _, err := time.Parse(time.RFC3339, ctx.frontmatter.CreatedAt); err != nil {
 		issues = append(issues, LintIssue{Path: "frontmatter.created_at", Message: "must be RFC3339"})
 	}
-	if _, err := time.Parse(time.RFC3339, ctx.frontmatter.UpdatedAt); err != nil {
-		issues = append(issues, LintIssue{Path: "frontmatter.updated_at", Message: "must be RFC3339"})
+	if strings.TrimSpace(ctx.frontmatter.CreatedAt) == "" {
+		issues = append(issues, LintIssue{Path: "frontmatter.created_at", Message: "must not be empty"})
 	}
 	if strings.TrimSpace(ctx.frontmatter.SourceType) == "" {
 		issues = append(issues, LintIssue{Path: "frontmatter.source_type", Message: "must not be empty"})
+	}
+	for _, legacyKey := range []string{"status", "lifecycle", "revision", "updated_at"} {
+		if _, ok := ctx.rawFrontmatter[legacyKey]; ok {
+			issues = append(issues, LintIssue{
+				Path:    "frontmatter." + legacyKey,
+				Message: "legacy runtime field is no longer allowed in v0.2 tracked plans",
+			})
+		}
 	}
 	supportedVersion, err := templateassets.PlanTemplateVersion()
 	if err != nil {
@@ -294,6 +282,20 @@ func validateSectionOrder(ctx *lintContext) []LintIssue {
 		issues = append(issues, LintIssue{
 			Path:    "sections",
 			Message: fmt.Sprintf("top-level sections must appear in order: %s", strings.Join(requiredTopSections, " -> ")),
+		})
+	}
+	return issues
+}
+
+func validateStepMarkers(ctx *lintContext) []LintIssue {
+	issues := make([]LintIssue, 0, len(ctx.steps))
+	for _, step := range ctx.steps {
+		if step.usesDoneMarker {
+			continue
+		}
+		issues = append(issues, LintIssue{
+			Path:    "step." + step.title,
+			Message: "step must use '- Done: [ ]' or '- Done: [x]'; legacy '- Status: ...' is no longer allowed",
 		})
 	}
 	return issues
@@ -329,7 +331,7 @@ func validateAcceptanceCriteria(ctx *lintContext) []LintIssue {
 	if len(items) == 0 {
 		issues = append(issues, LintIssue{Path: "section.Acceptance Criteria", Message: "must contain at least one checkbox"})
 	}
-	if ctx.frontmatter.Status == "archived" {
+	if ctx.pathKind == "archived" {
 		for _, item := range items {
 			if !item.Checked {
 				issues = append(issues, LintIssue{Path: "section.Acceptance Criteria", Message: "archived plans must have all acceptance criteria checked"})
@@ -424,12 +426,18 @@ func finalizeStep(base step, lines []string) (step, []LintIssue) {
 		return base, []LintIssue{{Path: stepPath, Message: "step body is empty"}}
 	}
 	matches := statusPattern.FindStringSubmatch(strings.TrimSpace(lines[trimmedIndex]))
-	if len(matches) != 2 {
-		return base, []LintIssue{{Path: stepPath, Message: "step must start with a '- Status: ...' line"}}
-	}
-	base.status = matches[1]
-	if !slices.Contains(allowedStepStatuses, base.status) {
-		issues = append(issues, LintIssue{Path: stepPath + ".status", Message: "invalid step status"})
+	if doneMatches := donePattern.FindStringSubmatch(strings.TrimSpace(lines[trimmedIndex])); len(doneMatches) == 2 {
+		base.done = strings.EqualFold(doneMatches[1], "x")
+		base.usesDoneMarker = true
+		base.status = stepStatusFromDone(base.done)
+	} else if len(matches) == 2 {
+		base.status = matches[1]
+		base.done = base.status == "completed"
+		if !slices.Contains(allowedStepStatuses, base.status) {
+			issues = append(issues, LintIssue{Path: stepPath + ".status", Message: "invalid step status"})
+		}
+	} else {
+		return base, []LintIssue{{Path: stepPath, Message: "step must start with '- Done: [ ]' or legacy '- Status: ...' during migration"}}
 	}
 
 	base.sections = map[string]*section{}
@@ -490,16 +498,7 @@ func validatePathRules(ctx *lintContext) []LintIssue {
 	issues := make([]LintIssue, 0)
 	switch ctx.pathKind {
 	case "active":
-		if ctx.frontmatter.Status != "active" {
-			issues = append(issues, LintIssue{Path: "frontmatter.status", Message: "active plan path requires status: active"})
-		}
-		if !slices.Contains([]string{"awaiting_plan_approval", "executing", "blocked"}, ctx.frontmatter.Lifecycle) {
-			issues = append(issues, LintIssue{Path: "frontmatter.lifecycle", Message: "active plan lifecycle must be awaiting_plan_approval, executing, or blocked"})
-		}
 	case "archived":
-		if ctx.frontmatter.Status != "archived" {
-			issues = append(issues, LintIssue{Path: "frontmatter.status", Message: "archived plan path requires status: archived"})
-		}
 	default:
 		issues = append(issues, LintIssue{Path: "path", Message: "plan must live under docs/plans/active or docs/plans/archived"})
 	}
@@ -511,18 +510,14 @@ func validatePathRules(ctx *lintContext) []LintIssue {
 }
 
 func validateArchivedRules(ctx *lintContext) []LintIssue {
-	if ctx.frontmatter.Status != "archived" {
+	if ctx.pathKind != "archived" {
 		return nil
 	}
 
 	issues := make([]LintIssue, 0)
-	if ctx.frontmatter.Lifecycle != "awaiting_merge_approval" {
-		issues = append(issues, LintIssue{Path: "frontmatter.lifecycle", Message: "archived plans must use lifecycle: awaiting_merge_approval"})
-	}
-
 	for _, step := range ctx.steps {
-		if step.status != "completed" {
-			issues = append(issues, LintIssue{Path: "step." + step.title + ".status", Message: "archived plans require every step to be completed"})
+		if !step.done {
+			issues = append(issues, LintIssue{Path: "step." + step.title + ".done", Message: "archived plans require every step to be done"})
 		}
 		for _, item := range step.stepAcceptanceCriteria {
 			if !item.Checked {
@@ -540,8 +535,8 @@ func validateArchivedRules(ctx *lintContext) []LintIssue {
 
 	for _, sectionName := range []string{"Validation Summary", "Review Summary", "Archive Summary", "Outcome Summary"} {
 		section := ctx.sections[sectionName]
-		if section != nil && strings.Contains(strings.Join(section.lines, "\n"), "PENDING_UNTIL_ARCHIVE") {
-			issues = append(issues, LintIssue{Path: "section." + sectionName, Message: "archived plans must not keep PENDING_UNTIL_ARCHIVE"})
+		if section != nil && containsArchivePlaceholderToken(strings.Join(section.lines, "\n")) {
+			issues = append(issues, LintIssue{Path: "section." + sectionName, Message: "archived plans must not keep archive-time placeholder tokens"})
 		}
 	}
 
@@ -710,4 +705,11 @@ func compareTemplateVersions(left, right [3]int) int {
 		}
 	}
 	return 0
+}
+
+func stepStatusFromDone(done bool) string {
+	if done {
+		return "completed"
+	}
+	return "pending"
 }

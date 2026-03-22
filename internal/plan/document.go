@@ -21,6 +21,8 @@ type Document struct {
 
 type DocumentStep struct {
 	Title                  string
+	Done                   bool
+	UsesDoneMarker         bool
 	Status                 string
 	SectionOrder           []string
 	Sections               map[string]string
@@ -76,10 +78,12 @@ func LoadFile(path string) (*Document, error) {
 
 	for _, parsedStep := range steps {
 		stepDoc := DocumentStep{
-			Title:        parsedStep.title,
-			Status:       parsedStep.status,
-			SectionOrder: append([]string(nil), parsedStep.sectionOrder...),
-			Sections:     map[string]string{},
+			Title:          parsedStep.title,
+			Done:           parsedStep.done,
+			UsesDoneMarker: parsedStep.usesDoneMarker,
+			Status:         parsedStep.status,
+			SectionOrder:   append([]string(nil), parsedStep.sectionOrder...),
+			Sections:       map[string]string{},
 		}
 		for name, section := range parsedStep.sections {
 			stepDoc.Sections[name] = strings.TrimSpace(strings.Join(section.lines, "\n"))
@@ -98,13 +102,28 @@ func LoadFile(path string) (*Document, error) {
 }
 
 func (d *Document) CurrentStep() *DocumentStep {
+	hasDoneMarkers := false
+	for i := range d.Steps {
+		if d.Steps[i].UsesDoneMarker {
+			hasDoneMarkers = true
+			break
+		}
+	}
+	if hasDoneMarkers {
+		for i := range d.Steps {
+			if !d.Steps[i].Done {
+				return &d.Steps[i]
+			}
+		}
+		return nil
+	}
 	for i := range d.Steps {
 		if d.Steps[i].Status == "in_progress" {
 			return &d.Steps[i]
 		}
 	}
 	for i := range d.Steps {
-		if d.Steps[i].Status == "pending" {
+		if !d.Steps[i].Done {
 			return &d.Steps[i]
 		}
 	}
@@ -133,7 +152,7 @@ func (d *Document) AllStepsCompleted() bool {
 		return false
 	}
 	for _, step := range d.Steps {
-		if step.Status != "completed" {
+		if !step.Done {
 			return false
 		}
 	}
@@ -143,7 +162,7 @@ func (d *Document) AllStepsCompleted() bool {
 func (d *Document) HasPendingArchivePlaceholders() bool {
 	for _, sectionName := range []string{"Validation Summary", "Review Summary", "Archive Summary", "Outcome Summary"} {
 		section := d.Sections[sectionName]
-		if section != nil && strings.Contains(strings.Join(section.lines, "\n"), "PENDING_UNTIL_ARCHIVE") {
+		if section != nil && containsArchivePlaceholderToken(strings.Join(section.lines, "\n")) {
 			return true
 		}
 	}
@@ -152,13 +171,13 @@ func (d *Document) HasPendingArchivePlaceholders() bool {
 
 func (d *Document) CompletedStepsHavePendingPlaceholders() bool {
 	for _, step := range d.Steps {
-		if step.Status != "completed" {
+		if !step.Done {
 			continue
 		}
-		if step.Sections["Execution Notes"] == "PENDING_STEP_EXECUTION" {
+		if step.Sections["Execution Notes"] == PlaceholderPendingStepExecution {
 			return true
 		}
-		if step.Sections["Review Notes"] == "PENDING_STEP_REVIEW" {
+		if step.Sections["Review Notes"] == PlaceholderPendingStepReview {
 			return true
 		}
 	}
@@ -182,25 +201,25 @@ func (d *Document) ArchiveReadinessIssues() []DocumentIssue {
 
 	for _, sectionName := range []string{"Validation Summary", "Review Summary", "Archive Summary", "Outcome Summary"} {
 		section := d.Sections[sectionName]
-		if section != nil && strings.Contains(strings.Join(section.lines, "\n"), "PENDING_UNTIL_ARCHIVE") {
+		if section != nil && containsArchivePlaceholderToken(strings.Join(section.lines, "\n")) {
 			issues = append(issues, DocumentIssue{
 				Path:    "section." + sectionName,
-				Message: "replace PENDING_UNTIL_ARCHIVE before archive",
+				Message: "replace archive-time placeholder tokens before archive",
 			})
 		}
 	}
 
 	for _, step := range d.Steps {
-		if step.Status != "completed" {
+		if !step.Done {
 			continue
 		}
-		if step.Sections["Execution Notes"] == "PENDING_STEP_EXECUTION" {
+		if step.Sections["Execution Notes"] == PlaceholderPendingStepExecution {
 			issues = append(issues, DocumentIssue{
 				Path:    "step." + step.Title + ".Execution Notes",
 				Message: "replace PENDING_STEP_EXECUTION before archive",
 			})
 		}
-		if step.Sections["Review Notes"] == "PENDING_STEP_REVIEW" {
+		if step.Sections["Review Notes"] == PlaceholderPendingStepReview {
 			issues = append(issues, DocumentIssue{
 				Path:    "step." + step.Title + ".Review Notes",
 				Message: "replace PENDING_STEP_REVIEW before archive",

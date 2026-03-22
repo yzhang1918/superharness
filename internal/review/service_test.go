@@ -57,6 +57,38 @@ func TestStartCreatesRoundAndUpdatesState(t *testing.T) {
 	}
 }
 
+func TestStartAcceptsExecutionStartMilestoneWithoutLegacyExecutingLifecycle(t *testing.T) {
+	root := t.TempDir()
+	relPath := "docs/plans/active/2026-03-18-review-contract.md"
+	writePlainReviewPlan(t, root, relPath)
+	if _, err := runstate.SaveState(root, "2026-03-18-review-contract", &runstate.State{
+		ExecutionStartedAt: "2026-03-18T01:01:00Z",
+		PlanPath:           relPath,
+		PlanStem:           "2026-03-18-review-contract",
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 2, 0, 0, time.UTC)
+		},
+	}
+
+	result := svc.Start(mustJSON(t, review.Spec{
+		Kind:    "delta",
+		Target:  "Step 1",
+		Trigger: "step_closeout",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !result.OK {
+		t.Fatalf("expected start success, got %#v", result)
+	}
+}
+
 func TestStartIgnoresLegacyTimestampReviewDirectoriesForCompactSequence(t *testing.T) {
 	root := t.TempDir()
 	planStem := "2026-03-18-review-contract"
@@ -350,6 +382,20 @@ func TestAggregateFullWithBlockingFindings(t *testing.T) {
 
 func writeExecutingPlan(t *testing.T, root, relPath string) string {
 	t.Helper()
+	path := writePlainReviewPlan(t, root, relPath)
+	if _, err := runstate.SaveState(root, strings.TrimSuffix(filepath.Base(relPath), filepath.Ext(relPath)), &runstate.State{
+		ExecutionStartedAt: "2026-03-18T01:00:00Z",
+		PlanPath:           relPath,
+		PlanStem:           strings.TrimSuffix(filepath.Base(relPath), filepath.Ext(relPath)),
+		Revision:           1,
+	}); err != nil {
+		t.Fatalf("save execute-start state: %v", err)
+	}
+	return path
+}
+
+func writePlainReviewPlan(t *testing.T, root, relPath string) string {
+	t.Helper()
 	rendered, err := plan.RenderTemplate(plan.TemplateOptions{
 		Title:      "Review Contract Plan",
 		Timestamp:  time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC),
@@ -358,8 +404,6 @@ func writeExecutingPlan(t *testing.T, root, relPath string) string {
 	if err != nil {
 		t.Fatalf("render template: %v", err)
 	}
-	rendered = strings.Replace(rendered, "lifecycle: awaiting_plan_approval", "lifecycle: executing", 1)
-	rendered = strings.Replace(rendered, "- Status: pending", "- Status: in_progress", 1)
 
 	path := filepath.Join(root, relPath)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -369,6 +413,16 @@ func writeExecutingPlan(t *testing.T, root, relPath string) string {
 		t.Fatalf("write plan: %v", err)
 	}
 	return path
+}
+
+func writeReviewPlanFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
 }
 
 func mustJSON(t *testing.T, value any) []byte {

@@ -1,6 +1,6 @@
 ---
 name: harness-execute
-description: Use when a tracked harness plan has been approved and the controller agent should drive implementation, review, CI, sync, publish handoff, closeout, and archive work until the archived candidate is genuinely ready to wait for merge approval. This is the main controller skill for day-to-day execution after approval.
+description: Use when a tracked harness plan has been approved and the controller agent should drive implementation, review, archive closeout, publish/CI/sync evidence work, and merge-readiness follow-up until the archived candidate is genuinely ready to wait for merge approval. This is the main controller skill for day-to-day execution after approval.
 ---
 
 # Harness Execute
@@ -11,10 +11,11 @@ Use this skill after plan approval to drive the repository from active work to
 an archived, merge-ready candidate.
 
 ALWAYS use `harness-execute` whenever `harness status` resolves a current
-approved tracked plan and the lifecycle does not clearly call for a different
-skill. That includes fresh sessions, resumed sessions after compaction, and
-pick-up work where the safest next move is to follow the current plan instead
-of improvising a new workflow.
+approved tracked plan and `state.current_node` is still in `plan` or
+`execution/...`, or the archived candidate still needs publish follow-up
+before human merge approval. That includes fresh sessions, resumed sessions
+after compaction, and pick-up work where the safest next move is to follow the
+current plan instead of improvising a new workflow.
 
 The controller agent stays in `harness-execute` for the whole execution loop,
 including review orchestration. Do not switch the controller into
@@ -37,26 +38,33 @@ when it is genuinely impractical, and record the reason in the step's
 3. Identify the active or next plan step.
 4. Use the status output to answer four questions:
    - which tracked plan is current
-   - which lifecycle it is in
-   - which step is active or next
-   - whether local state already shows review, CI, or conflict work in flight
+   - which `current_node` the worktree is currently in
+   - which step or finalize phase is active or next
+   - whether local state already shows review, evidence, or land work in flight
 5. If `harness` is unavailable or resolves to the wrong binary, first follow
    the repository's documented setup path. If no setup path is documented, ask
    the human to install or expose the correct `harness` command.
 6. Read only the references needed for the current part of the loop.
 
-## Lifecycle Hints
+## Node Hints
 
-- `awaiting_plan_approval`
-  - wait for approval or update the plan if scope changed
-- `executing`
-  - continue the current plan step and use `step_state` as a local hint
-- `blocked`
-  - resolve the blocker or get human input
-- `awaiting_merge_approval`
-  - read `handoff_state` from `harness status`; finish publish or CI handoff
-    first, and only wait for merge approval once the archived candidate is
-    actually ready
+- `plan`
+  - wait for approval or update the plan if scope changed before
+    `harness execute start`
+- `execution/step-<n>/implement`
+  - continue the current step, fix review findings, or mark the step done once
+    the slice is genuinely complete
+- `execution/step-<n>/review`
+  - review is in flight; aggregate or wait for reviewer submissions rather
+    than continuing implementation blindly
+- `execution/finalize/review|fix|archive`
+  - the step list is done and the branch is in closeout, review, or
+    archive-prep work
+- `execution/finalize/publish`
+  - the plan is archived, but publish, CI, or sync evidence still needs work
+- `execution/finalize/await_merge`
+  - the archived candidate is merge-ready; stay in execute until explicit
+    human merge approval switches the controller into `harness-land`
 
 ## Reference Guide
 
@@ -74,16 +82,15 @@ when it is genuinely impractical, and record the reason in the step's
 Execute is done when:
 
 - the plan is archived
-- lifecycle is `awaiting_merge_approval`
-- `harness status` no longer reports archived handoff follow-up such as
-  `pending_publish`, `waiting_post_archive_ci`, or `followup_required`
+- `harness status` resolves `state.current_node` to
+  `execution/finalize/await_merge`
 - durable closeout summaries are written into the tracked plan
 
 ## Do Not
 
 - Do not ask the human to micromanage routine execution once the plan is
   approved.
-- Do not bypass lifecycle gates just because the next action feels obvious.
+- Do not bypass node or review gates just because the next action feels obvious.
 - Do not skip TDD for behavior changes without documenting why the usual
   Red/Green/Refactor loop was not practical.
 - Do not rely on chat memory when `harness status`, the tracked plan, or local

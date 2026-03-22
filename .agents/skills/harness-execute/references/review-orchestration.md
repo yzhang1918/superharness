@@ -71,7 +71,7 @@ Field rules:
 Suggested dimensions:
 
 - `correctness`
-  - logic, lifecycle, and contract mistakes
+  - logic, node-resolution, and contract mistakes
 - `tests`
   - missing coverage, weak validation, or misleading smoke claims
 - `docs_consistency`

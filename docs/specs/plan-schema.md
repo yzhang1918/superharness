@@ -2,11 +2,12 @@
 
 ## Purpose
 
-`superharness` keeps the durable execution contract in git-tracked plan files
-and keeps raw execution trajectory in `.local`. The plan must remain readable
-to humans, lintable by the CLI, and robust to agent session compaction.
+This document defines the normative v0.2 tracked-plan contract for
+`superharness`.
 
-This document defines the v0.1 tracked-plan contract.
+In v0.2, tracked plans keep durable scope, step closeout, and archive-time
+summaries. Runtime lifecycle, milestone timestamps, review rounds, evidence
+history, and resolved node state live in `.local/harness/`.
 
 ## Directory Layout
 
@@ -15,79 +16,27 @@ Tracked plans live in:
 - `docs/plans/active/`
 - `docs/plans/archived/`
 
-Local execution artifacts live in:
+Command-owned local artifacts live under:
 
 - `.local/harness/current-plan.json`
 - `.local/harness/plans/<plan-stem>/state.json`
-- `.local/harness/plans/<plan-stem>/events.jsonl`
 - `.local/harness/plans/<plan-stem>/reviews/`
-- `.local/harness/plans/<plan-stem>/ci/`
-- `.local/harness/plans/<plan-stem>/sync/`
-- `.local/harness/plans/<plan-stem>/publish/`
+- `.local/harness/plans/<plan-stem>/evidence/`
 
-Tracked plans are the durable source of truth for scope and archived outcome.
-Local artifacts are disposable execution support and must not be required to
-understand the task's durable scope after archive.
-
-### Local Artifact Ownership
-
-The plan-local `.local` directory is intentionally structured so the CLI, not
-the agent, owns most step-state and artifact bookkeeping:
-
-- `state.json`
-  - the latest local snapshot for the current plan
-  - points to the latest relevant review round, CI snapshot, and publish
-    attempt IDs
-  - retains the latest review kind and decision so archive can apply
-    revision-aware review gating
-  - when older local state predates the stored review decision, commands may
-    fall back to the review round's `aggregate.json` artifact instead of
-    forcing a fresh review immediately
-- `events.jsonl`
-  - append-only local trajectory
-  - useful for debugging and UI later, but not required for durable history
-- `reviews/<round-id>/`
-  - one review round per directory
-  - use compact plan-local round IDs such as `review-001-delta`
-  - recommended contents: `manifest.json`, `submissions/<slot>.json`,
-    `aggregate.json`
-- `ci/<snapshot-id>.json`
-  - exported CI or required-check status for one candidate state
-- `sync/<snapshot-id>.json`
-  - remote freshness, divergence, rebase, merge-conflict, or branch-sync
-    metadata for one candidate state
-- `publish/<attempt-id>.json`
-  - PR or publish metadata for one push/update attempt
-
-Repeated work on the same plan creates more review rounds, CI snapshots, and
-publish attempts under the same plan stem. `state.json` points at the latest
-relevant artifacts so `harness status` does not need to guess by scanning raw
-history.
-
-Round IDs only need to be unique within a plan stem. Keep them short and
-monotonic; precise timestamps belong in the review artifacts rather than the
-directory name.
-
-v0.1 standardizes `reviews/`, `ci/`, `sync/`, and `publish/`. Future harness
-versions may add other command-owned artifact lanes, but these are the core
-ones the initial CLI contract depends on.
+The tracked plan is the durable contract. `.local` is disposable execution
+support and trajectory.
 
 ## Source of Truth
 
 The source-of-truth split is:
 
-- this schema document is the normative contract
+- this schema document defines the tracked-plan contract
 - [the packaged plan template asset](../../assets/templates/plan-template.md)
-  is the canonical authoring example shipped by the harness
-- `harness plan template` is a convenience wrapper that renders the packaged
-  asset with seeded metadata
+  is the canonical authoring example shipped by harness
+- `harness plan template` is a convenience wrapper around the packaged asset
 
-Consumer repositories do not need to track the template file in git. The
-template belongs to the harness package version, not the user's plan history.
-
-Skills should not duplicate lifecycle enums or placeholder tokens. They should
-refer agents to `harness --help`, `harness plan template`, and
-`harness plan lint` rather than carrying a second copy of the plan contract.
+Skills and agent prompts should point operators back to this schema, the state
+model, and CLI help instead of duplicating the contract.
 
 ## File Naming
 
@@ -100,45 +49,21 @@ Required pattern:
 Where:
 
 - `YYYY-MM-DD` is the creation date
-- `short-topic` is a compact human-readable topic slug
+- `short-topic` is a compact kebab-case topic slug
 
-Short-topic rules:
+The file stem is the durable identifier used by command-owned local state:
 
-- keep it concrete and searchable
-- name the affected area plus the actual change or problem
-- prefer roughly 3-7 kebab-case words
-- avoid generic endings such as `task`, `work`, `thing`, `update`, or
-  `foundations` unless they are qualified by the actual scope
-- if two same-day plans feel close, widen the topic with a concrete qualifier
-  from the scope instead of appending an opaque counter
-
-Examples:
-
-- `2026-03-17-superharness-cli-and-plan-foundations.md`
-- `2026-03-17-review-round-audit-contract.md`
-- `2026-03-17-status-handoff-recovery.md`
-
-The goal is not uniqueness through numbering. The goal is a filename that stays
-clear and searchable when humans or agents scan plan history.
-
-Lint should enforce the `YYYY-MM-DD-short-topic.md` shape, including a valid
-calendar date and a kebab-case short topic.
-
-The file stem is the durable plan identifier used by local
-`.local/harness/plans/<plan-stem>/` state.
+- `.local/harness/plans/<plan-stem>/...`
 
 ## Frontmatter
 
-Every plan must start with YAML frontmatter containing these required fields:
+Every plan must start with YAML frontmatter containing exactly these durable
+fields:
 
 ```yaml
 ---
-status: active
-lifecycle: executing
-revision: 1
-template_version: 0.1.0
+template_version: 0.2.0
 created_at: 2026-03-17T10:12:01+08:00
-updated_at: 2026-03-17T10:12:01+08:00
 source_type: direct_request
 source_refs: []
 ---
@@ -146,76 +71,31 @@ source_refs: []
 
 ### Required Fields
 
-- `status`
-  - Allowed values: `active`, `archived`
-  - Must match the containing directory.
-- `lifecycle`
-  - Allowed values: `awaiting_plan_approval`, `executing`, `blocked`,
-    `awaiting_merge_approval`
-  - Only the coarse workflow phase belongs in the tracked plan.
-- `revision`
-  - Positive integer.
-  - Starts at `1`.
-  - Increments only when `harness reopen` moves an archived plan back to
-    active work.
 - `template_version`
-  - Harness template/schema version used when the plan was generated or last
-    intentionally migrated.
-  - v0.1 examples use `0.1.0`.
-  - Lint should accept the bundled template version and older historical
-    versions, while rejecting versions newer than the current harness knows
-    how to validate.
+  - semver-like version for the tracked-plan schema/template
+  - older historical versions remain lint-valid if the current harness still
+    knows how to validate them
+  - newer versions than the current harness understands must be rejected
 - `created_at`
-  - RFC3339 timestamp with offset.
-- `updated_at`
-  - RFC3339 timestamp with offset.
-  - Must be updated whenever the tracked plan content changes.
+  - RFC3339 timestamp with offset
 - `source_type`
-  - Short lower-snake-case or kebab-case string describing intake source.
-  - Recommended values include `direct_request`, `issue`, `backlog`,
-    `incident`, or `other`.
+  - short lower-snake-case or kebab-case intake label
+  - examples: `direct_request`, `issue`, `backlog`, `incident`, `other`
 - `source_refs`
-  - Array of issue IDs, URLs, or other external references.
-  - Use `[]` when there are none.
+  - array of external references such as issue IDs or URLs
+  - use `[]` when there are none
 
-Read `status` and `lifecycle` together like this:
+### Removed v0.1 Runtime Fields
 
-- `status` answers whether the plan is still active or already archived
-- `lifecycle` answers what stage of the workflow the plan is in
+v0.2 tracked plans must not carry these top-level runtime fields:
 
-### Intentionally Omitted Fields
+- `status`
+- `lifecycle`
+- `revision`
+- `updated_at`
 
-The v0.1 plan contract does not require:
-
-- `plan_slug`
-- `kind`
-- `branch`
-- `pr_url`
-- step state in tracked frontmatter
-
-Those either come from the file path/title, belong in archive-time summaries,
-or are better inferred from local artifacts.
-
-## Lifecycle Model
-
-The tracked plan stores only the coarse lifecycle:
-
-- `awaiting_plan_approval`
-  - Discovery is done and the plan is waiting for explicit approval.
-- `executing`
-  - The agent is implementing, reviewing, publishing, or preparing to archive.
-- `blocked`
-  - Work cannot proceed without human input or an external dependency.
-- `awaiting_merge_approval`
-  - The plan is archived and frozen; merge approval happens outside the plan,
-    and CLI output may add a separate local handoff hint before the candidate
-    is truly ready to wait for approval.
-
-Step state such as "testing", "waiting for CI", or "resolving conflicts" must
-be inferred from step context plus `.local` review/CI/publish/sync artifacts
-and shown in CLI output rather than hand-maintained in the tracked markdown.
-The same rule applies to archived-plan handoff details such as "pending
-publish" or "waiting on post-archive CI".
+Path placement already answers active vs archived. Runtime milestones and
+revision history belong in command-owned artifacts, not tracked frontmatter.
 
 ## Required Sections
 
@@ -234,36 +114,49 @@ Every plan must contain these sections in order:
 11. `## Archive Summary`
 12. `## Outcome Summary`
 
-`## Deferred Items` is the single place for consciously deferred slice items,
-whether they look more like postponed tasks or accepted-but-tracked risks.
-It is different from `Outcome Summary > Follow-Up Issues`, which records the
-durable handoff note recorded at archive time for those deferred items.
-
-### Scope Structure
-
-`## Scope` must include these subsections:
+`## Scope` must include:
 
 - `### In Scope`
 - `### Out of Scope`
 
-### Acceptance Criteria
+`## Outcome Summary` must include, in order:
 
-- Every criterion must be a markdown checkbox.
-- Active plans may mix checked and unchecked criteria.
-- Archived plans must have every criterion checked.
+- `### Delivered`
+- `### Not Delivered`
+- `### Follow-Up Issues`
 
-### Work Breakdown
+## Acceptance Criteria
 
-The work breakdown must use step headings:
+- every acceptance criterion must be a markdown checkbox
+- active plans may mix checked and unchecked criteria
+- archived plans must have every acceptance criterion checked
+
+## Work Breakdown
+
+The work breakdown uses step headings:
 
 ```md
 ### Step 1: Define the contract
 ```
 
-Every step must include:
+Every step must begin with a durable completion marker directly under the step
+heading:
 
-- a `Status:` line directly under the step heading
-  - Allowed values: `pending`, `in_progress`, `completed`, `blocked`
+```md
+- Done: [ ]
+```
+
+or
+
+```md
+- Done: [x]
+```
+
+Legacy `- Status: ...` lines are no longer part of the v0.2 tracked-plan
+contract and must be rejected by lint.
+
+Every step must also contain:
+
 - `#### Objective`
 - `#### Details`
 - `#### Expected Files`
@@ -275,62 +168,22 @@ Optional step section:
 
 - `#### Step Acceptance Criteria`
 
-`Objective` should stay concise. Longer planning detail belongs in
-`#### Details`. If there is no extra detail beyond the objective, write
-`NONE`.
+Rules:
 
-`#### Execution Notes` and `#### Review Notes` are the preferred place for
-step-local closeout as work advances. They make it easier for another agent or
-a compacted session to see what already happened before archive-time summaries
-exist.
-
-If `#### Step Acceptance Criteria` is present, every criterion in that section
-must be a markdown checkbox. Active steps may mix checked and unchecked boxes.
-Completed archived steps must have every step-local criterion checked.
-
-Example:
-
-```md
-### Step 1: Define the contract
-
-- Status: completed
-
-#### Objective
-
-Write the v0.1 plan and CLI specs.
-
-#### Details
-
-Keep lifecycle coarse and let the CLI infer smaller execution hints.
-
-#### Expected Files
-
-  - `docs/specs/plan-schema.md`
-  - `docs/specs/cli-contract.md`
-
-#### Validation
-
-  - The docs agree on lifecycle, archive, and output-envelope rules.
-
-#### Execution Notes
-
-Captured the initial durable schema and CLI contract.
-
-#### Review Notes
-
-No step-local review needed yet because this was a docs-only planning step.
-```
-
-Behavior-changing implementation steps should mention the automated tests they
-expect to add or update in `Expected files` or `Validation`. v0.1 does not add
-a separate mandatory `Tests` field.
+- `Objective` should stay concise
+- longer planning detail belongs in `Details`
+- if no extra detail is needed, write `NONE` in `Details`
+- `Execution Notes` and `Review Notes` carry durable closeout history as work
+  progresses
+- if `Step Acceptance Criteria` exists, every entry must be a markdown checkbox
+- archived plans require all step-local acceptance checkboxes to be checked
 
 ## Placeholder Policy
 
-These exact placeholder tokens are allowed only while a plan is still active:
+These exact active-plan placeholders are allowed:
 
-- `Step > Execution Notes`: `PENDING_STEP_EXECUTION`
-- `Step > Review Notes`: `PENDING_STEP_REVIEW`
+- `Execution Notes`: `PENDING_STEP_EXECUTION`
+- `Review Notes`: `PENDING_STEP_REVIEW`
 - `Validation Summary`: `PENDING_UNTIL_ARCHIVE`
 - `Review Summary`: `PENDING_UNTIL_ARCHIVE`
 - `Archive Summary`: `PENDING_UNTIL_ARCHIVE`
@@ -338,129 +191,130 @@ These exact placeholder tokens are allowed only while a plan is still active:
 - `Outcome Summary > Not Delivered`: `PENDING_UNTIL_ARCHIVE`
 - `Outcome Summary > Follow-Up Issues`: `NONE`
 
-`harness archive` must reject any plan that still contains
-`PENDING_UNTIL_ARCHIVE`.
+Archive must reject any plan that still contains `PENDING_UNTIL_ARCHIVE`.
 
-Archived plans must not leave `PENDING_STEP_EXECUTION` or `PENDING_STEP_REVIEW`
-in any completed step.
+Archived plans must not leave `PENDING_STEP_EXECUTION` or
+`PENDING_STEP_REVIEW` in any completed step.
 
-`NONE` is not itself an error. It is allowed when there are no follow-up issues.
+## Reopen Update Markers
+
+`harness reopen` must preserve prior archive-time wording instead of blanking
+it out.
+
+The reopen marker token is:
+
+- `UPDATE_REQUIRED_AFTER_REOPEN`
+
+Usage rules:
+
+- reopen-sensitive sections keep their prior archived content
+- the controller or CLI prepends `UPDATE_REQUIRED_AFTER_REOPEN` to:
+  - `Validation Summary`
+  - `Review Summary`
+  - `Archive Summary`
+  - every `Outcome Summary` subsection
+- active reopened plans may temporarily contain this marker
+- archive must reject any plan that still contains this marker
+
+This makes it obvious that the plan was once archived and that the archived
+summary now needs refresh before the next archive.
 
 ## Deferred Items and Follow-Up Tracking
 
 Use these two surfaces deliberately:
 
 - `## Deferred Items`
-  - work or risk deliberately deferred from the current slice
+  - work or risk deliberately left out of the current slice
 - `## Outcome Summary > Follow-Up Issues`
   - the durable handoff note recorded at archive time for deferred items that
-    are still intentionally left out of the current slice
+    remain intentionally out of scope
 
-Archive readiness should enforce this distinction:
+Archive readiness rules:
 
-- if `## Deferred Items` contains real items at archive time, the archived plan
-  must not leave `### Follow-Up Issues` as `NONE`
-- archived follow-up entries should contain enough durable detail for the next
-  human or agent to continue the work; concrete issue or PR-comment references
-  are recommended but not required
-- follow-up discovered only after land belongs in issues, PR comments, or the
-  next plan's intake metadata rather than retroactive edits to the archived
-  plan
-- if there are no deferred items and no post-archive follow-up, `### Follow-Up
-  Issues` may remain `NONE`
+- if `Deferred Items` still contains real items at archive time, `Follow-Up
+  Issues` must not remain `NONE`
+- if there are no deferred items and no follow-up, `Follow-Up Issues` may stay
+  `NONE`
 
 ## Active Plan Rules
 
 An active plan must satisfy all of these:
 
-- File path is under `docs/plans/active/`
-- `status: active`
-- `lifecycle` is one of:
-  - `awaiting_plan_approval`
-  - `executing`
-  - `blocked`
-- Archive-only summary sections may still use the documented placeholder
-  tokens.
+- the file lives under `docs/plans/active/`
+- the required frontmatter fields are present
+- every step uses a `Done` marker
+- archive-only summary sections may still contain the documented active-plan
+  placeholders
+- reopen update markers are allowed only while the plan is active again after
+  a reopen
 
 ## Archived Plan Rules
 
 An archived plan must satisfy all of these:
 
-- File path is under `docs/plans/archived/`
-- `status: archived`
-- `lifecycle: awaiting_merge_approval`
-- Every acceptance criterion is checked
-- Every work-breakdown step is `completed`
-- If `## Deferred Items` contains real items, `### Follow-Up Issues` is not
-  `NONE`
-- Every `#### Step Acceptance Criteria` section that is present is fully checked
-- No completed step still contains:
+- the file lives under `docs/plans/archived/`
+- every acceptance criterion is checked
+- every step is `Done: [x]`
+- every step-local acceptance checkbox is checked when present
+- no completed step still contains:
   - `PENDING_STEP_EXECUTION`
   - `PENDING_STEP_REVIEW`
-- No `PENDING_UNTIL_ARCHIVE` token remains in:
-  - `Validation Summary`
-  - `Review Summary`
-  - `Archive Summary`
-  - `Outcome Summary`
+- no archive-time placeholder token remains:
+  - `PENDING_UNTIL_ARCHIVE`
+  - `UPDATE_REQUIRED_AFTER_REOPEN`
+- if `Deferred Items` contains real items, `Follow-Up Issues` must not be
+  `NONE`
 
 ### Required Archive Summary Contents
 
-The `## Archive Summary` section must include:
+The `Archive Summary` section must include:
 
 - `- Archived At: <RFC3339 timestamp>`
 - `- Revision: <current revision>`
 - `- PR: <URL or NONE>`
 - `- Ready: <why this candidate is ready to wait for merge approval>`
-- `- Merge Handoff: <commit/push reminder before merge approval is final>`
+- `- Merge Handoff: <handoff note for the archived candidate>`
 
-Do not require a tracked `HEAD` SHA in the archived plan. Archive itself
-changes tracked files, so the definitive merge candidate exists only after the
-archive commit is created and pushed.
-
-Branch names and commit SHAs may still appear in local artifacts or CLI output
-when they help the current agent, but they are not required durable plan data
-in v0.1.
-
-Merge actor, merge timestamp, and post-merge notes belong in the PR history or
-PR comments after land, not in the archived plan.
+`Revision` is command-owned runtime history that must be stamped into the
+tracked archive summary. It is no longer tracked as frontmatter.
 
 ## Reopen Behavior
 
-`harness reopen` is a mechanical transition from archived back to active:
+`harness reopen --mode <...>` is a mechanical transition from archived back to
+active:
 
 - move the file from `docs/plans/archived/` to `docs/plans/active/`
-- set `status: active`
-- set `lifecycle: executing`
-- increment `revision`
-- update `updated_at`
-- reset archive-only summary sections to their active placeholder tokens
-- clear stale review, CI, and sync state that belonged to the archived
-  candidate
-- update `.local/harness/current-plan.json` and any existing plan-local
-  `state.json` pointers back to the active path
+- preserve prior archive-time wording
+- prepend `UPDATE_REQUIRED_AFTER_REOPEN` markers to reopen-sensitive summaries
+- clear stale review and evidence facts that belonged to the invalidated
+  archived candidate
+- increment the command-owned revision
+- update current-plan and plan-local state pointers back to the active path
 
-After reopen, the agent may edit plan content directly. If reopened work
-materially changes scope or acceptance criteria, the agent should update the
-tracked plan and may set `lifecycle: awaiting_plan_approval` before resuming
-implementation.
+Mode-specific rules:
+
+- `finalize-fix`
+  - reopened work remains finalize-scope repair
+- `new-step`
+  - reopened work must be represented by a new unfinished step
+  - the controller adds that new step after reopen rather than editing old
+    completed steps
 
 ## Lint Expectations
 
-`harness plan lint` should stop with compact targeted errors on:
+`harness plan lint` must stop with compact targeted errors on:
 
 - missing required frontmatter fields
-- invalid `status`, `lifecycle`, or step `Status` values
-- non-RFC3339 timestamps
-- missing required sections
+- legacy frontmatter runtime fields that are no longer allowed
+- invalid or unsupported `template_version`
+- non-RFC3339 `created_at`
+- missing required sections or wrong section order
 - missing `### In Scope` / `### Out of Scope`
-- acceptance criteria that are not checkboxes
-- step-acceptance criteria that are present but not checkboxes
-- step headings without the required status line or required subsections
-- active plans stored under `archived/` or archived plans stored under
-  `active/`
-- archived plans with unchecked step-local acceptance criteria
+- acceptance criteria or step-local acceptance criteria that are not checkboxes
+- missing step `Done` markers or legacy `Status:` lines
+- missing required step subsections
+- plans stored outside `docs/plans/active/` or `docs/plans/archived/`
+- archived plans with unchecked acceptance criteria, incomplete steps, or
+  unchecked step-local acceptance criteria
+- archived plans that still contain active-plan or reopen update placeholders
 - archived plans with deferred items but `Follow-Up Issues: NONE`
-- archived plans with completed steps that still contain
-  `PENDING_STEP_EXECUTION` or `PENDING_STEP_REVIEW`
-- archived plans that still contain `PENDING_UNTIL_ARCHIVE`
-- archived plans with unchecked acceptance criteria or incomplete step status

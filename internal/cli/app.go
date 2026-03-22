@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yzhang1918/superharness/internal/evidence"
 	"github.com/yzhang1918/superharness/internal/lifecycle"
 	"github.com/yzhang1918/superharness/internal/plan"
 	"github.com/yzhang1918/superharness/internal/review"
@@ -44,6 +45,10 @@ func (a *App) Run(args []string) int {
 	switch args[0] {
 	case "plan":
 		return a.runPlan(args[1:])
+	case "execute":
+		return a.runExecute(args[1:])
+	case "evidence":
+		return a.runEvidence(args[1:])
 	case "review":
 		return a.runReview(args[1:])
 	case "land":
@@ -106,22 +111,129 @@ func (a *App) runPlan(args []string) int {
 	}
 }
 
-func (a *App) runLand(args []string) int {
+func (a *App) runExecute(args []string) int {
 	if len(args) == 0 {
-		a.printLandUsage()
+		a.printExecuteUsage()
 		return 2
 	}
 	switch args[0] {
-	case "record":
-		return a.runLandRecord(args[1:])
+	case "start":
+		return a.runExecuteStart(args[1:])
 	case "-h", "--help", "help":
-		a.printLandUsage()
+		a.printExecuteUsage()
 		return 0
 	default:
-		fmt.Fprintf(a.Stderr, "unknown land subcommand %q\n\n", args[0])
-		a.printLandUsage()
+		fmt.Fprintf(a.Stderr, "unknown execute subcommand %q\n\n", args[0])
+		a.printExecuteUsage()
 		return 2
 	}
+}
+
+func (a *App) runEvidence(args []string) int {
+	if len(args) == 0 {
+		a.printEvidenceUsage()
+		return 2
+	}
+	switch args[0] {
+	case "submit":
+		return a.runEvidenceSubmit(args[1:])
+	case "-h", "--help", "help":
+		a.printEvidenceUsage()
+		return 0
+	default:
+		fmt.Fprintf(a.Stderr, "unknown evidence subcommand %q\n\n", args[0])
+		a.printEvidenceUsage()
+		return 2
+	}
+}
+
+func (a *App) runLand(args []string) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "complete":
+			return a.runLandComplete(args[1:])
+		case "-h", "--help", "help":
+			a.printLandUsage()
+			return 0
+		}
+	}
+	return a.runLandEntry(args)
+}
+
+func (a *App) runEvidenceSubmit(args []string) int {
+	fs := flag.NewFlagSet("harness evidence submit", flag.ContinueOnError)
+	fs.SetOutput(a.Stderr)
+	kind := fs.String("kind", "", "Evidence kind: ci, publish, or sync.")
+	inputPath := fs.String("input", "", "Read the evidence payload JSON from this path. Defaults to stdin.")
+	fs.Usage = func() {
+		fmt.Fprintln(a.Stderr, "Usage: harness evidence submit --kind <ci|publish|sync> [--input <path>]")
+		fmt.Fprintln(a.Stderr)
+		fmt.Fprintln(a.Stderr, "Record append-only CI, publish, or sync evidence for the current archived candidate.")
+		fmt.Fprintln(a.Stderr)
+		fmt.Fprintln(a.Stderr, "Schemas:")
+		fmt.Fprintln(a.Stderr, `  ci:      {"status":"pending|success|failed|not_applied","provider":"optional","url":"optional","reason":"required when status=not_applied"}`)
+		fmt.Fprintln(a.Stderr, `  publish: {"status":"recorded|not_applied","pr_url":"required when status=recorded","branch":"optional","base":"optional","commit":"optional","reason":"required when status=not_applied"}`)
+		fmt.Fprintln(a.Stderr, `  sync:    {"status":"fresh|stale|conflicted|not_applied","base_ref":"optional","head_ref":"optional","reason":"required when status=not_applied"}`)
+		fmt.Fprintln(a.Stderr)
+		fmt.Fprintln(a.Stderr, "Examples:")
+		fmt.Fprintln(a.Stderr, `  harness evidence submit --kind ci <<'EOF'`)
+		fmt.Fprintln(a.Stderr, `  {"status":"success","provider":"github-actions","url":"https://github.com/org/repo/actions/runs/123"}`)
+		fmt.Fprintln(a.Stderr, `  EOF`)
+		fmt.Fprintln(a.Stderr, `  harness evidence submit --kind sync <<'EOF'`)
+		fmt.Fprintln(a.Stderr, `  {"status":"not_applied","reason":"repository has no shared merge target in this environment"}`)
+		fmt.Fprintln(a.Stderr, `  EOF`)
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 0 || strings.TrimSpace(*kind) == "" {
+		fs.Usage()
+		return 2
+	}
+	workdir, err := a.Getwd()
+	if err != nil {
+		fmt.Fprintf(a.Stderr, "resolve working directory: %v\n", err)
+		return 1
+	}
+	inputBytes, err := a.readInput(*inputPath)
+	if err != nil {
+		fmt.Fprintf(a.Stderr, "read evidence input: %v\n", err)
+		return 1
+	}
+	result := evidence.Service{Workdir: workdir, Now: a.Now}.Submit(*kind, inputBytes)
+	return a.writeJSONResult(result)
+}
+
+func (a *App) runLandEntry(args []string) int {
+	fs := flag.NewFlagSet("harness land", flag.ContinueOnError)
+	fs.SetOutput(a.Stderr)
+	prURL := fs.String("pr", "", "Merged PR URL.")
+	commit := fs.String("commit", "", "Optional landed commit SHA.")
+	fs.Usage = func() {
+		fmt.Fprintln(a.Stderr, "Usage: harness land --pr <url> [--commit <sha>]")
+		fmt.Fprintln(a.Stderr)
+		fmt.Fprintln(a.Stderr, "Record merge confirmation for the current archived candidate and enter land cleanup.")
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 0 || strings.TrimSpace(*prURL) == "" {
+		fs.Usage()
+		return 2
+	}
+	workdir, err := a.Getwd()
+	if err != nil {
+		fmt.Fprintf(a.Stderr, "resolve working directory: %v\n", err)
+		return 1
+	}
+	result := lifecycle.Service{Workdir: workdir, Now: a.Now}.Land(*prURL, *commit)
+	return a.writeJSONResult(result)
 }
 
 func (a *App) runPlanTemplate(args []string) int {
@@ -354,13 +466,13 @@ func (a *App) runReviewAggregate(args []string) int {
 	return a.writeJSONResult(result)
 }
 
-func (a *App) runLandRecord(args []string) int {
-	fs := flag.NewFlagSet("harness land record", flag.ContinueOnError)
+func (a *App) runExecuteStart(args []string) int {
+	fs := flag.NewFlagSet("harness execute start", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(a.Stderr, "Usage: harness land record")
+		fmt.Fprintln(a.Stderr, "Usage: harness execute start")
 		fmt.Fprintln(a.Stderr)
-		fmt.Fprintln(a.Stderr, "Record post-merge landed local state for the current archived plan.")
+		fmt.Fprintln(a.Stderr, "Record the explicit execution-start milestone for the current active plan.")
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -377,7 +489,34 @@ func (a *App) runLandRecord(args []string) int {
 		fmt.Fprintf(a.Stderr, "resolve working directory: %v\n", err)
 		return 1
 	}
-	result := lifecycle.Service{Workdir: workdir, Now: a.Now}.RecordLanded()
+	result := lifecycle.Service{Workdir: workdir, Now: a.Now}.ExecuteStart()
+	return a.writeJSONResult(result)
+}
+
+func (a *App) runLandComplete(args []string) int {
+	fs := flag.NewFlagSet("harness land complete", flag.ContinueOnError)
+	fs.SetOutput(a.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(a.Stderr, "Usage: harness land complete")
+		fmt.Fprintln(a.Stderr)
+		fmt.Fprintln(a.Stderr, "Record that post-merge cleanup is complete and restore idle worktree state.")
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fs.Usage()
+		return 2
+	}
+	workdir, err := a.Getwd()
+	if err != nil {
+		fmt.Fprintf(a.Stderr, "resolve working directory: %v\n", err)
+		return 1
+	}
+	result := lifecycle.Service{Workdir: workdir, Now: a.Now}.LandComplete()
 	return a.writeJSONResult(result)
 }
 
@@ -411,8 +550,9 @@ func (a *App) runArchive(args []string) int {
 func (a *App) runReopen(args []string) int {
 	fs := flag.NewFlagSet("harness reopen", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
+	mode := fs.String("mode", "", "Reopen mode: finalize-fix or new-step.")
 	fs.Usage = func() {
-		fmt.Fprintln(a.Stderr, "Usage: harness reopen")
+		fmt.Fprintln(a.Stderr, "Usage: harness reopen --mode <finalize-fix|new-step>")
 		fmt.Fprintln(a.Stderr)
 		fmt.Fprintln(a.Stderr, "Restore the current archived plan to active execution.")
 	}
@@ -422,7 +562,7 @@ func (a *App) runReopen(args []string) int {
 		}
 		return 2
 	}
-	if fs.NArg() != 0 {
+	if fs.NArg() != 0 || strings.TrimSpace(*mode) == "" {
 		fs.Usage()
 		return 2
 	}
@@ -431,7 +571,7 @@ func (a *App) runReopen(args []string) int {
 		fmt.Fprintf(a.Stderr, "resolve working directory: %v\n", err)
 		return 1
 	}
-	result := lifecycle.Service{Workdir: workdir, Now: a.Now}.Reopen()
+	result := lifecycle.Service{Workdir: workdir, Now: a.Now}.Reopen(*mode)
 	return a.writeJSONResult(result)
 }
 
@@ -459,10 +599,13 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.Stderr, "Commands:")
 	fmt.Fprintln(a.Stderr, "  plan template   Render the packaged plan template")
 	fmt.Fprintln(a.Stderr, "  plan lint       Validate a tracked plan")
+	fmt.Fprintln(a.Stderr, "  execute start   Record the execution-start milestone")
+	fmt.Fprintln(a.Stderr, "  evidence submit Record append-only CI, publish, or sync evidence")
 	fmt.Fprintln(a.Stderr, "  review start    Create a deterministic review round")
 	fmt.Fprintln(a.Stderr, "  review submit   Record one reviewer submission")
 	fmt.Fprintln(a.Stderr, "  review aggregate Aggregate reviewer submissions")
-	fmt.Fprintln(a.Stderr, "  land record     Record post-merge landed local state")
+	fmt.Fprintln(a.Stderr, "  land            Record merge confirmation for the archived candidate")
+	fmt.Fprintln(a.Stderr, "  land complete   Record post-merge cleanup completion")
 	fmt.Fprintln(a.Stderr, "  archive         Freeze the current active plan")
 	fmt.Fprintln(a.Stderr, "  reopen          Restore the current archived plan")
 	fmt.Fprintln(a.Stderr, "  status          Summarize the current plan and local execution state")
@@ -485,11 +628,27 @@ func (a *App) printReviewUsage() {
 	fmt.Fprintln(a.Stderr, "  aggregate  Aggregate reviewer submissions")
 }
 
-func (a *App) printLandUsage() {
-	fmt.Fprintln(a.Stderr, "Usage: harness land <subcommand> [flags]")
+func (a *App) printExecuteUsage() {
+	fmt.Fprintln(a.Stderr, "Usage: harness execute <subcommand> [flags]")
 	fmt.Fprintln(a.Stderr)
 	fmt.Fprintln(a.Stderr, "Subcommands:")
-	fmt.Fprintln(a.Stderr, "  record    Record post-merge landed local state")
+	fmt.Fprintln(a.Stderr, "  start      Record the explicit execution-start milestone")
+}
+
+func (a *App) printEvidenceUsage() {
+	fmt.Fprintln(a.Stderr, "Usage: harness evidence <subcommand> [flags]")
+	fmt.Fprintln(a.Stderr)
+	fmt.Fprintln(a.Stderr, "Subcommands:")
+	fmt.Fprintln(a.Stderr, "  submit     Record append-only CI, publish, or sync evidence")
+}
+
+func (a *App) printLandUsage() {
+	fmt.Fprintln(a.Stderr, "Usage: harness land --pr <url> [--commit <sha>]")
+	fmt.Fprintln(a.Stderr, "   or: harness land complete")
+	fmt.Fprintln(a.Stderr)
+	fmt.Fprintln(a.Stderr, "Commands:")
+	fmt.Fprintln(a.Stderr, "  land            Record merge confirmation and enter post-merge cleanup")
+	fmt.Fprintln(a.Stderr, "  land complete   Record post-merge cleanup completion and restore idle")
 }
 
 type stringListFlag []string
@@ -539,6 +698,10 @@ func (a *App) writeJSONResult(value any) int {
 			return 0
 		}
 	case review.AggregateResult:
+		if result.OK {
+			return 0
+		}
+	case evidence.Result:
 		if result.OK {
 			return 0
 		}

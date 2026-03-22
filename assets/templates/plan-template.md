@@ -1,10 +1,6 @@
 ---
-status: active
-lifecycle: awaiting_plan_approval
-revision: 1
-template_version: 0.1.0
+template_version: 0.2.0
 created_at: REPLACE_WITH_RFC3339_TIMESTAMP
-updated_at: REPLACE_WITH_RFC3339_TIMESTAMP
 source_type: direct_request
 source_refs: []
 ---
@@ -38,7 +34,7 @@ Describe the intended outcome in one or two short paragraphs.
 
 ### Step 1: Replace with first step title
 
-- Status: pending
+- Done: [ ]
 
 #### Objective
 
@@ -69,7 +65,7 @@ PENDING_STEP_REVIEW
 
 ### Step 2: Replace with second step title
 
-- Status: pending
+- Done: [ ]
 
 #### Objective
 

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode"
 
+	"github.com/yzhang1918/superharness/internal/evidence"
 	"github.com/yzhang1918/superharness/internal/lifecycle"
 	"github.com/yzhang1918/superharness/internal/plan"
 	"github.com/yzhang1918/superharness/internal/runstate"
@@ -20,6 +22,7 @@ type Result struct {
 	Command    string        `json:"command"`
 	Summary    string        `json:"summary"`
 	State      State         `json:"state"`
+	Facts      *Facts        `json:"facts,omitempty"`
 	Artifacts  *Artifacts    `json:"artifacts,omitempty"`
 	NextAction []NextAction  `json:"next_actions"`
 	Blockers   []StatusError `json:"blockers,omitempty"`
@@ -28,20 +31,33 @@ type Result struct {
 }
 
 type State struct {
-	PlanStatus    string `json:"plan_status"`
-	Lifecycle     string `json:"lifecycle"`
-	Step          string `json:"step,omitempty"`
-	StepState     string `json:"step_state,omitempty"`
-	HandoffState  string `json:"handoff_state,omitempty"`
-	WorktreeState string `json:"worktree_state,omitempty"`
+	CurrentNode string `json:"current_node"`
+}
+
+type Facts struct {
+	CurrentStep         string `json:"current_step,omitempty"`
+	Revision            int    `json:"revision,omitempty"`
+	ReopenMode          string `json:"reopen_mode,omitempty"`
+	ReviewKind          string `json:"review_kind,omitempty"`
+	ReviewTrigger       string `json:"review_trigger,omitempty"`
+	ReviewTarget        string `json:"review_target,omitempty"`
+	ReviewStatus        string `json:"review_status,omitempty"`
+	ArchiveBlockerCount int    `json:"archive_blocker_count,omitempty"`
+	PublishStatus       string `json:"publish_status,omitempty"`
+	PRURL               string `json:"pr_url,omitempty"`
+	CIStatus            string `json:"ci_status,omitempty"`
+	SyncStatus          string `json:"sync_status,omitempty"`
+	LandPRURL           string `json:"land_pr_url,omitempty"`
+	LandCommit          string `json:"land_commit,omitempty"`
 }
 
 type Artifacts struct {
 	PlanPath           string `json:"plan_path,omitempty"`
 	LocalStatePath     string `json:"local_state_path,omitempty"`
 	ReviewRoundID      string `json:"review_round_id,omitempty"`
-	CISnapshotID       string `json:"ci_snapshot_id,omitempty"`
-	PRURL              string `json:"pr_url,omitempty"`
+	CIRecordID         string `json:"ci_record_id,omitempty"`
+	PublishRecordID    string `json:"publish_record_id,omitempty"`
+	SyncRecordID       string `json:"sync_record_id,omitempty"`
 	LastLandedPlanPath string `json:"last_landed_plan_path,omitempty"`
 	LastLandedAt       string `json:"last_landed_at,omitempty"`
 }
@@ -54,6 +70,25 @@ type NextAction struct {
 type StatusError struct {
 	Path    string `json:"path"`
 	Message string `json:"message"`
+}
+
+type reviewContext struct {
+	RoundID         string
+	Kind            string
+	Trigger         string
+	Target          string
+	Aggregated      bool
+	InFlight        bool
+	Decision        string
+	DecisionKnown   bool
+	TargetStepIndex int
+	UnsafeFallback  bool
+}
+
+type evidenceContext struct {
+	Publish *evidence.PublishRecord
+	CI      *evidence.CIRecord
+	Sync    *evidence.SyncRecord
 }
 
 func (s Service) Read() Result {
@@ -69,8 +104,8 @@ func (s Service) Read() Result {
 
 	planPath, err := plan.DetectCurrentPath(s.Workdir)
 	if err != nil {
-		if errors.Is(err, plan.ErrNoCurrentPlan) && currentPlan != nil && strings.TrimSpace(currentPlan.LastLandedPlanPath) != "" {
-			return idleAfterLandResult(currentPlan)
+		if errors.Is(err, plan.ErrNoCurrentPlan) {
+			return idleResult(currentPlan)
 		}
 		return Result{
 			OK:      false,
@@ -108,273 +143,719 @@ func (s Service) Read() Result {
 		}
 	}
 
+	relPlanPath, err := filepath.Rel(s.Workdir, planPath)
+	if err != nil {
+		return Result{
+			OK:      false,
+			Command: "status",
+			Summary: "Unable to determine the current plan path.",
+			Artifacts: &Artifacts{
+				PlanPath:       planPath,
+				LocalStatePath: statePath,
+			},
+			Errors: []StatusError{{Path: "plan", Message: err.Error()}},
+		}
+	}
+	relPlanPath = filepath.ToSlash(relPlanPath)
+
 	result := Result{
 		OK:      true,
 		Command: "status",
-		State: State{
-			PlanStatus: doc.Frontmatter.Status,
-			Lifecycle:  doc.Frontmatter.Lifecycle,
-		},
 		Artifacts: &Artifacts{
 			PlanPath:       planPath,
 			LocalStatePath: statePath,
 		},
 	}
 
-	reviewDecision, reviewDecisionKnown := "", false
-	if state != nil && state.ActiveReviewRound != nil {
-		decision, known, err := runstate.EffectiveReviewDecision(s.Workdir, planStem, state.ActiveReviewRound)
-		if err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("Unable to read the aggregate artifact for %s; review status may be stale.", state.ActiveReviewRound.RoundID))
+	reviewCtx, reviewWarnings := loadReviewContext(s.Workdir, planStem, doc, state)
+	result.Warnings = append(result.Warnings, reviewWarnings...)
+	if reviewCtx != nil && isStructuralReviewTrigger(reviewCtx.Trigger) && strings.TrimSpace(reviewCtx.RoundID) != "" {
+		result.Artifacts.ReviewRoundID = reviewCtx.RoundID
+	}
+
+	facts := &Facts{}
+	if state != nil && state.Revision > 0 {
+		facts.Revision = state.Revision
+	}
+	if state != nil && state.Reopen != nil {
+		facts.ReopenMode = state.Reopen.Mode
+	}
+	if reviewCtx != nil && isStructuralReviewTrigger(reviewCtx.Trigger) && !reviewCtx.UnsafeFallback {
+		facts.ReviewKind = reviewCtx.Kind
+		facts.ReviewTrigger = reviewCtx.Trigger
+		facts.ReviewTarget = reviewCtx.Target
+		switch {
+		case reviewCtx.InFlight:
+			facts.ReviewStatus = "in_progress"
+		case reviewCtx.DecisionKnown:
+			facts.ReviewStatus = reviewCtx.Decision
+		case reviewCtx.Aggregated:
+			facts.ReviewStatus = "unknown"
+		}
+	}
+
+	var blockers []StatusError
+	switch {
+	case landInProgress(state):
+		result.State.CurrentNode = "land"
+		if state != nil && state.Land != nil {
+			facts.LandPRURL = state.Land.PRURL
+			facts.LandCommit = state.Land.Commit
+		}
+	case doc.DerivedPlanStatus() == "active" && !doc.ExecutionStarted(state):
+		result.State.CurrentNode = "plan"
+	case doc.DerivedPlanStatus() == "active":
+		stepIdx, stepNode := resolveStepNode(doc, reviewCtx)
+		if stepNode != "" {
+			result.State.CurrentNode = stepNode
+			facts.CurrentStep = doc.Steps[stepIdx].Title
 		} else {
-			reviewDecision = decision
-			reviewDecisionKnown = known
+			result.State.CurrentNode, blockers = resolveFinalizeNode(s.Workdir, planStem, doc, state, reviewCtx)
+			if len(blockers) > 0 {
+				facts.ArchiveBlockerCount = len(blockers)
+			}
 		}
-		if state.ActiveReviewRound.Aggregated && !reviewDecisionKnown {
-			result.Warnings = append(result.Warnings, "The latest aggregated review outcome could not be recovered from local state; rerun or recover the review before archive-sensitive work.")
+	case doc.DerivedPlanStatus() == "archived":
+		evidenceCtx, evidenceWarnings := loadEvidenceContext(s.Workdir, state)
+		result.Warnings = append(result.Warnings, evidenceWarnings...)
+		applyEvidenceFacts(facts, result.Artifacts, evidenceCtx)
+		if archivedCandidateReadyForMerge(evidenceCtx) {
+			result.State.CurrentNode = "execution/finalize/await_merge"
+		} else {
+			result.State.CurrentNode = "execution/finalize/publish"
 		}
-	}
-
-	archiveBlockers := make([]lifecycle.CommandError, 0)
-	if doc.Frontmatter.Lifecycle == "executing" && doc.AllStepsCompleted() && doc.AllAcceptanceChecked() {
-		archiveBlockers = lifecycle.EvaluateArchiveReadiness(s.Workdir, planStem, doc, state)
-		for _, blocker := range archiveBlockers {
-			result.Blockers = append(result.Blockers, StatusError{Path: blocker.Path, Message: blocker.Message})
-		}
-	}
-	if doc.Frontmatter.Lifecycle == "awaiting_merge_approval" {
-		result.State.HandoffState = inferHandoffState(state)
-	}
-
-	if current := doc.CurrentStep(); current != nil {
-		result.State.Step = current.Title
-	}
-	if doc.Frontmatter.Lifecycle == "executing" {
-		result.State.StepState = inferStepState(doc, state, reviewDecisionKnown, reviewDecision, archiveBlockers)
-	}
-	if state != nil {
-		if state.ActiveReviewRound != nil {
-			result.Artifacts.ReviewRoundID = state.ActiveReviewRound.RoundID
-		}
-		if state.LatestCI != nil {
-			result.Artifacts.CISnapshotID = state.LatestCI.SnapshotID
-		}
-		if state.LatestPublish != nil {
-			result.Artifacts.PRURL = state.LatestPublish.PRURL
+	default:
+		return Result{
+			OK:      false,
+			Command: "status",
+			Summary: "Unable to classify the current plan path.",
+			Artifacts: &Artifacts{
+				PlanPath:       planPath,
+				LocalStatePath: statePath,
+			},
+			Errors: []StatusError{{Path: "plan", Message: fmt.Sprintf("unsupported plan path kind for %s", planPath)}},
 		}
 	}
 
-	result.Warnings = append(result.Warnings, buildWarnings(state)...)
-	result.NextAction = buildNextActions(doc, state, result.State.StepState, result.State.HandoffState, reviewDecisionKnown, result.Blockers)
-	result.Summary = buildSummary(doc, state, result.State.StepState, result.State.HandoffState, reviewDecisionKnown, result.Blockers)
+	result.Blockers = blockers
+	result.Summary = buildSummary(result.State.CurrentNode, facts, reviewCtx, blockers, currentPlan)
+	result.NextAction = buildNextActions(result.State.CurrentNode, facts, reviewCtx, blockers)
+	if facts.empty() {
+		result.Facts = nil
+	} else {
+		result.Facts = facts
+	}
+
+	cacheSafe := reviewCtx == nil || !reviewCtx.UnsafeFallback
+	if !cacheSafe {
+		result.Warnings = append(result.Warnings, "Skipping current_node cache refresh because the reviewed step could not be recovered safely from local review metadata.")
+	} else if savedStatePath, err := s.cacheResolvedNode(planStem, relPlanPath, state, result.State.CurrentNode); err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("Unable to refresh the current_node cache: %v", err))
+	} else if strings.TrimSpace(savedStatePath) != "" {
+		result.Artifacts.LocalStatePath = savedStatePath
+	}
+
+	if result.Artifacts != nil && result.Artifacts.PlanPath == "" && result.Artifacts.LocalStatePath == "" &&
+		result.Artifacts.ReviewRoundID == "" && result.Artifacts.CIRecordID == "" &&
+		result.Artifacts.PublishRecordID == "" && result.Artifacts.SyncRecordID == "" &&
+		result.Artifacts.LastLandedPlanPath == "" && result.Artifacts.LastLandedAt == "" {
+		result.Artifacts = nil
+	}
 
 	return result
 }
 
-func inferStepState(doc *plan.Document, state *runstate.State, reviewDecisionKnown bool, reviewDecision string, archiveBlockers []lifecycle.CommandError) string {
-	if state != nil {
-		if state.Sync != nil && state.Sync.Conflicts {
-			return "resolving_conflicts"
-		}
-		if state.ActiveReviewRound != nil && !state.ActiveReviewRound.Aggregated {
-			return "reviewing"
-		}
-		if state.ActiveReviewRound != nil && state.ActiveReviewRound.Aggregated && (!reviewDecisionKnown || reviewDecision != "pass") {
-			return "fix_required"
-		}
-		if state.LatestCI != nil && state.LatestCI.Status == "pending" {
-			return "waiting_ci"
-		}
+func resolveStepNode(doc *plan.Document, reviewCtx *reviewContext) (int, string) {
+	if reviewCtx != nil && reviewCtx.TargetStepIndex >= 0 && reviewCtx.UnsafeFallback {
+		return reviewCtx.TargetStepIndex, stepNode(reviewCtx.TargetStepIndex, "implement")
 	}
-	if doc.AllStepsCompleted() && doc.AllAcceptanceChecked() && len(archiveBlockers) == 0 {
-		return "ready_for_archive"
+	if reviewCtx != nil && reviewCtx.Trigger == "step_closeout" &&
+		(reviewCtx.InFlight || !reviewCtx.DecisionKnown || reviewCtx.Decision != "pass") &&
+		reviewCtx.TargetStepIndex >= 0 {
+		if reviewCtx.InFlight {
+			return reviewCtx.TargetStepIndex, stepNode(reviewCtx.TargetStepIndex, "review")
+		}
+		return reviewCtx.TargetStepIndex, stepNode(reviewCtx.TargetStepIndex, "implement")
 	}
-	return "implementing"
+
+	currentStepIndex := currentStepIndex(doc)
+	if currentStepIndex < 0 {
+		return -1, ""
+	}
+	if reviewCtx != nil && reviewCtx.Trigger == "step_closeout" && reviewCtx.InFlight && reviewCtx.TargetStepIndex == currentStepIndex {
+		return currentStepIndex, stepNode(currentStepIndex, "review")
+	}
+	return currentStepIndex, stepNode(currentStepIndex, "implement")
 }
 
-func buildWarnings(state *runstate.State) []string {
-	if state == nil || state.Sync == nil {
-		return nil
-	}
-	switch state.Sync.Freshness {
-	case "stale":
-		return []string{"Remote freshness is stale; refresh remote state before making merge-sensitive decisions."}
-	case "unknown":
-		return []string{"Remote freshness is unknown; consider refreshing remote state before archive or merge-sensitive work."}
-	default:
-		return nil
-	}
-}
+func resolveFinalizeNode(workdir, planStem string, doc *plan.Document, state *runstate.State, reviewCtx *reviewContext) (string, []StatusError) {
+	reopenedNewStepPending := state != nil &&
+		state.Reopen != nil &&
+		state.Reopen.Mode == "new-step" &&
+		state.Reopen.BaseStepCount > 0 &&
+		len(doc.Steps) <= state.Reopen.BaseStepCount &&
+		doc.CurrentStep() == nil &&
+		doc.AllStepsCompleted()
 
-func inferHandoffState(state *runstate.State) string {
-	if state == nil || state.LatestPublish == nil || strings.TrimSpace(state.LatestPublish.PRURL) == "" {
-		return "pending_publish"
+	if reviewCtx != nil && reviewCtx.Trigger == "pre_archive" && reviewCtx.InFlight {
+		return "execution/finalize/review", nil
 	}
-	if state.Sync == nil {
-		return "followup_required"
+	if reopenedNewStepPending {
+		return "execution/finalize/fix", nil
 	}
-	if state.Sync.Conflicts {
-		return "followup_required"
-	}
-	switch strings.ToLower(strings.TrimSpace(state.Sync.Freshness)) {
-	case "fresh":
-	default:
-		return "followup_required"
-	}
-	if state.LatestCI != nil {
-		switch strings.ToLower(strings.TrimSpace(state.LatestCI.Status)) {
-		case "pending":
-			return "waiting_post_archive_ci"
-		case "success", "passed", "green", "succeeded":
-			return "ready_for_merge_approval"
-		default:
-			return "followup_required"
+	if state != nil && state.Reopen != nil && state.Reopen.Mode == "finalize-fix" {
+		if !finalizeReviewSatisfied(reviewCtx, runstate.CurrentRevision(state)) {
+			return "execution/finalize/fix", nil
 		}
 	}
-	return "waiting_post_archive_ci"
+	if reviewCtx != nil && reviewCtx.Trigger == "pre_archive" && reviewCtx.Aggregated &&
+		(!reviewCtx.DecisionKnown || reviewCtx.Decision != "pass") {
+		return "execution/finalize/fix", nil
+	}
+	if finalizeReviewSatisfied(reviewCtx, runstate.CurrentRevision(state)) {
+		return "execution/finalize/archive", commandErrorsToStatusErrors(lifecycle.EvaluateArchiveReadiness(workdir, planStem, doc, state))
+	}
+	return "execution/finalize/review", nil
 }
 
-func buildNextActions(doc *plan.Document, state *runstate.State, stepState string, handoffState string, reviewDecisionKnown bool, blockers []StatusError) []NextAction {
-	next := make([]NextAction, 0)
-	if state != nil && state.Sync != nil && (state.Sync.Freshness == "stale" || state.Sync.Freshness == "unknown") {
-		next = append(next, NextAction{
+func finalizeReviewSatisfied(reviewCtx *reviewContext, revision int) bool {
+	if reviewCtx == nil || reviewCtx.Trigger != "pre_archive" || !reviewCtx.Aggregated {
+		return false
+	}
+	if !reviewCtx.DecisionKnown || reviewCtx.Decision != "pass" {
+		return false
+	}
+	if revision <= 1 && reviewCtx.Kind != "full" {
+		return false
+	}
+	return true
+}
+
+func loadReviewContext(workdir, planStem string, doc *plan.Document, state *runstate.State) (*reviewContext, []string) {
+	if state == nil || state.ActiveReviewRound == nil {
+		return nil, nil
+	}
+
+	round := state.ActiveReviewRound
+	ctx := &reviewContext{
+		RoundID:         round.RoundID,
+		Kind:            round.Kind,
+		Aggregated:      round.Aggregated,
+		InFlight:        !round.Aggregated,
+		TargetStepIndex: -1,
+	}
+	warnings := make([]string, 0)
+
+	if trigger, known, err := runstate.EffectiveReviewTrigger(workdir, planStem, round); err != nil {
+		warnings = append(warnings, fmt.Sprintf("Unable to read the review trigger for %s; status may be conservative.", round.RoundID))
+	} else if known {
+		ctx.Trigger = trigger
+	}
+
+	if target, known, err := runstate.EffectiveReviewTarget(workdir, planStem, round); err != nil {
+		warnings = append(warnings, fmt.Sprintf("Unable to read the review target for %s; status may fall back to a conservative step match.", round.RoundID))
+	} else if known {
+		ctx.Target = target
+	}
+
+	if round.Aggregated {
+		decision, known, err := runstate.EffectiveReviewDecision(workdir, planStem, round)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("Unable to read the aggregate artifact for %s; review status may be stale.", round.RoundID))
+		} else {
+			ctx.Decision = decision
+			ctx.DecisionKnown = known
+		}
+		if !ctx.DecisionKnown {
+			warnings = append(warnings, fmt.Sprintf("The latest aggregated review outcome for %s could not be recovered; status is staying conservative.", round.RoundID))
+		}
+	}
+
+	if ctx.Trigger == "step_closeout" {
+		if index, matched := resolveReviewTargetStep(doc, ctx.Target); matched {
+			ctx.TargetStepIndex = index
+		} else {
+			ctx.TargetStepIndex, ctx.UnsafeFallback = fallbackReviewTargetStep(doc, state)
+			if strings.TrimSpace(ctx.Target) != "" {
+				warnings = append(warnings, fmt.Sprintf("Review target %q did not match a tracked step title; status fell back to the most likely step.", ctx.Target))
+			}
+		}
+	} else if ctx.Trigger == "" {
+		if state != nil {
+			if index, ok := stepIndexFromNode(state.CurrentNode); ok {
+				ctx.TargetStepIndex = index
+				ctx.UnsafeFallback = true
+				warnings = append(warnings, "Review trigger metadata was missing; status is conservatively pinning the active round to the cached step node without treating it as structural review state.")
+			} else if index, _ := fallbackReviewTargetStep(doc, state); index >= 0 {
+				ctx.TargetStepIndex = index
+				ctx.UnsafeFallback = true
+				warnings = append(warnings, "Review trigger metadata was missing; status is conservatively pinning the active round to the most likely reviewed step without treating it as structural review state.")
+			}
+		} else if index, _ := fallbackReviewTargetStep(doc, state); index >= 0 {
+			ctx.TargetStepIndex = index
+			ctx.UnsafeFallback = true
+			warnings = append(warnings, "Review trigger metadata was missing; status is conservatively pinning the active round to the most likely reviewed step without treating it as structural review state.")
+		}
+	}
+
+	return ctx, warnings
+}
+
+func loadEvidenceContext(workdir string, state *runstate.State) (*evidenceContext, []string) {
+	ctx := &evidenceContext{}
+	warnings := make([]string, 0)
+
+	if publish, err := evidence.LoadLatestPublish(workdir, state); err != nil {
+		warnings = append(warnings, fmt.Sprintf("Unable to read publish evidence: %v", err))
+	} else {
+		ctx.Publish = publish
+	}
+	if ci, err := evidence.LoadLatestCI(workdir, state); err != nil {
+		warnings = append(warnings, fmt.Sprintf("Unable to read CI evidence: %v", err))
+	} else {
+		ctx.CI = ci
+	}
+	if sync, err := evidence.LoadLatestSync(workdir, state); err != nil {
+		warnings = append(warnings, fmt.Sprintf("Unable to read sync evidence: %v", err))
+	} else {
+		ctx.Sync = sync
+	}
+
+	return ctx, warnings
+}
+
+func applyEvidenceFacts(facts *Facts, artifacts *Artifacts, evidenceCtx *evidenceContext) {
+	if evidenceCtx == nil {
+		return
+	}
+	if evidenceCtx.Publish != nil {
+		facts.PublishStatus = evidenceCtx.Publish.Status
+		facts.PRURL = evidenceCtx.Publish.PRURL
+		if artifacts != nil {
+			artifacts.PublishRecordID = evidenceCtx.Publish.RecordID
+		}
+	}
+	if evidenceCtx.CI != nil {
+		facts.CIStatus = evidenceCtx.CI.Status
+		if artifacts != nil {
+			artifacts.CIRecordID = evidenceCtx.CI.RecordID
+		}
+	}
+	if evidenceCtx.Sync != nil {
+		facts.SyncStatus = evidenceCtx.Sync.Status
+		if artifacts != nil {
+			artifacts.SyncRecordID = evidenceCtx.Sync.RecordID
+		}
+	}
+}
+
+func archivedCandidateReadyForMerge(evidenceCtx *evidenceContext) bool {
+	if evidenceCtx == nil || evidenceCtx.Publish == nil || evidenceCtx.CI == nil || evidenceCtx.Sync == nil {
+		return false
+	}
+	if evidenceCtx.Publish.Status != "recorded" || strings.TrimSpace(evidenceCtx.Publish.PRURL) == "" {
+		return false
+	}
+	if evidenceCtx.CI.Status != "success" && evidenceCtx.CI.Status != "not_applied" {
+		return false
+	}
+	if evidenceCtx.Sync.Status != "fresh" && evidenceCtx.Sync.Status != "not_applied" {
+		return false
+	}
+	return true
+}
+
+func buildSummary(node string, facts *Facts, reviewCtx *reviewContext, blockers []StatusError, currentPlan *runstate.CurrentPlan) string {
+	switch node {
+	case "idle":
+		if currentPlan != nil && strings.TrimSpace(currentPlan.LastLandedPlanPath) != "" {
+			return "No current plan is active in this worktree. The most recent landed candidate is recorded for handoff context."
+		}
+		return "No current plan is active in this worktree."
+	case "plan":
+		return "Current plan exists, but execution has not started yet."
+	case "execution/finalize/review":
+		if reviewCtx != nil && reviewCtx.InFlight {
+			return "Plan is in finalize review and waiting for the active review round to be aggregated."
+		}
+		return "Plan has finished its tracked steps and needs finalize review before archive."
+	case "execution/finalize/fix":
+		if facts != nil && facts.ReopenMode == "new-step" && facts.CurrentStep == "" {
+			return "Plan was reopened for new-scope work and needs a new unfinished step before implementation can continue."
+		}
+		if facts != nil && facts.ReopenMode == "finalize-fix" {
+			return "Plan was reopened into finalize-scope repair and needs follow-up fixes plus a fresh finalize review before archive."
+		}
+		if facts != nil && facts.ReviewStatus == "unknown" && reviewCtx != nil {
+			return fmt.Sprintf("Plan needs finalize follow-up because the latest aggregated review (%s) could not be recovered from local state.", reviewCtx.RoundID)
+		}
+		if reviewCtx != nil && facts != nil && facts.ReviewStatus != "" && facts.ReviewStatus != "pass" {
+			return fmt.Sprintf("Plan needs finalize-scope repair because the latest finalize review (%s) requested changes.", reviewCtx.RoundID)
+		}
+		return "Plan needs finalize-scope repair before archive."
+	case "execution/finalize/archive":
+		if len(blockers) > 0 {
+			return fmt.Sprintf("Plan has a clean finalize review and is in archive closeout, but %d archive blocker(s) still need to be fixed before `harness archive`.", len(blockers))
+		}
+		return "Plan has a clean finalize review and is ready to archive."
+	case "execution/finalize/publish":
+		return "Plan is archived, but external publish, CI, or sync evidence is still keeping it from merge-ready handoff."
+	case "execution/finalize/await_merge":
+		return "Plan is archived, published, and merge-ready; waiting for human merge approval."
+	case "land":
+		return "Merge has been recorded and post-merge cleanup is still in progress."
+	}
+
+	if strings.HasSuffix(node, "/review") {
+		return fmt.Sprintf("Plan is reviewing %s.", facts.CurrentStep)
+	}
+	if strings.HasSuffix(node, "/implement") {
+		if facts != nil && facts.ReviewStatus == "unknown" && reviewCtx != nil {
+			return fmt.Sprintf("Plan is executing %s, but the latest aggregated review (%s) could not be recovered and should be rerun conservatively.", facts.CurrentStep, reviewCtx.RoundID)
+		}
+		if facts != nil && facts.ReviewStatus != "" && facts.ReviewStatus != "pass" && facts.ReviewStatus != "in_progress" && reviewCtx != nil {
+			return fmt.Sprintf("Plan is executing %s and the latest aggregated review (%s) requested changes.", facts.CurrentStep, reviewCtx.RoundID)
+		}
+		if facts != nil && facts.ReviewStatus == "pass" {
+			return fmt.Sprintf("Plan is executing %s after a clean review and can continue or be marked done.", facts.CurrentStep)
+		}
+		return fmt.Sprintf("Plan is executing %s.", facts.CurrentStep)
+	}
+
+	return fmt.Sprintf("Plan is at %s.", node)
+}
+
+func buildNextActions(node string, facts *Facts, reviewCtx *reviewContext, blockers []StatusError) []NextAction {
+	switch node {
+	case "idle":
+		return []NextAction{
+			{Command: nil, Description: "Start discovery or create a new tracked plan when the next slice is ready."},
+		}
+	case "plan":
+		return []NextAction{
+			{Command: strPtr("harness execute start"), Description: "Start execution once the plan is approved for implementation."},
+			{Command: nil, Description: "If scope changed before implementation begins, update the tracked plan first."},
+		}
+	case "execution/finalize/review":
+		if reviewCtx != nil && reviewCtx.InFlight {
+			return []NextAction{
+				{Command: aggregateCommand(reviewCtx.RoundID), Description: "Aggregate the active finalize review round once the expected reviewer submissions are ready."},
+			}
+		}
+		return []NextAction{
+			{Command: strPtr("harness review start --spec <path>"), Description: "Start a fresh finalize review for the full candidate before archive."},
+		}
+	case "execution/finalize/fix":
+		if facts != nil && facts.ReopenMode == "new-step" && facts.CurrentStep == "" {
+			return []NextAction{
+				{Command: nil, Description: "Add a new unfinished step for the reopened scope before continuing implementation; do not fold the new work into already completed steps."},
+			}
+		}
+		description := "Repair the finalize-scope issues, refresh durable summaries as needed, rerun focused validation, and start a fresh finalize review before archive."
+		if reviewCtx != nil && facts != nil && facts.ReviewStatus == "unknown" {
+			description = fmt.Sprintf("Recover or rerun %s before continuing. The latest aggregated finalize review outcome could not be recovered from local state, so archive-sensitive guidance is intentionally blocked.", reviewCtx.RoundID)
+		}
+		if reviewCtx != nil && facts != nil && facts.ReviewStatus != "" && facts.ReviewStatus != "pass" && facts.ReviewStatus != "unknown" {
+			description = fmt.Sprintf("Address the findings from %s, refresh durable summaries as needed, rerun focused validation, and start a fresh finalize review once the repair is ready.", reviewCtx.RoundID)
+		}
+		return []NextAction{
+			{Command: nil, Description: description},
+			{Command: strPtr("harness review start --spec <path>"), Description: "Start a fresh finalize review once the repaired candidate is ready."},
+		}
+	case "execution/finalize/archive":
+		if len(blockers) > 0 {
+			return []NextAction{
+				{Command: nil, Description: "Fix the archive blockers surfaced below, refresh the durable summaries, and rerun `harness status` before archiving."},
+			}
+		}
+		return []NextAction{
+			{Command: nil, Description: "Archive-ready closeout is complete; archive the plan and then commit and push the tracked move."},
+			{Command: strPtr("harness archive"), Description: "Archive the current plan now that the closeout notes and follow-up links are ready."},
+		}
+	case "execution/finalize/publish":
+		return buildPublishNextActions(facts)
+	case "execution/finalize/await_merge":
+		actions := []NextAction{
+			{Command: nil, Description: "Wait for explicit human approval before merging the PR."},
+		}
+		if facts != nil && strings.TrimSpace(facts.PRURL) != "" {
+			actions = append(actions, NextAction{
+				Command:     strPtr(fmt.Sprintf("harness land --pr %s [--commit <sha>]", facts.PRURL)),
+				Description: "After the PR is merged outside harness and the worktree is synced, record merge confirmation and enter post-merge cleanup.",
+			})
+		}
+		actions = append(actions, NextAction{
 			Command:     nil,
-			Description: "Refresh remote state before archive or merge-sensitive decisions.",
+			Description: "If new feedback or remote changes invalidate the archived candidate, reopen with `harness reopen --mode finalize-fix` for narrow repair or `harness reopen --mode new-step` when the change deserves a new unfinished step.",
+		})
+		return actions
+	case "land":
+		return []NextAction{
+			{Command: nil, Description: "Finish post-merge cleanup such as comments, issue updates, and other closeout tasks while the plan is in land."},
+			{Command: strPtr("harness land complete"), Description: "Record cleanup completion and restore the worktree to idle."},
+		}
+	}
+
+	if strings.HasSuffix(node, "/review") {
+		return []NextAction{
+			{Command: aggregateCommand(reviewCtx.RoundID), Description: "Aggregate the active review round once the expected reviewer submissions are ready."},
+		}
+	}
+	if strings.HasSuffix(node, "/implement") {
+		if facts != nil && facts.ReviewStatus == "unknown" {
+			description := "Recover the latest aggregated review result or rerun review conservatively before advancing this step."
+			if reviewCtx != nil && strings.TrimSpace(reviewCtx.RoundID) != "" {
+				description = fmt.Sprintf("Recover or rerun %s before continuing. The latest aggregated review outcome could not be recovered from local state, so advancement is intentionally blocked.", reviewCtx.RoundID)
+			}
+			return []NextAction{
+				{Command: nil, Description: description},
+				{Command: strPtr("harness review start --spec <path>"), Description: "Start a fresh review round once the repair is ready."},
+			}
+		}
+		if facts != nil && facts.ReviewStatus != "" && facts.ReviewStatus != "pass" && facts.ReviewStatus != "in_progress" {
+			description := "Address the latest review findings, update the step-local notes, rerun focused validation, and start a fresh review round once the slice is ready."
+			if reviewCtx != nil && strings.TrimSpace(reviewCtx.RoundID) != "" {
+				description = fmt.Sprintf("Address the findings from %s, update step-local notes, rerun focused validation, and start a fresh review round once the slice is ready.", reviewCtx.RoundID)
+			}
+			return []NextAction{
+				{Command: nil, Description: description},
+				{Command: strPtr("harness review start --spec <path>"), Description: "Start a fresh delta or full review after the fixes are in place."},
+			}
+		}
+		if facts != nil && facts.ReviewStatus == "pass" {
+			return []NextAction{
+				{Command: nil, Description: "Continue the current step or mark it done, then keep the step's Execution Notes and Review Notes up to date."},
+			}
+		}
+		return []NextAction{
+			{Command: nil, Description: "Continue the current step and keep step-local Execution Notes and Review Notes up to date."},
+		}
+	}
+
+	return nil
+}
+
+func buildPublishNextActions(facts *Facts) []NextAction {
+	actions := make([]NextAction, 0)
+
+	switch {
+	case facts == nil || facts.PublishStatus == "":
+		actions = append(actions,
+			NextAction{Command: nil, Description: "Open or update the PR for the archived candidate, then record publish evidence with the PR URL."},
+			NextAction{Command: strPtr("harness evidence submit --kind publish --input <json>"), Description: "Record publish evidence for the archived candidate once the PR or handoff record exists."},
+		)
+	case facts.PublishStatus == "not_applied":
+		actions = append(actions, NextAction{
+			Command:     nil,
+			Description: "Publish was marked not_applied, but v0.2 land still requires a PR URL; record publish evidence with a PR URL or reopen if the workflow changed.",
 		})
 	}
 
-	switch doc.Frontmatter.Lifecycle {
-	case "awaiting_plan_approval":
-		next = append(next, NextAction{Command: nil, Description: "Wait for plan approval or update the plan if scope changed."})
-	case "blocked":
-		next = append(next, NextAction{Command: nil, Description: "Resolve the blocking dependency or get human input before continuing."})
-	case "awaiting_merge_approval":
-		switch handoffState {
-		case "pending_publish":
-			next = append(next, NextAction{Command: nil, Description: "Commit the archive move, push the branch, and open or update the PR before treating this candidate as ready for merge approval."})
-		case "waiting_post_archive_ci":
-			next = append(next, NextAction{Command: nil, Description: "Wait for required post-archive CI to finish, then address any failures before merge approval."})
-		case "followup_required":
-			next = append(next, NextAction{Command: nil, Description: "Refresh or repair the archived candidate's publish, CI, or sync handoff before merge approval."})
-		default:
-			next = append(next, NextAction{Command: nil, Description: "Wait for merge approval or merge manually from the PR once checks are green."})
-		}
-		next = append(next, NextAction{Command: strPtr("harness reopen"), Description: "Reopen the plan if new feedback or remote changes mean the archived candidate is no longer ready."})
-	default:
-		if stepState == "fix_required" {
-			description := "Address the findings from the latest aggregated review, update step-local notes, rerun focused validation, and start a fresh review round once the slice is ready."
-			if state != nil && state.ActiveReviewRound != nil && state.ActiveReviewRound.RoundID != "" {
-				description = fmt.Sprintf("Address the findings from %s, update step-local notes, rerun focused validation, and start a fresh review round once the slice is ready.", state.ActiveReviewRound.RoundID)
-				if !reviewDecisionKnown {
-					description = fmt.Sprintf("Recover or rerun %s before continuing. The latest aggregated review outcome could not be recovered from local state, so archive-sensitive guidance is intentionally blocked.", state.ActiveReviewRound.RoundID)
-				}
-			}
-			next = append(next,
-				NextAction{Command: nil, Description: description},
-				NextAction{Command: strPtr("harness review start --spec <path>"), Description: "Start a fresh delta or full review after the fixes are in place."},
-			)
-			break
-		}
-		if stepState == "ready_for_archive" {
-			next = append(next,
-				NextAction{Command: nil, Description: "Archive-ready closeout is complete; archive the plan and then commit and push the tracked move."},
-				NextAction{Command: strPtr("harness archive"), Description: "Archive the current plan now that the closeout notes and follow-up links are ready."},
-			)
-			break
-		}
-		if doc.CurrentStep() == nil && doc.AllStepsCompleted() && doc.AllAcceptanceChecked() && len(blockers) > 0 {
-			next = append(next, NextAction{
-				Command:     nil,
-				Description: "Fix the archive blockers surfaced below, update the durable summaries or local state, and rerun harness status before archive.",
-			})
-			break
-		}
-		if doc.CurrentStep() == nil && doc.AllStepsCompleted() && doc.AllAcceptanceChecked() {
-			next = append(next, NextAction{
-				Command:     nil,
-				Description: "Write the final Validation, Review, Archive, and Outcome summaries, then verify deferred items have follow-up details before archive.",
-			})
-			break
-		}
-		switch stepState {
-		case "reviewing":
-			next = append(next, NextAction{Command: strPtr("harness review aggregate --round <round-id>"), Description: "Aggregate the active review round once reviewer submissions are ready."})
-		case "waiting_ci":
-			next = append(next, NextAction{Command: nil, Description: "Wait for required CI to finish, then address any failures before continuing."})
-		case "resolving_conflicts":
-			next = append(next, NextAction{Command: nil, Description: "Finish conflict resolution, rerun focused validation, and consider a delta review before continuing."})
-		default:
-			next = append(next, NextAction{Command: nil, Description: "Continue the current step and keep step-local Execution Notes and Review Notes up to date."})
-		}
+	switch {
+	case facts == nil || facts.CIStatus == "":
+		actions = append(actions, NextAction{
+			Command:     strPtr("harness evidence submit --kind ci --input <json>"),
+			Description: "Record CI evidence once the relevant post-archive check result is known.",
+		})
+	case facts.CIStatus == "pending":
+		actions = append(actions, NextAction{
+			Command:     nil,
+			Description: "Wait for the relevant post-archive CI to finish, then record the updated result if it changes.",
+		})
+	case facts.CIStatus == "failed":
+		actions = append(actions, NextAction{
+			Command:     nil,
+			Description: "Fix the CI failures or record an explicit not_applied decision before treating the candidate as merge-ready.",
+		})
 	}
 
-	return next
+	switch {
+	case facts == nil || facts.SyncStatus == "":
+		actions = append(actions, NextAction{
+			Command:     strPtr("harness evidence submit --kind sync --input <json>"),
+			Description: "Record sync evidence after checking freshness and conflict status against the merge base.",
+		})
+	case facts.SyncStatus == "stale":
+		actions = append(actions, NextAction{
+			Command:     nil,
+			Description: "Refresh the branch against the merge base, then record a fresh sync result before merge approval.",
+		})
+	case facts.SyncStatus == "conflicted":
+		actions = append(actions, NextAction{
+			Command:     nil,
+			Description: "Resolve merge conflicts or otherwise repair the branch, then record a fresh sync result before merge approval.",
+		})
+	}
+
+	actions = append(actions, NextAction{
+		Command:     nil,
+		Description: "If the archived candidate is invalidated, reopen with `harness reopen --mode finalize-fix` for narrow repair or `harness reopen --mode new-step` when the change deserves a new unfinished step.",
+	})
+
+	return actions
 }
 
-func buildSummary(doc *plan.Document, state *runstate.State, stepState string, handoffState string, reviewDecisionKnown bool, blockers []StatusError) string {
-	switch doc.Frontmatter.Lifecycle {
-	case "awaiting_plan_approval":
-		return "Plan is awaiting approval before execution begins."
-	case "blocked":
-		return "Plan is currently blocked and needs external input before continuing."
-	case "awaiting_merge_approval":
-		switch handoffState {
-		case "pending_publish":
-			return "Plan is archived locally but still needs publish handoff before merge approval."
-		case "waiting_post_archive_ci":
-			return "Plan is archived and published, and post-archive CI is still in flight before merge approval."
-		case "followup_required":
-			return "Plan is archived, but local handoff evidence still needs follow-up before merge approval."
-		default:
-			return "Plan is archived, published, and ready to wait for merge approval."
-		}
-	}
-
-	if stepState == "ready_for_archive" {
-		return "Plan has completed all tracked steps and is ready to archive."
-	}
-	if stepState == "fix_required" && state != nil && state.ActiveReviewRound != nil {
-		if !reviewDecisionKnown {
-			return fmt.Sprintf("Plan still needs review follow-up because the latest aggregated review (%s) could not be recovered from local state.", state.ActiveReviewRound.RoundID)
-		}
-		if step := doc.CurrentStep(); step != nil {
-			return fmt.Sprintf("Plan is executing %s and the latest aggregated review (%s) requested changes.", step.Title, state.ActiveReviewRound.RoundID)
-		}
-		return fmt.Sprintf("Plan still needs follow-up because the latest aggregated review (%s) requested changes.", state.ActiveReviewRound.RoundID)
-	}
-
-	if doc.CurrentStep() == nil && doc.AllStepsCompleted() && doc.AllAcceptanceChecked() && len(blockers) > 0 {
-		return fmt.Sprintf("Plan has completed all tracked steps but still has %d archive blocker(s) to fix before archive.", len(blockers))
-	}
-
-	if step := doc.CurrentStep(); step != nil {
-		if stepState != "" {
-			return fmt.Sprintf("Plan is %s %s and the current step state is %s.", doc.Frontmatter.Lifecycle, step.Title, strings.ReplaceAll(stepState, "_", " "))
-		}
-		return fmt.Sprintf("Plan is %s %s.", doc.Frontmatter.Lifecycle, step.Title)
-	}
-	return fmt.Sprintf("Plan is %s.", doc.Frontmatter.Lifecycle)
-}
-
-func idleAfterLandResult(currentPlan *runstate.CurrentPlan) Result {
-	return Result{
+func idleResult(currentPlan *runstate.CurrentPlan) Result {
+	result := Result{
 		OK:      true,
 		Command: "status",
-		Summary: "No current plan is active in this worktree. The most recent landed candidate is recorded for handoff context.",
 		State: State{
-			WorktreeState: "idle_after_land",
-		},
-		Artifacts: &Artifacts{
-			LastLandedPlanPath: currentPlan.LastLandedPlanPath,
-			LastLandedAt:       currentPlan.LastLandedAt,
+			CurrentNode: "idle",
 		},
 		NextAction: []NextAction{
-			{Command: nil, Description: "Start discovery or create a new plan for the next slice when new work is ready."},
-			{Command: nil, Description: "Record any post-land retrospective follow-up in issues or PR comments instead of editing the archived plan."},
+			{Command: nil, Description: "Start discovery or create a new tracked plan when the next slice is ready."},
 		},
 	}
+	if currentPlan != nil && strings.TrimSpace(currentPlan.LastLandedPlanPath) != "" {
+		result.Summary = "No current plan is active in this worktree. The most recent landed candidate is recorded for handoff context."
+		result.Artifacts = &Artifacts{
+			LastLandedPlanPath: currentPlan.LastLandedPlanPath,
+			LastLandedAt:       currentPlan.LastLandedAt,
+		}
+		return result
+	}
+	result.Summary = "No current plan is active in this worktree."
+	return result
+}
+
+func (s Service) cacheResolvedNode(planStem, relPlanPath string, state *runstate.State, currentNode string) (string, error) {
+	if strings.TrimSpace(planStem) == "" {
+		return "", nil
+	}
+	if state == nil {
+		state = &runstate.State{}
+	}
+	state.PlanPath = relPlanPath
+	state.PlanStem = planStem
+	state.CurrentNode = currentNode
+	return runstate.SaveState(s.Workdir, planStem, state)
+}
+
+func currentStepIndex(doc *plan.Document) int {
+	currentStep := doc.CurrentStep()
+	if currentStep == nil {
+		return -1
+	}
+	for index, step := range doc.Steps {
+		if step.Title == currentStep.Title {
+			return index
+		}
+	}
+	return -1
+}
+
+func resolveReviewTargetStep(doc *plan.Document, target string) (int, bool) {
+	target = normalizeReviewTarget(target)
+	if target == "" {
+		return -1, false
+	}
+	for index, step := range doc.Steps {
+		if normalizeReviewTarget(step.Title) == target {
+			return index, true
+		}
+	}
+	return -1, false
+}
+
+func normalizeReviewTarget(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	value = strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsSpace(r) {
+			return r
+		}
+		return ' '
+	}, value)
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func fallbackReviewTargetStep(doc *plan.Document, state *runstate.State) (int, bool) {
+	if state != nil {
+		if index, ok := stepIndexFromNode(state.CurrentNode); ok {
+			return index, false
+		}
+	}
+	if index := currentStepIndex(doc); index >= 0 {
+		if index > 0 {
+			return index - 1, true
+		}
+		return index, true
+	}
+	if len(doc.Steps) == 0 {
+		return -1, false
+	}
+	return len(doc.Steps) - 1, true
+}
+
+func landInProgress(state *runstate.State) bool {
+	return state != nil &&
+		state.Land != nil &&
+		strings.TrimSpace(state.Land.LandedAt) != "" &&
+		strings.TrimSpace(state.Land.CompletedAt) == ""
+}
+
+func stepNode(index int, phase string) string {
+	return fmt.Sprintf("execution/step-%d/%s", index+1, phase)
+}
+
+func stepIndexFromNode(node string) (int, bool) {
+	node = strings.TrimSpace(node)
+	if !strings.HasPrefix(node, "execution/step-") {
+		return -1, false
+	}
+	node = strings.TrimPrefix(node, "execution/step-")
+	parts := strings.SplitN(node, "/", 2)
+	if len(parts) != 2 {
+		return -1, false
+	}
+	var stepNumber int
+	if _, err := fmt.Sscanf(parts[0], "%d", &stepNumber); err != nil || stepNumber <= 0 {
+		return -1, false
+	}
+	return stepNumber - 1, true
+}
+
+func commandErrorsToStatusErrors(errors []lifecycle.CommandError) []StatusError {
+	out := make([]StatusError, 0, len(errors))
+	for _, issue := range errors {
+		out = append(out, StatusError{
+			Path:    issue.Path,
+			Message: issue.Message,
+		})
+	}
+	return out
+}
+
+func aggregateCommand(roundID string) *string {
+	if strings.TrimSpace(roundID) == "" {
+		return strPtr("harness review aggregate --round <round-id>")
+	}
+	return strPtr(fmt.Sprintf("harness review aggregate --round %s", roundID))
 }
 
 func strPtr(value string) *string {
 	return &value
+}
+
+func isStructuralReviewTrigger(trigger string) bool {
+	return trigger == "step_closeout" || trigger == "pre_archive"
+}
+
+func (f *Facts) empty() bool {
+	if f == nil {
+		return true
+	}
+	return strings.TrimSpace(f.CurrentStep) == "" &&
+		f.Revision == 0 &&
+		strings.TrimSpace(f.ReopenMode) == "" &&
+		strings.TrimSpace(f.ReviewKind) == "" &&
+		strings.TrimSpace(f.ReviewTrigger) == "" &&
+		strings.TrimSpace(f.ReviewTarget) == "" &&
+		strings.TrimSpace(f.ReviewStatus) == "" &&
+		f.ArchiveBlockerCount == 0 &&
+		strings.TrimSpace(f.PublishStatus) == "" &&
+		strings.TrimSpace(f.PRURL) == "" &&
+		strings.TrimSpace(f.CIStatus) == "" &&
+		strings.TrimSpace(f.SyncStatus) == "" &&
+		strings.TrimSpace(f.LandPRURL) == "" &&
+		strings.TrimSpace(f.LandCommit) == ""
 }

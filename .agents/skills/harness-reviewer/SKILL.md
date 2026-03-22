@@ -10,7 +10,8 @@ description: Use when acting as a dedicated reviewer subagent for one assigned h
 Use this skill only in reviewer subagents.
 
 The reviewer agent owns exactly one review slot in an existing review round. It
-does not start rounds, aggregate rounds, or orchestrate other reviewers.
+does not start rounds, aggregate rounds, orchestrate other reviewers, or infer
+workflow `current_node` on the controller's behalf.
 
 ## Submission Contract
 
