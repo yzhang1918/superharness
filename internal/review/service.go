@@ -427,7 +427,7 @@ func (s Service) Submit(roundID, slot string, inputBytes []byte) SubmitResult {
 		NextAction: []NextAction{
 			{
 				Command:     nil,
-				Description: "Report the submission receipt to the controller agent and end the reviewer thread unless asked to keep working.",
+				Description: "Report the submission receipt to the controller agent and end the reviewer thread. If the same slot later needs a narrow follow-up for the same tracked step or the same finalize review target in the same revision, the controller may reopen this reviewer through the runtime's native resume mechanism only after this submission is verified and only while the slot instructions still materially match.",
 			},
 		},
 	}

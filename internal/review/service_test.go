@@ -214,6 +214,9 @@ func TestSubmitStoresSubmissionAndUpdatesLedger(t *testing.T) {
 	if _, err := os.Stat(result.Artifacts.SubmissionPath); err != nil {
 		t.Fatalf("submission missing: %v", err)
 	}
+	if len(result.NextAction) != 1 || result.NextAction[0].Description != "Report the submission receipt to the controller agent and end the reviewer thread. If the same slot later needs a narrow follow-up for the same tracked step or the same finalize review target in the same revision, the controller may reopen this reviewer through the runtime's native resume mechanism only after this submission is verified and only while the slot instructions still materially match." {
+		t.Fatalf("unexpected submit next action: %#v", result.NextAction)
+	}
 }
 
 func TestSubmitRejectsUnknownSlot(t *testing.T) {

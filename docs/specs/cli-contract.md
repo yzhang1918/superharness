@@ -423,7 +423,11 @@ Contract:
 Recommended next action:
 
 - on success, report the receipt to the controller agent and end the reviewer
-  thread unless asked to keep working
+  thread; a runtime may later reopen the same reviewer for a narrow same-slot
+  follow-up for the same tracked step or the same finalize review target in
+  the same revision, but only after the earlier submission was verified and
+  only when the slot instructions still materially match; immediate closeout
+  is the safe default
 - on validation failure, fix the reviewer artifact and resubmit
 
 ### `harness review aggregate`
@@ -623,6 +627,17 @@ The controller agent decides how to launch reviewer subagents. In Codex, that
 means using `spawn_agent` rather than trying to do reviewer work in the main
 agent thread. The reviewer skill or reviewer prompt should own the details of
 calling `harness review submit`.
+
+Codex should still default to closing reviewer agents after each verified
+submission. If a later narrow follow-up round keeps the same slot and
+materially the same instructions for the same tracked step or the same
+finalize review target in the same revision, the controller may reopen that
+previously closed reviewer with `resume_agent` instead of spawning fresh.
+Moving to a different tracked step, moving from step review to finalize
+review, changing the review target because of reopen or a new revision, broad
+follow-up, changed slot ownership, invalid earlier submissions, or any
+situation where a clean reread is safer should stay on fresh `spawn_agent`
+reviewer threads.
 
 The CLI only owns deterministic local contracts:
 

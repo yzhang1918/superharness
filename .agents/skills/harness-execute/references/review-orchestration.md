@@ -111,18 +111,23 @@ round to use the same set.
 
 2. Spawn multiple reviewer subagents in parallel: one reviewer per returned
    slot or review dimension.
-   Use clean reviewer subagents for these slots. Do not inherit the
-   controller's long chat context into reviewer threads. Use only the fixed
-   reviewer prompt template for reviewer spawning.
+   For a slot's first pass in a tracked step or for one finalize review target
+   in one revision, or whenever reuse is not clearly safe, use clean reviewer
+   subagents. Moving to a different tracked step, moving from step review into
+   finalize review, or moving to a different revision always starts with fresh
+   reviewers. Do not inherit the controller's long chat context into reviewer
+   threads. Use only the fixed reviewer prompt template for reviewer spawning.
 3. Use a fixed reviewer prompt template so model or runtime changes do not
    silently change the reviewer contract.
 4. Keep track of every spawned reviewer agent ID.
 5. Wait for all reviewer subagents to finish before aggregation.
 6. Verify each reviewer actually submitted a valid result for its slot.
 7. Close the finished reviewer agent after verification, even when its
-   submission was missing or invalid.
-8. If a reviewer finished without a valid submission, respawn a reviewer for
-   that slot immediately.
+   submission was missing or invalid. Closed is the default steady state
+   between rounds; do not leave reviewer agents hanging open just in case they
+   might be useful later.
+8. If a reviewer finished without a valid submission, respawn a clean reviewer
+   for that slot immediately.
 9. Only after every expected reviewer slot has a valid submission and every
    reviewer agent is closed, run:
 
@@ -145,9 +150,42 @@ You are the reviewer for one harness review slot.
 Use the harness-reviewer skill and follow it exactly.
 
 Round ID: <round-id>
+Target: <review-target>
+Revision: <candidate-revision-or-none>
 Slot: <slot>
 Assigned dimension: <dimension-name>
 Instructions: <dimension-instructions>
+```
+
+## Fixed Reviewer Resume Prompt Template
+
+Use resume only for a narrow same-slot follow-up after the controller has
+already verified and closed that reviewer's earlier successful submission.
+Do not resume across tracked steps, or from a step review into finalize
+review. Those boundaries always start with fresh reviewers.
+Resume is only valid while the review target itself is still the same:
+
+- for step review, the same tracked step title
+- for finalize review, the same finalize candidate target for the same revision
+
+If reopen, a new tracked step, a new revision, or a new finalize target
+changes that target, start with fresh reviewers.
+
+Use this controller prompt shape when resuming a previously closed reviewer:
+
+```text
+You are resuming the same harness review slot you handled earlier.
+
+Use the harness-reviewer skill and follow it exactly.
+
+New round ID: <new-round-id>
+Target: <review-target>
+Revision: <candidate-revision-or-none>
+Slot: <slot>
+Assigned dimension: <dimension-name>
+Instructions: <dimension-instructions>
+Follow-up scope: Verify only the bounded changes since your last submission.
+Change summary since your last submission: <bounded-change-summary>
 ```
 
 ## Codex-Specific Subagent Rules
@@ -161,9 +199,41 @@ Codex reviewer subagents are asynchronous.
   close it.
 - Use `spawn_agent(..., fork_context=false)` for reviewer slots so the reviewer
   starts from a clean context and sees only the fixed reviewer prompt.
+- After a reviewer is cleanly closed, `resume_agent` may reopen that same
+  reviewer later, but only for a narrow same-slot follow-up where continuity is
+  genuinely helpful.
 - Do not append extra controller reasoning, artifact tours, or side
   instructions to the fixed reviewer prompt when spawning Codex reviewer
   subagents.
+
+Prefer `resume_agent` only when all of these are true:
+
+- the earlier reviewer submission for that agent was valid and already verified
+  by the controller
+- the new round is still narrow enough for `delta` review
+- the new round stays within the same tracked step review boundary, or within
+  the same finalize review target for the same revision
+- the new round keeps the same review target as the earlier submission
+- the reviewer keeps the same slot and materially the same dimension
+  instructions
+- the controller can give a bounded change summary that is directly tied to the
+  earlier findings
+
+Treat the closed reviewer as retired for this follow-up and spawn a fresh clean
+reviewer instead when any of these are true:
+
+- the earlier submission was missing, invalid, or never verified
+- the controller is moving to a different tracked step, or from a step review
+  into finalize review
+- the review target changed because of reopen, a new tracked step, a new
+  revision, or a later finalize pass against a different candidate
+- the follow-up broadened into `full` review or otherwise changed target
+  materially
+- the slot or instructions changed enough that the old reviewer context would
+  mislead more than help
+- the repair batch includes unrelated changes, remote-sync churn, or other
+  broad context that deserves a clean reread
+- you want an unbiased second look more than continuity
 
 Use this pattern:
 
@@ -177,4 +247,12 @@ Use this pattern:
 7. repeat until the pending set is empty and every expected slot is filled
 8. aggregate only after all reviewer agents are both finished and closed
 
-This is required to avoid premature aggregation and dangling background agents.
+After a later repair round starts, you may either spawn fresh reviewers again
+or reopen an eligible closed reviewer with `resume_agent` only for the same
+tracked step, or for the same finalize review target in the same revision,
+then deliver only the fixed resume prompt for the new round. Even when you
+reuse a reviewer this way, close it again immediately after the new submission
+is verified.
+
+This is required to avoid premature aggregation, dangling background agents,
+and stale-context leakage.
