@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -326,6 +327,141 @@ func TestAggregateDeltaPassUpdatesState(t *testing.T) {
 	}
 }
 
+func TestAggregateRejectsNonActiveRound(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	stale := svc.Start(mustJSON(t, review.Spec{
+		Kind:    "delta",
+		Target:  "Step 4",
+		Trigger: "step_closeout",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !stale.OK {
+		t.Fatalf("stale round start failed: %#v", stale)
+	}
+	submit := svc.Submit(stale.Artifacts.RoundID, "correctness", mustJSON(t, review.SubmissionInput{
+		Summary: "Looks good.",
+	}))
+	if !submit.OK {
+		t.Fatalf("submit failed: %#v", submit)
+	}
+
+	svc.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 1, 5, 0, 0, time.UTC)
+	}
+	active := svc.Start(mustJSON(t, review.Spec{
+		Kind:    "full",
+		Target:  "Full branch candidate before archive",
+		Trigger: "pre_archive",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !active.OK {
+		t.Fatalf("active round start failed: %#v", active)
+	}
+
+	result := svc.Aggregate(stale.Artifacts.RoundID)
+	if result.OK {
+		t.Fatalf("expected stale aggregate failure, got %#v", result)
+	}
+	assertAggregateError(t, result, "round")
+
+	if _, err := os.Stat(filepath.Join(root, ".local", "harness", "plans", "2026-03-18-review-contract", "reviews", stale.Artifacts.RoundID, "aggregate.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no stale aggregate artifact, got %v", err)
+	}
+
+	state, _, err := runstate.LoadState(root, "2026-03-18-review-contract")
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if state == nil || state.ActiveReviewRound == nil {
+		t.Fatalf("expected active round state, got %#v", state)
+	}
+	if state.ActiveReviewRound.RoundID != active.Artifacts.RoundID {
+		t.Fatalf("expected active round %q to remain current, got %#v", active.Artifacts.RoundID, state.ActiveReviewRound)
+	}
+	if state.ActiveReviewRound.Aggregated {
+		t.Fatalf("expected newer active round to remain in flight, got %#v", state.ActiveReviewRound)
+	}
+}
+
+func TestStartRejectsWhenReviewMutationLockIsHeld(t *testing.T) {
+	root := t.TempDir()
+	planStem := "2026-03-18-review-contract"
+	writeExecutingPlan(t, root, "docs/plans/active/"+planStem+".md")
+	holdReviewMutationLock(t, root, planStem)
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	result := svc.Start(mustJSON(t, review.Spec{
+		Kind:    "delta",
+		Target:  "Step 4",
+		Trigger: "step_closeout",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if result.OK {
+		t.Fatalf("expected start failure while lock is held, got %#v", result)
+	}
+	assertStartError(t, result, "review")
+}
+
+func TestAggregateRejectsWhenReviewMutationLockIsHeld(t *testing.T) {
+	root := t.TempDir()
+	planStem := "2026-03-18-review-contract"
+	writeExecutingPlan(t, root, "docs/plans/active/"+planStem+".md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind:    "delta",
+		Target:  "Step 4",
+		Trigger: "step_closeout",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+	submit := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSON(t, review.SubmissionInput{
+		Summary: "Looks good.",
+	}))
+	if !submit.OK {
+		t.Fatalf("submit failed: %#v", submit)
+	}
+
+	holdReviewMutationLock(t, root, planStem)
+
+	result := svc.Aggregate(start.Artifacts.RoundID)
+	if result.OK {
+		t.Fatalf("expected aggregate failure while lock is held, got %#v", result)
+	}
+	assertAggregateError(t, result, "review")
+	if _, err := os.Stat(filepath.Join(root, ".local", "harness", "plans", planStem, "reviews", start.Artifacts.RoundID, "aggregate.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no aggregate artifact while lock is held, got %v", err)
+	}
+}
+
 func TestAggregateFullWithBlockingFindings(t *testing.T) {
 	root := t.TempDir()
 	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
@@ -435,6 +571,26 @@ func mustJSON(t *testing.T, value any) []byte {
 		t.Fatalf("marshal json: %v", err)
 	}
 	return data
+}
+
+func holdReviewMutationLock(t *testing.T, root, planStem string) {
+	t.Helper()
+	lockPath := filepath.Join(root, ".local", "harness", "plans", planStem, ".review-mutation.lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatalf("mkdir lock parent: %v", err)
+	}
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		t.Fatalf("open lock: %v", err)
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = file.Close()
+		t.Fatalf("flock lock: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		_ = file.Close()
+	})
 }
 
 func assertStartError(t *testing.T, result review.StartResult, path string) {

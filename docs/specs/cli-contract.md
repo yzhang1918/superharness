@@ -448,6 +448,9 @@ Purpose:
 Contract:
 
 - require `--round <round-id>` to select the round
+- reject the request unless `--round` matches the current active review round
+  for the executing plan; in the v0.1 single-active-round model, `review
+  aggregate` is not a historical backfill or repair command for older rounds
 - collect reviewer artifacts
 - compute blocking and non-blocking findings
 - stop with an error when expected reviewer slots are missing or invalid

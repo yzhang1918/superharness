@@ -2,6 +2,7 @@ package review
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/yzhang1918/superharness/internal/plan"
@@ -171,8 +173,20 @@ type AggregateArtifacts struct {
 }
 
 func (s Service) Start(specBytes []byte) StartResult {
+	lockedPlanPath, release, err := s.acquireReviewMutationLock()
+	if err == nil {
+		defer release()
+	} else {
+		return StartResult{
+			OK:      false,
+			Command: "review start",
+			Summary: "Another review state mutation is already in progress.",
+			Errors:  []CommandError{{Path: "review", Message: err.Error()}},
+		}
+	}
+
 	now := s.now()
-	planPath, doc, planStem, relPlanPath, state, statePath, errResult := s.loadCurrentExecutingPlan()
+	planPath, doc, planStem, relPlanPath, state, statePath, errResult := s.loadCurrentExecutingPlan(lockedPlanPath)
 	if errResult != nil {
 		return *errResult
 	}
@@ -323,7 +337,7 @@ func (s Service) Start(specBytes []byte) StartResult {
 }
 
 func (s Service) Submit(roundID, slot string, inputBytes []byte) SubmitResult {
-	_, _, planStem, _, _, _, errResult := s.loadCurrentExecutingPlan()
+	_, _, planStem, _, _, _, errResult := s.loadCurrentExecutingPlan("")
 	if errResult != nil {
 		return SubmitResult{
 			OK:      false,
@@ -434,7 +448,19 @@ func (s Service) Submit(roundID, slot string, inputBytes []byte) SubmitResult {
 }
 
 func (s Service) Aggregate(roundID string) AggregateResult {
-	_, _, planStem, _, state, statePath, errResult := s.loadCurrentExecutingPlan()
+	lockedPlanPath, release, err := s.acquireReviewMutationLock()
+	if err == nil {
+		defer release()
+	} else {
+		return AggregateResult{
+			OK:      false,
+			Command: "review aggregate",
+			Summary: "Another review state mutation is already in progress.",
+			Errors:  []CommandError{{Path: "review", Message: err.Error()}},
+		}
+	}
+
+	_, _, planStem, _, state, statePath, errResult := s.loadCurrentExecutingPlan(lockedPlanPath)
 	if errResult != nil {
 		return AggregateResult{
 			OK:      false,
@@ -442,6 +468,9 @@ func (s Service) Aggregate(roundID string) AggregateResult {
 			Summary: errResult.Summary,
 			Errors:  errResult.Errors,
 		}
+	}
+	if guard := activeAggregateRoundError(state, roundID); guard != nil {
+		return *guard
 	}
 
 	manifestPath := filepath.Join(s.Workdir, ".local", "harness", "plans", planStem, "reviews", roundID, "manifest.json")
@@ -510,6 +539,18 @@ func (s Service) Aggregate(roundID string) AggregateResult {
 		NonBlockingFindings: nonBlocking,
 		AggregatedAt:        s.now().Format(time.RFC3339),
 	}
+	state, _, err = runstate.LoadState(s.Workdir, planStem)
+	if err != nil {
+		return AggregateResult{
+			OK:      false,
+			Command: "review aggregate",
+			Summary: "Unable to reload local harness state before persisting the aggregate.",
+			Errors:  []CommandError{{Path: "state", Message: err.Error()}},
+		}
+	}
+	if guard := activeAggregateRoundError(state, roundID); guard != nil {
+		return *guard
+	}
 	if err := writeJSONFile(manifest.Aggregate, aggregate); err != nil {
 		return AggregateResult{
 			OK:      false,
@@ -555,14 +596,68 @@ func (s Service) Aggregate(roundID string) AggregateResult {
 	}
 }
 
-func (s Service) loadCurrentExecutingPlan() (string, *plan.Document, string, string, *runstate.State, string, *StartResult) {
+func activeAggregateRoundError(state *runstate.State, roundID string) *AggregateResult {
+	if state == nil || state.ActiveReviewRound == nil {
+		return &AggregateResult{
+			OK:      false,
+			Command: "review aggregate",
+			Summary: "No active review round is available to aggregate.",
+			Errors:  []CommandError{{Path: "round", Message: "review aggregate only supports the current active review round"}},
+		}
+	}
+	if state.ActiveReviewRound.RoundID == roundID {
+		return nil
+	}
+	return &AggregateResult{
+		OK:      false,
+		Command: "review aggregate",
+		Summary: "Only the current active review round can be aggregated.",
+		Errors: []CommandError{{
+			Path:    "round",
+			Message: fmt.Sprintf("round %q is not the current active review round %q", roundID, state.ActiveReviewRound.RoundID),
+		}},
+	}
+}
+
+func (s Service) acquireReviewMutationLock() (string, func(), error) {
 	planPath, err := plan.DetectCurrentPath(s.Workdir)
 	if err != nil {
-		return "", nil, "", "", nil, "", &StartResult{
-			OK:      false,
-			Command: "review",
-			Summary: "Unable to determine the current plan.",
-			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
+		return "", func() {}, nil
+	}
+	planStem := strings.TrimSuffix(filepath.Base(planPath), filepath.Ext(planPath))
+	lockPath := filepath.Join(s.Workdir, ".local", "harness", "plans", planStem, ".review-mutation.lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		return "", nil, err
+	}
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = file.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+			return "", nil, fmt.Errorf("another review start or aggregate command is already mutating plan %q; retry after it finishes", planStem)
+		}
+		return "", nil, err
+	}
+	return planPath, func() {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		_ = file.Close()
+	}, nil
+}
+
+func (s Service) loadCurrentExecutingPlan(lockedPlanPath string) (string, *plan.Document, string, string, *runstate.State, string, *StartResult) {
+	planPath := strings.TrimSpace(lockedPlanPath)
+	if planPath == "" {
+		var err error
+		planPath, err = plan.DetectCurrentPath(s.Workdir)
+		if err != nil {
+			return "", nil, "", "", nil, "", &StartResult{
+				OK:      false,
+				Command: "review",
+				Summary: "Unable to determine the current plan.",
+				Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
+			}
 		}
 	}
 	doc, err := plan.LoadFile(planPath)
