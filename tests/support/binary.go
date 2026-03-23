@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -15,6 +16,8 @@ var (
 	buildPath string
 	buildErr  error
 )
+
+const versionPackage = "github.com/yzhang1918/superharness/internal/version"
 
 func RepoRoot(t *testing.T) string {
 	t.Helper()
@@ -37,7 +40,14 @@ func BuildBinary(t *testing.T) string {
 		}
 		buildPath = filepath.Join(dir, name)
 
-		cmd := exec.Command("go", "build", "-o", buildPath, "./cmd/harness")
+		commit, err := repoHeadCommit(repoRoot())
+		if err != nil {
+			buildErr = fmt.Errorf("resolve harness build commit: %w", err)
+			return
+		}
+
+		ldflags := fmt.Sprintf("-X %s.BuildCommit=%s", versionPackage, commit)
+		cmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", buildPath, "./cmd/harness")
 		cmd.Dir = repoRoot()
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -57,4 +67,17 @@ func repoRoot() string {
 		panic("resolve tests/support source path")
 	}
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+}
+
+func repoHeadCommit(root string) (string, error) {
+	output, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse HEAD: %w\n%s", err, output)
+	}
+
+	commit := strings.TrimSpace(string(output))
+	if commit == "" {
+		return "", fmt.Errorf("git rev-parse HEAD returned an empty commit")
+	}
+	return commit, nil
 }

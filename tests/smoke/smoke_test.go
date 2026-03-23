@@ -2,8 +2,10 @@ package smoke_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/yzhang1918/superharness/tests/support"
@@ -37,6 +39,7 @@ func TestHelpShowsTopLevelUsage(t *testing.T) {
 	result := support.Run(t, workspace.Root, "--help")
 	support.RequireSuccess(t, result)
 	support.RequireContains(t, result.CombinedOutput(), "Usage: harness <command> [subcommand] [flags]")
+	support.RequireContains(t, result.CombinedOutput(), "--version       Print concise debug information for the running harness binary")
 	support.RequireContains(t, result.CombinedOutput(), "plan template   Render the packaged plan template")
 	support.RequireContains(t, result.CombinedOutput(), "plan lint       Validate a tracked plan")
 	support.RequireContains(t, result.CombinedOutput(), "execute start   Record the execution-start milestone")
@@ -49,6 +52,27 @@ func TestHelpShowsTopLevelUsage(t *testing.T) {
 	support.RequireContains(t, result.CombinedOutput(), "archive         Freeze the current active plan")
 	support.RequireContains(t, result.CombinedOutput(), "reopen          Restore the current archived plan")
 	support.RequireContains(t, result.CombinedOutput(), "status          Summarize the current plan and local execution state")
+}
+
+func TestVersionPrintsHumanReadableBuildInfo(t *testing.T) {
+	workspace := support.NewWorkspace(t)
+
+	result := support.Run(t, workspace.Root, "--version")
+	support.RequireSuccess(t, result)
+	support.RequireNoStderr(t, result)
+	if mode := requireVersionField(t, result.Stdout, "mode"); mode != "release" {
+		t.Fatalf("expected release mode, got %q\noutput:\n%s", mode, result.Stdout)
+	}
+	expectedCommit := gitHeadCommit(t, support.RepoRoot(t))
+	if commit := requireVersionField(t, result.Stdout, "commit"); commit != expectedCommit {
+		t.Fatalf("expected release version commit %q, got %q\noutput:\n%s", expectedCommit, commit, result.Stdout)
+	}
+	if strings.Contains(result.Stdout, "path: ") {
+		t.Fatalf("expected release build version output to omit path, got %q", result.Stdout)
+	}
+	if strings.HasPrefix(strings.TrimSpace(result.Stdout), "{") {
+		t.Fatalf("expected plain-text version output, got %q", result.Stdout)
+	}
 }
 
 func TestStatusReportsIdleWorkspace(t *testing.T) {
@@ -177,4 +201,38 @@ func TestPlanTemplateAndLintRoundTrip(t *testing.T) {
 	if payload.Artifacts.PlanPath != planRelPath {
 		t.Fatalf("expected lint plan path %q, got %#v", planRelPath, payload)
 	}
+}
+
+func requireVersionField(t *testing.T, output, field string) string {
+	t.Helper()
+
+	prefix := field + ": "
+	for _, line := range strings.Split(output, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			value := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+			if value == "" {
+				t.Fatalf("expected version field %q to be non-empty\noutput:\n%s", field, output)
+			}
+			return value
+		}
+	}
+
+	t.Fatalf("expected version field %q in output:\n%s", field, output)
+	return ""
+}
+
+func gitHeadCommit(t *testing.T, repoRoot string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", "-C", repoRoot, "rev-parse", "HEAD")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD: %v\n%s", err, output)
+	}
+
+	commit := strings.TrimSpace(string(output))
+	if commit == "" {
+		t.Fatalf("expected git HEAD commit for %s", repoRoot)
+	}
+	return commit
 }

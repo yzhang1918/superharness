@@ -28,6 +28,11 @@ The current command surface is:
 - `harness land --pr <url> [--commit <sha>]`
 - `harness land complete`
 
+The root CLI also exposes one debug-oriented flag outside that stateful
+workflow surface:
+
+- `harness --version`
+
 ## Design Principles
 
 ### Agent-Friendly by Default
@@ -52,6 +57,9 @@ explicit verbose or debug mode.
 
 Commands that primarily render content, such as `harness plan template`, may
 default to markdown or plain text instead of the JSON envelope.
+
+`harness --version` is also a plain-text exception because it is a binary
+identity/debug probe rather than a workflow-state command.
 
 ### Help Must Be Actionable
 
@@ -618,6 +626,20 @@ Contract:
 - leave tracked plans untouched; this is local-state cleanup only
 - return next actions that guide the worktree back to idle or on to the next
   slice
+
+### `harness --version`
+
+Purpose:
+
+- print concise debug information for the running harness binary
+
+Contract:
+
+- remain a root-level flag rather than a workflow subcommand
+- print plain text rather than the shared JSON envelope
+- report the running binary's build commit
+- report whether the binary is running in `dev` or `release` mode
+- print the resolved binary path only in `dev` mode
 
 ## Review Runtime Boundary
 

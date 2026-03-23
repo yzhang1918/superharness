@@ -16,23 +16,26 @@ import (
 	"github.com/yzhang1918/superharness/internal/plan"
 	"github.com/yzhang1918/superharness/internal/review"
 	"github.com/yzhang1918/superharness/internal/status"
+	versioninfo "github.com/yzhang1918/superharness/internal/version"
 )
 
 type App struct {
-	Stdout io.Writer
-	Stderr io.Writer
-	Stdin  io.Reader
-	Now    func() time.Time
-	Getwd  func() (string, error)
+	Stdout  io.Writer
+	Stderr  io.Writer
+	Stdin   io.Reader
+	Now     func() time.Time
+	Getwd   func() (string, error)
+	Version func() versioninfo.Info
 }
 
 func New(stdout, stderr io.Writer) *App {
 	return &App{
-		Stdout: stdout,
-		Stderr: stderr,
-		Stdin:  os.Stdin,
-		Now:    time.Now,
-		Getwd:  os.Getwd,
+		Stdout:  stdout,
+		Stderr:  stderr,
+		Stdin:   os.Stdin,
+		Now:     time.Now,
+		Getwd:   os.Getwd,
+		Version: versioninfo.Current,
 	}
 }
 
@@ -43,6 +46,8 @@ func (a *App) Run(args []string) int {
 	}
 
 	switch args[0] {
+	case "--version":
+		return a.runVersion(args[1:])
 	case "plan":
 		return a.runPlan(args[1:])
 	case "execute":
@@ -67,6 +72,35 @@ func (a *App) Run(args []string) int {
 		a.printRootUsage()
 		return 2
 	}
+}
+
+func (a *App) runVersion(args []string) int {
+	fs := flag.NewFlagSet("harness --version", flag.ContinueOnError)
+	fs.SetOutput(a.Stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(a.Stderr, "Usage: harness --version")
+		fmt.Fprintln(a.Stderr)
+		fmt.Fprintln(a.Stderr, "Print concise debug information for the running harness binary.")
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fs.Usage()
+		return 2
+	}
+	if a.Version == nil {
+		a.Version = versioninfo.Current
+	}
+	_, err := io.WriteString(a.Stdout, a.Version().String())
+	if err != nil {
+		fmt.Fprintf(a.Stderr, "write version output: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 func (a *App) runReview(args []string) int {
@@ -595,6 +629,9 @@ func (a *App) resolveTimestamp(timestampValue, dateValue string) (time.Time, err
 
 func (a *App) printRootUsage() {
 	fmt.Fprintln(a.Stderr, "Usage: harness <command> [subcommand] [flags]")
+	fmt.Fprintln(a.Stderr)
+	fmt.Fprintln(a.Stderr, "Flags:")
+	fmt.Fprintln(a.Stderr, "  --version       Print concise debug information for the running harness binary")
 	fmt.Fprintln(a.Stderr)
 	fmt.Fprintln(a.Stderr, "Commands:")
 	fmt.Fprintln(a.Stderr, "  plan template   Render the packaged plan template")
