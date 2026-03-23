@@ -15,6 +15,7 @@ import (
 	"github.com/yzhang1918/superharness/internal/plan"
 	"github.com/yzhang1918/superharness/internal/runstate"
 	"github.com/yzhang1918/superharness/internal/status"
+	version "github.com/yzhang1918/superharness/internal/version"
 )
 
 func TestPlanTemplateWritesOutputFile(t *testing.T) {
@@ -43,6 +44,76 @@ func TestPlanTemplateWritesOutputFile(t *testing.T) {
 	}
 	if !bytes.Contains(data, []byte("# CLI Generated Plan")) {
 		t.Fatalf("generated file missing title:\n%s", data)
+	}
+}
+
+func TestVersionFlagPrintsHumanReadableDebugInfo(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	app.Version = func() version.Info {
+		return version.Info{
+			Commit: "abc123",
+			Mode:   "dev",
+			Path:   "/tmp/harness",
+		}
+	}
+
+	exitCode := app.Run([]string{"--version"})
+	if exitCode != 0 {
+		t.Fatalf("expected version exit code 0, got %d: %s", exitCode, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr for version output, got %q", stderr.String())
+	}
+	if strings.Contains(stdout.String(), "{") {
+		t.Fatalf("expected non-JSON version output, got %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "mode: dev") {
+		t.Fatalf("expected mode in version output, got %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "commit: abc123") {
+		t.Fatalf("expected commit in version output, got %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "path: /tmp/harness") {
+		t.Fatalf("expected dev path in version output, got %q", stdout.String())
+	}
+}
+
+func TestVersionFlagOmitsPathOutsideDevMode(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	app.Version = func() version.Info {
+		return version.Info{
+			Commit: "abc123",
+			Mode:   "release",
+		}
+	}
+
+	exitCode := app.Run([]string{"--version"})
+	if exitCode != 0 {
+		t.Fatalf("expected version exit code 0, got %d: %s", exitCode, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "path:") {
+		t.Fatalf("expected release version output to omit path, got %q", stdout.String())
+	}
+}
+
+func TestVersionHelpExitsZero(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+
+	exitCode := app.Run([]string{"--version", "--help"})
+	if exitCode != 0 {
+		t.Fatalf("expected version help exit code 0, got %d", exitCode)
+	}
+	if !strings.Contains(stderr.String(), "Usage: harness --version") {
+		t.Fatalf("expected version help text, got %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout for version help, got %q", stdout.String())
 	}
 }
 
@@ -91,6 +162,23 @@ func TestPlanTemplateHelpExitsZero(t *testing.T) {
 	}
 	if !bytes.Contains(stderr.Bytes(), []byte("Usage: harness plan template")) {
 		t.Fatalf("expected help text, got %s", stderr.String())
+	}
+}
+
+func TestRootHelpMentionsVersionFlag(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+
+	exitCode := app.Run([]string{"--help"})
+	if exitCode != 0 {
+		t.Fatalf("expected root help exit code 0, got %d", exitCode)
+	}
+	if !strings.Contains(stderr.String(), "Usage: harness <command> [subcommand] [flags]") {
+		t.Fatalf("expected root help usage, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--version       Print concise debug information for the running harness binary") {
+		t.Fatalf("expected root help to mention --version, got %q", stderr.String())
 	}
 }
 

@@ -48,6 +48,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 binary_dir="${repo_root}/.local/bin"
 binary_path="${binary_dir}/harness"
 repo_module_line="module github.com/yzhang1918/superharness"
+version_package="github.com/yzhang1918/superharness/internal/version"
 
 is_superharness_root() {
   local dir="$1"
@@ -228,13 +229,27 @@ managed_superharness_wrapper() {
 
   grep -Fq 'fallback_binary_path=' "${path}" &&
     grep -Fq 'find_repo_root()' "${path}" &&
-    grep -Fq 'cmd/harness/main.go' "${path}"
+    grep -Fq 'cmd/harness/main.go' "${path}" &&
+    return 0
+
+  grep -Fq 'find_repo_root()' "${path}" &&
+    grep -Fq 'cmd/harness/main.go' "${path}" &&
+    grep -Fq 'binary_path="${repo_root}/.local/bin/harness"' "${path}"
 }
 
 mkdir -p "${binary_dir}"
+build_commit=""
+if command -v git >/dev/null 2>&1; then
+  build_commit="$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null || true)"
+fi
+build_ldflags=("-X" "${version_package}.BuildMode=dev")
+if [[ -n "${build_commit}" ]]; then
+  build_ldflags+=("-X" "${version_package}.BuildCommit=${build_commit}")
+fi
+build_args=("-o" "${binary_path}" "-ldflags" "${build_ldflags[*]}" "./cmd/harness")
 (
   cd "${repo_root}"
-  go build -o "${binary_path}" ./cmd/harness
+  go build "${build_args[@]}"
 )
 "${binary_path}" --help >/dev/null
 

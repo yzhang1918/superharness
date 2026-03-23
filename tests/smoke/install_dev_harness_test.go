@@ -3,6 +3,7 @@ package smoke_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -151,6 +152,63 @@ func TestInstallDevHarnessWrapperFallsBackOutsideWorktree(t *testing.T) {
 	support.RequireContains(t, wrapperResult.CombinedOutput(), "Usage: harness <command> [subcommand] [flags]")
 }
 
+func TestInstallDevHarnessVersionReportsDevModeAndPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("installer smoke tests require a POSIX shell")
+	}
+
+	repoRoot := copyInstallerFixture(t)
+	installDir := filepath.Join(t.TempDir(), "global-bin")
+	expectedCommit := "0123456789abcdef0123456789abcdef01234567"
+	fakeGitDir := fakeGitDirForHeadCommit(t, repoRoot, expectedCommit)
+
+	result := runCommand(
+		t,
+		repoRoot,
+		installerEnv(t, map[string]string{
+			"HOME": t.TempDir(),
+			"PATH": installerPath(t, fakeGitDir),
+		}),
+		"/bin/bash",
+		filepath.Join(repoRoot, "scripts", "install-dev-harness"),
+		"--install-dir", installDir,
+	)
+	if result.ExitCode != 0 {
+		t.Fatalf("install-dev-harness failed with exit %d\nstdout:\n%s\nstderr:\n%s", result.ExitCode, result.Stdout, result.Stderr)
+	}
+
+	wrapperPath := filepath.Join(installDir, "harness")
+	support.RequireFileExists(t, wrapperPath)
+
+	otherProject := t.TempDir()
+	versionResult := runCommand(
+		t,
+		otherProject,
+		envWithOverrides(t, map[string]string{
+			"PATH": installerPath(t, fakeGitDir),
+		}),
+		wrapperPath,
+		"--version",
+	)
+	if versionResult.ExitCode != 0 {
+		t.Fatalf("wrapper version failed with exit %d\nstdout:\n%s\nstderr:\n%s", versionResult.ExitCode, versionResult.Stdout, versionResult.Stderr)
+	}
+
+	if mode := requireVersionField(t, versionResult.Stdout, "mode"); mode != "dev" {
+		t.Fatalf("expected dev mode, got %q\noutput:\n%s", mode, versionResult.Stdout)
+	}
+	if commit := requireVersionField(t, versionResult.Stdout, "commit"); commit != expectedCommit {
+		t.Fatalf("expected injected dev commit %q, got %q\noutput:\n%s", expectedCommit, commit, versionResult.Stdout)
+	}
+	expectedPath := filepath.Join(repoRoot, ".local", "bin", "harness")
+	if path := requireVersionField(t, versionResult.Stdout, "path"); path != expectedPath {
+		t.Fatalf("expected dev path %q, got %q\noutput:\n%s", expectedPath, path, versionResult.Stdout)
+	}
+	if strings.HasPrefix(strings.TrimSpace(versionResult.Stdout), "{") {
+		t.Fatalf("expected plain-text version output, got %q", versionResult.Stdout)
+	}
+}
+
 func TestInstallDevHarnessRefreshesManagedWrapperWithoutForce(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("installer smoke tests require a POSIX shell")
@@ -205,6 +263,85 @@ func TestInstallDevHarnessRefreshesManagedWrapperWithoutForce(t *testing.T) {
 	if strings.Contains(string(after), filepath.Join(repoOne, ".local", "bin", "harness")) {
 		t.Fatalf("expected refreshed wrapper to stop pointing at first worktree fallback\nwrapper:\n%s", string(after))
 	}
+}
+
+func TestInstallDevHarnessReplacesLegacyManagedWrapperWithoutForce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("installer smoke tests require a POSIX shell")
+	}
+
+	repoRoot := copyInstallerFixture(t)
+	installDir := filepath.Join(t.TempDir(), "global-bin")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		t.Fatalf("mkdir install dir: %v", err)
+	}
+
+	wrapperPath := filepath.Join(installDir, "harness")
+	legacyWrapper := `#!/usr/bin/env bash
+set -euo pipefail
+
+find_repo_root() {
+  local root=""
+  if command -v git >/dev/null 2>&1; then
+    root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [[ -n "${root}" && -f "${root}/scripts/install-dev-harness" && -f "${root}/cmd/harness/main.go" ]]; then
+      printf '%s\n' "${root}"
+      return 0
+    fi
+  fi
+
+  local dir="${PWD}"
+  while :; do
+    if [[ -f "${dir}/scripts/install-dev-harness" && -f "${dir}/cmd/harness/main.go" ]]; then
+      printf '%s\n' "${dir}"
+      return 0
+    fi
+    if [[ "${dir}" == "/" ]]; then
+      break
+    fi
+    dir="$(dirname "${dir}")"
+  done
+
+  return 1
+}
+
+if ! repo_root="$(find_repo_root)"; then
+  echo "Could not find a superharness worktree from ${PWD}." >&2
+  echo "Run harness from inside a superharness checkout, or call a repo-local binary directly." >&2
+  exit 1
+fi
+
+binary_path="${repo_root}/.local/bin/harness"
+if [[ ! -x "${binary_path}" ]]; then
+  echo "No repo-local harness binary found at ${binary_path}." >&2
+  echo "Run scripts/install-dev-harness from this worktree first." >&2
+  exit 1
+fi
+
+exec "${binary_path}" "$@"
+`
+	writeFixtureFile(t, wrapperPath, legacyWrapper, 0o755)
+
+	result := runCommand(
+		t,
+		repoRoot,
+		installerEnv(t, map[string]string{
+			"HOME": t.TempDir(),
+			"PATH": installerPath(t),
+		}),
+		"/bin/bash",
+		filepath.Join(repoRoot, "scripts", "install-dev-harness"),
+		"--install-dir", installDir,
+	)
+	if result.ExitCode != 0 {
+		t.Fatalf("install-dev-harness failed with exit %d\nstdout:\n%s\nstderr:\n%s", result.ExitCode, result.Stdout, result.Stderr)
+	}
+
+	refreshed, err := os.ReadFile(wrapperPath)
+	if err != nil {
+		t.Fatalf("read refreshed wrapper: %v", err)
+	}
+	support.RequireContains(t, string(refreshed), "# superharness-install-dev-wrapper")
 }
 
 func copyInstallerFixture(t *testing.T) string {
@@ -370,6 +507,33 @@ func installerPath(t *testing.T, extraDirs ...string) string {
 	addDir("/sbin")
 
 	return strings.Join(dirs, string(os.PathListSeparator))
+}
+
+func fakeGitDirForHeadCommit(t *testing.T, repoRoot, commit string) string {
+	t.Helper()
+
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("find git on PATH: %v", err)
+	}
+
+	dir := t.TempDir()
+	script := fmt.Sprintf(`#!/bin/sh
+set -eu
+
+repo_root=%q
+fake_commit=%q
+real_git=%q
+
+if [ "$#" -ge 4 ] && [ "$1" = "-C" ] && [ "$2" = "$repo_root" ] && [ "$3" = "rev-parse" ] && [ "$4" = "HEAD" ]; then
+  printf '%%s\n' "$fake_commit"
+  exit 0
+fi
+
+exec "$real_git" "$@"
+`, repoRoot, commit, realGit)
+	writeFixtureFile(t, filepath.Join(dir, "git"), script, 0o755)
+	return dir
 }
 
 func runCommand(t *testing.T, workdir string, env []string, argv ...string) commandResult {

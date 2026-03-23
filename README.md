@@ -47,6 +47,7 @@ Verify the command is available:
 ```bash
 command -v harness
 harness --help
+harness --version
 ```
 
 After changing Go CLI code, rerun `scripts/install-dev-harness` so the direct
@@ -72,6 +73,10 @@ chosen install directory earlier in `PATH`.
 - `harness reopen --mode <finalize-fix|new-step>`
 - `harness land --pr <url> [--commit <sha>]`
 - `harness land complete`
+
+The root CLI also exposes `harness --version` as a plain-text debug flag for
+identifying the running binary. Unlike the stateful workflow commands above,
+it is not a JSON-first command surface.
 
 `harness ui` is deferred.
 
