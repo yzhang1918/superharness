@@ -65,6 +65,38 @@ func TestInstallDevHarnessDefaultsToUserLocalBin(t *testing.T) {
 	}
 }
 
+func TestInstallDevHarnessVerifiesPATHResolvedWrapperWhenInstallDirIsAlreadyOnPATH(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("installer smoke tests require a POSIX shell")
+	}
+
+	repoRoot := copyInstallerFixture(t)
+	installDir := filepath.Join(t.TempDir(), "path-bin")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		t.Fatalf("mkdir install dir: %v", err)
+	}
+
+	result := runCommand(
+		t,
+		repoRoot,
+		installerEnv(t, map[string]string{
+			"HOME": t.TempDir(),
+			"PATH": installerPath(t, installDir),
+		}),
+		"/bin/bash",
+		filepath.Join(repoRoot, "scripts", "install-dev-harness"),
+		"--install-dir", installDir,
+	)
+	if result.ExitCode != 0 {
+		t.Fatalf("install-dev-harness failed with exit %d\nstdout:\n%s\nstderr:\n%s", result.ExitCode, result.Stdout, result.Stderr)
+	}
+
+	wrapperPath := filepath.Join(installDir, "harness")
+	support.RequireFileExists(t, wrapperPath)
+	support.RequireContains(t, result.Stdout, "Installed harness wrapper at "+wrapperPath)
+	support.RequireContains(t, result.Stdout, "Verified harness on PATH at "+wrapperPath)
+}
+
 func TestInstallDevHarnessWrapperDispatchesToCurrentWorktree(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("installer smoke tests require a POSIX shell")

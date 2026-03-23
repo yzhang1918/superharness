@@ -177,9 +177,10 @@ needs a final review gate. This is distinct from the last step's review.
 ### `execution/finalize/fix`
 
 The whole-branch candidate needs repair because of finalize review findings,
-reopened work that did not justify a new step, or archived candidate
-invalidation that must be repaired before archive or merge readiness can be
-claimed again.
+reopened work that did not justify a new step, a `new-step` reopen that is
+still waiting for the first new unfinished step to be added, or archived
+candidate invalidation that must be repaired before archive or merge readiness
+can be claimed again.
 
 ### `execution/finalize/archive`
 
@@ -278,7 +279,9 @@ reopen and continue execution at that new step's `implement` node. Once that
 first reopened step has been added, the `new-step` requirement is considered
 consumed: later finalize-time findings should repair the latest reopened work
 or resume finalize-scope repair instead of forcing another new unfinished step
-by default.
+by default. Until that first new unfinished step exists, status remains in
+`execution/finalize/fix` and should keep prompting for the new step rather than
+pretending implementation has already resumed.
 
 ## Commits and Nodes
 

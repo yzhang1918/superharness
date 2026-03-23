@@ -40,6 +40,7 @@ the normative transition matrix.
 | `execution/finalize/review` | `execution/finalize/fix` | `harness review aggregate` | Latest finalize review aggregate has actionable findings or an unrecoverable conservative outcome | Finalize review findings stay distinct from step-local findings. |
 | `execution/finalize/review` | `execution/finalize/archive` | Derived from clean finalize review | Finalize review is satisfied and archive closeout work remains | Archive closeout includes summary refresh and placeholder replacement. |
 | `execution/finalize/fix` | `execution/finalize/review` | `harness review start` | A new finalize review round is started after repair | Finalize repair must pass a later branch-level review before archive. |
+| `execution/finalize/fix` | `execution/step-<m>/implement` | Derived from tracked plan edits | Reopen mode is `new-step`, the first new unfinished step has been added, and that new step is now current | Once the first reopened step exists, the special `new-step` requirement is consumed and ordinary step execution resumes. |
 
 ## Archive and Publish Handoff
 
@@ -48,7 +49,7 @@ the normative transition matrix.
 | `execution/finalize/archive` | `execution/finalize/publish` | `harness archive` | Finalize review is satisfied and archive closeout is ready | `archive` performs the tracked-file move and records archive metadata. |
 | `execution/finalize/publish` | `execution/finalize/await_merge` | Derived from latest publish, CI, and sync evidence | Publish evidence identifies the candidate, CI is good enough or explicit `not_applied`, sync is acceptable or explicit `not_applied`, and no unresolved fix condition remains | `await_merge` is a merge-ready state, not merely an archived state. |
 | `execution/finalize/publish` | `execution/finalize/fix` | `harness reopen --mode finalize-fix` | Archived candidate has been invalidated but does not justify a new step | Reopen is the command-owned reversal of archive-time assumptions. |
-| `execution/finalize/publish` | `execution/step-<m>/implement` | `harness reopen --mode new-step` plus tracked plan edits | Archived candidate has been invalidated and the controller adds a new unfinished step | New work must live in a new step rather than being folded into prior completed steps. |
+| `execution/finalize/publish` | `execution/finalize/fix` | `harness reopen --mode new-step` | Archived candidate has been invalidated and the change deserves a new unfinished step | Status stays in finalize-scope repair until the first new unfinished step is actually added. |
 
 ## Await-Merge and Land
 
@@ -56,7 +57,7 @@ the normative transition matrix.
 | --- | --- | --- | --- | --- |
 | `execution/finalize/await_merge` | `land` | `harness land --pr <url> [--commit <sha>]` | Human approval exists, merge happened outside harness, and land entry records the PR URL | Optional commit SHA enriches the record but is not required because merge strategies vary. |
 | `execution/finalize/await_merge` | `execution/finalize/fix` | `harness reopen --mode finalize-fix` | Merge-ready archived candidate has been invalidated without justifying a new step | Reopen preserves audit history instead of blanking archive-time text. |
-| `execution/finalize/await_merge` | `execution/step-<m>/implement` | `harness reopen --mode new-step` plus tracked plan edits | Merge-ready archived candidate has been invalidated and the controller adds a new unfinished step | The reopened work resumes at the new step rather than in finalize repair. |
+| `execution/finalize/await_merge` | `execution/finalize/fix` | `harness reopen --mode new-step` | Merge-ready archived candidate has been invalidated and the change deserves a new unfinished step | Status stays in finalize-scope repair until the first new unfinished step is actually added. |
 | `land` | `idle` | `harness land complete` | Merge cleanup is done and land completion is intentionally recorded | `idle` is restored only by an explicit command-owned completion. |
 
 ## State-Preserving Updates
@@ -74,6 +75,9 @@ advancing it:
   - reviewer submissions or aggregation are still pending
 - `execution/finalize/review -> execution/finalize/review`
   - reviewer submissions continue arriving before finalize review is resolved
+- `execution/finalize/fix -> execution/finalize/fix`
+  - finalize-scope repair continues, or a `new-step` reopen is still waiting
+    for the first new unfinished step to be added
 - `execution/finalize/archive -> execution/finalize/archive`
   - archive summaries and placeholders are being refreshed before
     `harness archive`

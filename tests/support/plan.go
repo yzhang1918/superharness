@@ -72,6 +72,25 @@ func CompleteStep(t *testing.T, path string, stepNumber int, executionNotes, rev
 	writePlanFile(t, path, content[:stepStart]+block+content[stepEnd:])
 }
 
+func AppendStepBeforeValidationStrategy(t *testing.T, path, stepMarkdown string) {
+	t.Helper()
+
+	content := readPlanFile(t, path)
+	marker := "\n## Validation Strategy"
+	index := strings.Index(content, marker)
+	if index < 0 {
+		t.Fatalf("validation strategy section not found in %s", path)
+	}
+
+	stepBlock := strings.TrimSpace(stepMarkdown)
+	if stepBlock == "" {
+		t.Fatalf("expected non-empty step markdown for %s", path)
+	}
+
+	updated := content[:index] + "\n\n" + stepBlock + content[index:]
+	writePlanFile(t, path, updated)
+}
+
 func readPlanFile(t *testing.T, path string) string {
 	t.Helper()
 
