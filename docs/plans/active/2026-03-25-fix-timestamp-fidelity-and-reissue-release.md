@@ -175,7 +175,12 @@ instead of the old year-2000 timestamp.
 
 #### Review Notes
 
-PENDING_STEP_REVIEW
+`review-001-delta` requested changes after both reviewers caught that Info-ZIP
+stores entry mtimes with 2-second precision, so the first exact-second
+contract/test was too strict for odd-second commits. Follow-up commit
+`8405f2c` narrowed the release docs and smoke assertions to
+commit-derived timestamps within ZIP precision, and `review-002-delta` passed
+cleanly with no remaining findings.
 
 ### Step 3: Publish and verify the replacement alpha release
 
