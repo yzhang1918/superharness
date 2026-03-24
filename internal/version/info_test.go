@@ -10,6 +10,7 @@ func TestCurrentUsesBuildInfoCommitInReleaseMode(t *testing.T) {
 	t.Cleanup(func() {
 		BuildCommit = ""
 		BuildMode = ""
+		BuildVersion = ""
 	})
 
 	info := current(
@@ -41,10 +42,12 @@ func TestCurrentUsesExplicitDevMetadata(t *testing.T) {
 	t.Cleanup(func() {
 		BuildCommit = ""
 		BuildMode = ""
+		BuildVersion = ""
 	})
 
 	BuildCommit = "deadbeef"
 	BuildMode = "dev"
+	BuildVersion = "v0.0.0-dev"
 
 	info := current(
 		func() (*debug.BuildInfo, bool) {
@@ -64,8 +67,14 @@ func TestCurrentUsesExplicitDevMetadata(t *testing.T) {
 	if info.Path != "/tmp/dev-harness" {
 		t.Fatalf("expected dev path, got %#v", info)
 	}
+	if info.Version != "v0.0.0-dev" {
+		t.Fatalf("expected explicit build version, got %#v", info)
+	}
 	if !strings.Contains(info.String(), "path: /tmp/dev-harness") {
 		t.Fatalf("expected formatted version output to include dev path, got %q", info.String())
+	}
+	if !strings.Contains(info.String(), "version: v0.0.0-dev") {
+		t.Fatalf("expected formatted version output to include version, got %q", info.String())
 	}
 }
 
@@ -73,6 +82,7 @@ func TestCurrentFallsBackToUnknownCommit(t *testing.T) {
 	t.Cleanup(func() {
 		BuildCommit = ""
 		BuildMode = ""
+		BuildVersion = ""
 	})
 
 	info := current(
@@ -86,5 +96,39 @@ func TestCurrentFallsBackToUnknownCommit(t *testing.T) {
 
 	if info.Commit != "unknown" {
 		t.Fatalf("expected unknown commit fallback, got %#v", info)
+	}
+	if info.Version != "" {
+		t.Fatalf("expected unknown-commit fallback to omit version, got %#v", info)
+	}
+}
+
+func TestCurrentUsesBuildInfoVersionWhenExplicitVersionIsMissing(t *testing.T) {
+	t.Cleanup(func() {
+		BuildCommit = ""
+		BuildMode = ""
+		BuildVersion = ""
+	})
+
+	info := current(
+		func() (*debug.BuildInfo, bool) {
+			return &debug.BuildInfo{
+				Main: debug.Module{
+					Version: "v1.2.3",
+				},
+				Settings: []debug.BuildSetting{
+					{Key: "vcs.revision", Value: "abc123"},
+				},
+			}, true
+		},
+		func() (string, error) {
+			return "", nil
+		},
+	)
+
+	if info.Version != "v1.2.3" {
+		t.Fatalf("expected build-info version, got %#v", info)
+	}
+	if !strings.Contains(info.String(), "version: v1.2.3") {
+		t.Fatalf("expected formatted version output to include build-info version, got %q", info.String())
 	}
 }

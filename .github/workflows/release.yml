@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag to build, for example v0.1.0-alpha.1
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Build and Publish Release Assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine release version
+        id: release-version
+        shell: bash
+        run: |
+          version="${{ inputs.version }}"
+          if [[ -z "${version}" ]]; then
+            version="${{ github.ref_name }}"
+          fi
+          if [[ -z "${version}" ]]; then
+            echo "release version is required" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release-version.outputs.version }}
+          fetch-depth: 0
+
+      - name: Verify release tag
+        shell: bash
+        run: |
+          version="${{ steps.release-version.outputs.version }}"
+          if [[ "${version}" != v* ]]; then
+            echo "release version must be a v-prefixed tag, got ${version}" >&2
+            exit 1
+          fi
+          git fetch --force --tags origin
+          if ! git rev-parse -q --verify "refs/tags/${version}" >/dev/null; then
+            echo "release version must reference an existing tag, got ${version}" >&2
+            exit 1
+          fi
+          tag_commit="$(git rev-list -n 1 "refs/tags/${version}")"
+          head_commit="$(git rev-parse HEAD)"
+          if [[ "${head_commit}" != "${tag_commit}" ]]; then
+            echo "checked out commit ${head_commit} does not match tag ${version} (${tag_commit})" >&2
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build release artifacts
+        run: scripts/build-release --version "${{ steps.release-version.outputs.version }}" --output-dir dist/release
+
+      - name: Publish release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          version="${{ steps.release-version.outputs.version }}"
+          prerelease_flags=()
+          prerelease_edit_flags=()
+          if [[ "${version}" == *-* ]]; then
+            prerelease_flags+=(--prerelease --latest=false)
+            prerelease_edit_flags+=(--prerelease)
+          fi
+          if gh release view "${version}" >/dev/null 2>&1; then
+            if [[ ${#prerelease_edit_flags[@]} -gt 0 ]]; then
+              gh release edit "${version}" "${prerelease_edit_flags[@]}"
+            fi
+            gh release upload "${version}" dist/release/* --clobber
+          else
+            gh release create "${version}" dist/release/* --title "${version}" --generate-notes "${prerelease_flags[@]}"
+          fi

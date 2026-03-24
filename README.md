@@ -57,6 +57,40 @@ If the installer reports that `harness` still resolves to a different binary,
 either install into an earlier directory with `--install-dir` or move the
 chosen install directory earlier in `PATH`.
 
+## Public Alpha Release
+
+The first public release is binary-first. External users should download the
+archive that matches their platform from GitHub Releases, verify the published
+`SHA256SUMS`, and run the unpacked `harness` binary directly.
+
+Supported alpha release targets are:
+
+- `darwin/amd64`
+- `darwin/arm64`
+- `linux/amd64`
+- `linux/arm64`
+
+Contributors should use the Go toolchain recorded in `go.mod`, which is
+currently `go 1.26.0`.
+
+Typical verification flow:
+
+- macOS: `shasum -a 256 -c SHA256SUMS`
+- Linux: `sha256sum -c SHA256SUMS`
+
+Then unpack and inspect the release binary:
+
+```bash
+unzip superharness_<version>_<goos>_<goarch>.zip
+cd superharness_<version>_<goos>_<goarch>
+./harness --version
+./harness --help
+```
+
+The release binary reports the release version, build commit, and mode. The
+development installer remains available for contributors who are working from a
+checkout.
+
 ## Current Command Surface
 
 `superharness` currently ships these commands:
@@ -128,4 +162,6 @@ Execution detail for agents lives in `.agents/skills/`.
 
 - one active review round at a time
 - no web UI yet
-- development install only; no release packaging or Homebrew flow yet
+- development installer remains available for contributors; GitHub Release
+  packaging now exists for the public alpha binary
+- Homebrew flow is still deferred

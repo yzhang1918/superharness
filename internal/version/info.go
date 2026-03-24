@@ -10,16 +10,21 @@ import (
 var (
 	BuildCommit = ""
 	BuildMode   = ""
+	BuildVersion = ""
 )
 
 type Info struct {
-	Commit string
-	Mode   string
-	Path   string
+	Version string
+	Commit  string
+	Mode    string
+	Path    string
 }
 
 func (i Info) String() string {
 	var lines []string
+	if strings.TrimSpace(i.Version) != "" {
+		lines = append(lines, fmt.Sprintf("version: %s", i.Version))
+	}
 	lines = append(lines, fmt.Sprintf("mode: %s", i.Mode))
 	lines = append(lines, fmt.Sprintf("commit: %s", i.Commit))
 	if i.Mode == "dev" && strings.TrimSpace(i.Path) != "" {
@@ -33,9 +38,16 @@ func Current() Info {
 }
 
 func current(readBuildInfo func() (*debug.BuildInfo, bool), executablePath func() (string, error)) Info {
+	var buildInfo *debug.BuildInfo
+	var ok bool
+	if readBuildInfo != nil {
+		buildInfo, ok = readBuildInfo()
+	}
+
 	info := Info{
-		Commit: resolveCommit(readBuildInfo),
-		Mode:   resolveMode(),
+		Version: resolveVersion(buildInfo, ok),
+		Commit:  resolveCommit(buildInfo, ok),
+		Mode:    resolveMode(),
 	}
 	if info.Mode == "dev" {
 		if path, err := executablePath(); err == nil {
@@ -45,17 +57,27 @@ func current(readBuildInfo func() (*debug.BuildInfo, bool), executablePath func(
 	return info
 }
 
-func resolveCommit(readBuildInfo func() (*debug.BuildInfo, bool)) string {
+func resolveVersion(buildInfo *debug.BuildInfo, ok bool) string {
+	if version := strings.TrimSpace(BuildVersion); version != "" {
+		return version
+	}
+	if ok && buildInfo != nil {
+		if version := strings.TrimSpace(buildInfo.Main.Version); version != "" && version != "(devel)" {
+			return version
+		}
+	}
+	return ""
+}
+
+func resolveCommit(buildInfo *debug.BuildInfo, ok bool) string {
 	if commit := strings.TrimSpace(BuildCommit); commit != "" {
 		return commit
 	}
-	if readBuildInfo != nil {
-		if buildInfo, ok := readBuildInfo(); ok {
-			for _, setting := range buildInfo.Settings {
-				if setting.Key == "vcs.revision" {
-					if commit := strings.TrimSpace(setting.Value); commit != "" {
-						return commit
-					}
+	if ok && buildInfo != nil {
+		for _, setting := range buildInfo.Settings {
+			if setting.Key == "vcs.revision" {
+				if commit := strings.TrimSpace(setting.Value); commit != "" {
+					return commit
 				}
 			}
 		}
