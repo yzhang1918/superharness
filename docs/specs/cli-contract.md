@@ -200,6 +200,8 @@ Contract:
 - print the rendered template to stdout by default
 - optionally support writing directly to a target path
 - support enough parameters to seed title, date, and source metadata
+- when only a date is provided, preserve the current local time-of-day on that
+  date instead of silently forcing `created_at` to local midnight
 - seed `template_version` from the packaged asset so generated plans record the
   schema/template version they started from
 - avoid introducing a second handwritten template source of truth inside code

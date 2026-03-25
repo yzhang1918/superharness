@@ -14,8 +14,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yzhang1918/superharness/tests/support"
 )
@@ -26,6 +28,7 @@ func TestBuildReleaseProducesSupportedAlphaArchivesAndVersionedBinary(t *testing
 	secondOutputDir := newReleaseOutputDir(t, "supported-alpha-b")
 	version := "v0.1.0-alpha.1"
 	expectedCommit := gitHeadCommit(t, support.RepoRoot(t))
+	expectedArchiveTime := gitCommitTimestampUTC(t, support.RepoRoot(t), expectedCommit)
 
 	firstResult := runReleaseBuild(t, version, firstOutputDir)
 	secondResult := runReleaseBuild(t, version, secondOutputDir)
@@ -64,7 +67,7 @@ func TestBuildReleaseProducesSupportedAlphaArchivesAndVersionedBinary(t *testing
 		if !bytes.Equal(readFileBytes(t, firstArchivePath), readFileBytes(t, secondArchivePath)) {
 			t.Fatalf("expected deterministic archive bytes for %s across identical builds", archiveName)
 		}
-		verifyArchiveContents(t, workspace, firstArchivePath, version, goos, goarch, expectedCommit)
+		verifyArchiveContents(t, workspace, firstArchivePath, version, goos, goarch, expectedCommit, expectedArchiveTime)
 	}
 }
 
@@ -614,7 +617,7 @@ func runReleaseBuildForPlatforms(t *testing.T, version, outputDir string, platfo
 	return runReleaseBuildInDir(t, support.RepoRoot(t), version, outputDir, platforms...)
 }
 
-func verifyArchiveContents(t *testing.T, workspace *support.Workspace, archivePath, version, goos, goarch, expectedCommit string) {
+func verifyArchiveContents(t *testing.T, workspace *support.Workspace, archivePath, version, goos, goarch, expectedCommit string, expectedArchiveTime time.Time) {
 	t.Helper()
 
 	reader, err := zip.OpenReader(archivePath)
@@ -632,6 +635,17 @@ func verifyArchiveContents(t *testing.T, workspace *support.Workspace, archivePa
 	var sawReadme bool
 	var sawLicense bool
 	for _, file := range reader.File {
+		archiveTime := file.Modified.UTC()
+		delta := archiveTime.Sub(expectedArchiveTime)
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > time.Second {
+			t.Fatalf("expected archive entry %s to stay within ZIP timestamp precision of commit time %s, got %s", file.Name, expectedArchiveTime.Format(time.RFC3339), archiveTime.Format(time.RFC3339))
+		}
+		if archiveTime.Year() == 2000 {
+			t.Fatalf("expected archive entry %s to stop using the fixed year-2000 timestamp", file.Name)
+		}
 		switch file.Name {
 		case binaryName:
 			sawBinary = true
@@ -683,6 +697,25 @@ func verifyArchiveContents(t *testing.T, workspace *support.Workspace, archivePa
 			t.Fatalf("expected packaged release output to omit path, got %q", output)
 		}
 	}
+}
+
+func gitCommitTimestampUTC(t *testing.T, repoRoot, commit string) time.Time {
+	t.Helper()
+
+	cmd := exec.Command("git", "-C", repoRoot, "show", "-s", "--format=%ct", commit)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git show commit timestamp: %v\n%s", err, output)
+	}
+
+	secondsText := strings.TrimSpace(string(output))
+	seconds, err := strconv.ParseInt(secondsText, 10, 64)
+	if err != nil {
+		t.Fatalf("parse commit timestamp %q: %v", secondsText, err)
+	}
+
+	ts := time.Unix(seconds, 0).UTC()
+	return ts
 }
 
 func verifyBinaryMetadata(t *testing.T, binaryPath, version, goos, goarch, expectedCommit string) {

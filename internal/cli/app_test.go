@@ -47,6 +47,30 @@ func TestPlanTemplateWritesOutputFile(t *testing.T) {
 	}
 }
 
+func TestPlanTemplateDateSeedsCurrentLocalTimeOfDay(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 25, 14, 15, 16, 0, time.FixedZone("CST", 8*60*60))
+	}
+
+	exitCode := app.Run([]string{
+		"plan", "template",
+		"--title", "Date Seeded Plan",
+		"--date", "2026-03-20",
+	})
+	if exitCode != 0 {
+		t.Fatalf("unexpected exit code %d, stderr=%s", exitCode, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr, got %q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "created_at: 2026-03-20T14:15:16+08:00") {
+		t.Fatalf("expected date-seeded template to preserve current local time-of-day, got:\n%s", stdout.String())
+	}
+}
+
 func TestVersionFlagPrintsHumanReadableDebugInfo(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)

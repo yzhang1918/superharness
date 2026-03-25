@@ -277,7 +277,7 @@ func (a *App) runPlanTemplate(args []string) int {
 	var refs stringListFlag
 	title := fs.String("title", "", "Seed the H1 title.")
 	output := fs.String("output", "", "Write the rendered template to this file instead of stdout.")
-	dateValue := fs.String("date", "", "Seed timestamps using this YYYY-MM-DD date at local midnight.")
+	dateValue := fs.String("date", "", "Seed timestamps using this YYYY-MM-DD date with the current local time-of-day.")
 	timestampValue := fs.String("timestamp", "", "Seed timestamps using this RFC3339 timestamp.")
 	sourceType := fs.String("source-type", "direct_request", "Seed the frontmatter source_type field.")
 	fs.Var(&refs, "source-ref", "Seed one source_refs entry. Repeat to add multiple refs.")
@@ -618,11 +618,13 @@ func (a *App) resolveTimestamp(timestampValue, dateValue string) (time.Time, err
 		return ts, nil
 	}
 	if strings.TrimSpace(dateValue) != "" {
-		day, err := time.ParseInLocation("2006-01-02", dateValue, time.Local)
+		now := a.Now()
+		location := now.Location()
+		day, err := time.ParseInLocation("2006-01-02", dateValue, location)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("--date must be YYYY-MM-DD: %w", err)
 		}
-		return day, nil
+		return time.Date(day.Year(), day.Month(), day.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), location), nil
 	}
 	return a.Now(), nil
 }

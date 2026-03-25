@@ -78,6 +78,12 @@ source_refs: []
   - newer versions than the current harness understands must be rejected
 - `created_at`
   - RFC3339 timestamp with offset
+  - for ordinary new plans, reflect the real creation time rather than a
+    synthetic midnight placeholder
+  - when `harness plan template` is seeded with a date but not an explicit
+    timestamp, keep the current local time-of-day on that date
+  - historical plans that already carry midnight timestamps remain valid; this
+    field is durable history, not a backfilled runtime value
 - `source_type`
   - short lower-snake-case or kebab-case intake label
   - examples: `direct_request`, `issue`, `backlog`, `incident`, `other`
