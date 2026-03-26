@@ -49,14 +49,14 @@ CLI command intentionally remains `harness`.
 
 ## Acceptance Criteria
 
-- [ ] The GitHub repository is owned by `catu-ai`, and live documentation points
+- [x] The GitHub repository is owned by `catu-ai`, and live documentation points
       at `https://github.com/catu-ai/microharness` rather than the personal
       namespace except where historical context is intentional.
-- [ ] `go.mod` and in-repo imports use `github.com/catu-ai/microharness`, and
+- [x] `go.mod` and in-repo imports use `github.com/catu-ai/microharness`, and
       the repository still builds and tests successfully.
-- [ ] Release and install guidance are updated for the org namespace, with the
+- [x] Release and install guidance are updated for the org namespace, with the
       CLI command still documented as `harness`.
-- [ ] A fresh prerelease from `catu-ai/microharness` is published and verified
+- [x] A fresh prerelease from `catu-ai/microharness` is published and verified
       so future external testing and Homebrew work can build on the org-owned
       repository.
 
@@ -307,26 +307,98 @@ the next fresh full review.
 
 ## Validation Summary
 
-PENDING_UNTIL_ARCHIVE
+- `go test ./tests/smoke -run 'TestInstallDevHarness(ReplacesLegacySymlinkedBinaryWithoutForce|WrapperDispatchesToCurrentWorktree)|TestBuildReleaseProducesSupportedAlphaArchivesAndVersionedBinary' -count=1`
+  passed after the namespace move, keeping installer takeover and release
+  packaging aligned on `github.com/catu-ai/microharness`.
+- `scripts/build-release --version v0.1.0-alpha.4 --output-dir .local/release-org-transfer-check --platform $(go env GOOS)/$(go env GOARCH)`
+  produced the expected host-platform archive, and `unzip -l` confirmed the
+  packaged executable remained `harness`.
+- Live remote verification passed through `gh repo view catu-ai/microharness`,
+  `gh release view v0.1.0-alpha.4 --repo catu-ai/microharness`, and the
+  repo-owned `scripts/verify-release-namespace` verifier against the published
+  `SHA256SUMS` plus the `darwin_arm64` prerelease archive.
+- `go test ./tests/smoke -run 'TestVerifyReleaseNamespaceWithFakeGHDownloadsAndChecksums|TestVerifyReleaseNamespaceFailsWhenAssetIsMissing|TestVerifyReleaseNamespaceFailsWhenChecksumDoesNotMatch' -count=1`
+  passed after the finalize repairs, covering matching, missing-asset, and
+  checksum-mismatch verifier paths.
+- `MICROHARNESS_RUN_LIVE_GH_SMOKE=1 MICROHARNESS_LIVE_GH_REPO=catu-ai/microharness MICROHARNESS_LIVE_GH_TAG=v0.1.0-alpha.4 MICROHARNESS_LIVE_GH_ASSET=microharness_v0.1.0-alpha.4_darwin_arm64.zip go test ./tests/smoke -run TestVerifyReleaseNamespaceAgainstGitHubWhenEnabled -count=1`
+  passed, downloading the published archive, unpacking it, and asserting the
+  shipped `harness --version` reported `v0.1.0-alpha.4` in `release` mode.
+- `go test ./... -count=1` passed after both finalize-fix batches, including
+  the latest checksum-mismatch smoke addition.
 
 ## Review Summary
 
-PENDING_UNTIL_ARCHIVE
+- Step 1 and Step 2 recorded `NO_STEP_REVIEW_NEEDED` because the meaningful
+  review boundary for this slice was the full transfer/release candidate rather
+  than isolated prereq-only or namespace-only deltas.
+- `review-001-full` requested changes because the org transfer and release
+  proof lived only in `.local` artifacts; the repair added the repo-owned
+  `scripts/verify-release-namespace` command and fake-`gh` smoke coverage.
+- `review-002-delta` passed after that verifier landed, closing the first
+  Step 3 repair loop.
+- `review-005-full` requested durable live GitHub coverage for the org-hosted
+  prerelease path, so the branch added an opt-in live smoke plus a `Release`
+  workflow step to run it after publishing assets.
+- `review-006-full` reduced the gap to one tests finding: the live smoke still
+  stopped before unpacking the archive and running the shipped binary. The next
+  repair extended the live smoke to extract the published zip and execute
+  `./harness --version`.
+- `review-007-full` then found one remaining tests gap: no negative-path smoke
+  asserted checksum mismatches fail. The follow-up added a fake-`gh`
+  checksum-mismatch regression test.
+- `review-008-full` passed with zero blocking and zero non-blocking findings
+  across `correctness`, `tests`, `docs_consistency`, and `risk_scan`, clearing
+  the branch for archive closeout.
 
 ## Archive Summary
 
-PENDING_UNTIL_ARCHIVE
+- Archived At: 2026-03-26T12:23:48+08:00
+- Revision: 1
+- PR: https://github.com/catu-ai/microharness/pull/49
+- Ready: The candidate now transfers the repository into `catu-ai`, moves the
+  live module path and docs to `github.com/catu-ai/microharness`, preserves
+  `harness` as the executable name, publishes and verifies
+  `v0.1.0-alpha.4`, and carries a clean `review-008-full` finalize pass after
+  durable verifier, live smoke, and checksum-negative-path repairs.
+- Merge Handoff: Run `harness archive`, commit the archive move plus these
+  closeout summaries, push the refreshed branch tip to PR #49, then record
+  publish, CI, and sync evidence for the archived candidate until
+  `harness status` reaches `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
 ### Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Transferred the GitHub repository from `yzhang1918/microharness` to
+  `catu-ai/microharness` and updated the local remote, PR flow, and release
+  verification around the org-owned namespace.
+- Moved the live Go module path and in-repo imports to
+  `github.com/catu-ai/microharness` while keeping installer compatibility for
+  both legacy `yzhang1918/microharness` and older `superharness` managed
+  installs.
+- Updated live README, release docs, specs, and build/release helpers so the
+  public guidance and packaging all point at the `catu-ai` namespace while the
+  shipped executable remains `harness`.
+- Published and verified the org-hosted prerelease
+  https://github.com/catu-ai/microharness/releases/tag/v0.1.0-alpha.4.
+- Added a durable repo-owned release verifier, fake-`gh` smoke coverage,
+  opt-in live GitHub smoke coverage, and checksum-mismatch regression coverage
+  so the transfer proof no longer depends on ad hoc `.local` shell history.
 
 ### Not Delivered
 
-PENDING_UNTIL_ARCHIVE
+- `#42` Homebrew distribution and tap work remain deferred until after the org
+  namespace is stable.
+- Broader org governance work such as teams, permission policy, or repository
+  templates remains intentionally out of scope for this slice.
+- Website/domain work remains deferred; this slice only kept repo and release
+  links correct.
+- The CLI command remains `harness`; renaming the executable was intentionally
+  not part of this move.
 
 ### Follow-Up Issues
 
-NONE
+- `#42` tracks Homebrew distribution now that the repository namespace is
+  stable under `catu-ai`.
+- Broader org governance, website/domain work, and any future CLI executable
+  rename remain intentionally deferred with no active follow-up issue yet.
