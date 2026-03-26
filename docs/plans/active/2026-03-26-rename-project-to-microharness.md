@@ -125,7 +125,7 @@ redundant.
 
 ### Step 2: Rename the codebase, module path, and packaging metadata
 
-- Done: [ ]
+- Done: [x]
 
 #### Objective
 
@@ -192,9 +192,9 @@ and a fresh `go test ./... -count=1`.
 `review-001-delta` requested changes on three points: the installer stopped
 treating old symlink-based `superharness` installs as managed during upgrade,
 release smoke only exercised `--version` from the unpacked archive, and the
-validation layer did not assert the renamed module path directly. Those issues
-are now fixed and need one fresh delta `review_fix` rerun before Step 2 can be
-marked done.
+validation layer did not assert the renamed module path directly. Commit
+`9a31320` fixed those gaps, and `review-002-delta` then passed cleanly with no
+remaining findings, closing Step 2.
 
 ### Step 3: Rename the GitHub repository and publish the renamed prerelease
 
