@@ -2,11 +2,15 @@ package runstate
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
+
+var renameFile = os.Rename
 
 type CurrentPlan struct {
 	PlanPath           string `json:"plan_path,omitempty"`
@@ -128,7 +132,7 @@ func saveCurrentPlan(workdir string, current CurrentPlan) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("marshal current-plan.json: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := writeJSONAtomic(path, data, 0o644); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -159,10 +163,79 @@ func SaveState(workdir, planStem string, state *State) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("marshal state.json: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := writeJSONAtomic(path, data, 0o644); err != nil {
 		return "", err
 	}
 	return path, nil
+}
+
+func AcquireStateMutationLock(workdir, planStem string) (func(), error) {
+	return acquirePlanFileLock(workdir, planStem, ".state-mutation.lock",
+		fmt.Sprintf("another command is already mutating local state for plan %q; retry after it finishes", planStem))
+}
+
+func writeJSONAtomic(path string, data []byte, perm os.FileMode) (err error) {
+	dir := filepath.Dir(path)
+	tempFile, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tempPath := tempFile.Name()
+	defer func() {
+		if err == nil {
+			return
+		}
+		_ = tempFile.Close()
+		_ = os.Remove(tempPath)
+	}()
+
+	if err := tempFile.Chmod(perm); err != nil {
+		return err
+	}
+	if _, err := tempFile.Write(data); err != nil {
+		return err
+	}
+	if err := tempFile.Sync(); err != nil {
+		return err
+	}
+	if err := tempFile.Close(); err != nil {
+		return err
+	}
+	if err := renameFile(tempPath, path); err != nil {
+		return err
+	}
+
+	dirFile, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer dirFile.Close()
+	if err := dirFile.Sync(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func acquirePlanFileLock(workdir, planStem, lockFileName, contentionMessage string) (func(), error) {
+	lockPath := filepath.Join(workdir, ".local", "harness", "plans", planStem, lockFileName)
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = file.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+			return nil, errors.New(contentionMessage)
+		}
+		return nil, err
+	}
+	return func() {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		_ = file.Close()
+	}, nil
 }
 
 func CurrentRevision(state *State) int {

@@ -192,6 +192,29 @@ func TestExecuteStartIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestExecuteStartRejectsWhenStateMutationLockIsHeld(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-execute-start-locked.md"
+	writeFile(t, filepath.Join(root, activeRelPath), buildAwaitingPlan(t, "Execute Start Locked"))
+
+	release, err := runstate.AcquireStateMutationLock(root, "2026-03-18-execute-start-locked")
+	if err != nil {
+		t.Fatalf("acquire state lock: %v", err)
+	}
+	defer release()
+
+	result := lifecycle.Service{Workdir: root}.ExecuteStart()
+	if result.OK {
+		t.Fatalf("expected execute start failure while state lock is held, got %#v", result)
+	}
+	if result.Summary != "Another local state mutation is already in progress." {
+		t.Fatalf("unexpected summary: %#v", result)
+	}
+	if len(result.Errors) != 1 || result.Errors[0].Path != "state" {
+		t.Fatalf("unexpected errors: %#v", result.Errors)
+	}
+}
+
 func TestExecuteStartRollsBackWhenCurrentPlanWriteFails(t *testing.T) {
 	root := t.TempDir()
 	activeRelPath := "docs/plans/active/2026-03-18-execute-start-rollback.md"

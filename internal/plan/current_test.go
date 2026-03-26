@@ -74,6 +74,36 @@ func TestDetectCurrentPathDoesNotFallBackToArchivedPlanWithoutPointer(t *testing
 	}
 }
 
+func TestDetectCurrentPathLockedAllowsSameStem(t *testing.T) {
+	root := t.TempDir()
+	activePath := filepath.Join(root, "docs", "plans", "active", "2026-03-18-first.md")
+	writeTestFile(t, activePath)
+
+	got, err := DetectCurrentPathLocked(root, "2026-03-18-first")
+	if err != nil {
+		t.Fatalf("DetectCurrentPathLocked: %v", err)
+	}
+	if got != activePath {
+		t.Fatalf("expected %s, got %s", activePath, got)
+	}
+}
+
+func TestDetectCurrentPathLockedRejectsStemChange(t *testing.T) {
+	root := t.TempDir()
+	activePathA := filepath.Join(root, "docs", "plans", "active", "2026-03-18-first.md")
+	activePathB := filepath.Join(root, "docs", "plans", "active", "2026-03-18-second.md")
+	writeTestFile(t, activePathA)
+	writeTestFile(t, activePathB)
+
+	if _, err := runstate.SaveCurrentPlan(root, filepath.ToSlash(filepath.Join("docs", "plans", "active", "2026-03-18-second.md"))); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	if _, err := DetectCurrentPathLocked(root, "2026-03-18-first"); err == nil {
+		t.Fatal("expected DetectCurrentPathLocked to reject stem change")
+	}
+}
+
 func writeTestFile(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

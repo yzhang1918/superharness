@@ -73,6 +73,18 @@ Every command must have complete `--help` text that explains:
 Skills may refer to `harness --help` or `harness <subcommand> --help`, but the
 CLI should remain understandable without repository-specific prompt text.
 
+### Crash-Safe Runstate Writes
+
+Commands that rewrite CLI-owned JSON runstate must protect those files against
+interrupted or overlapping writes.
+
+- write `.local/harness/current-plan.json` and any plan-local `state.json`
+  through atomic replacement in the destination directory
+- acquire a shared per-plan state-mutation lock before loading and rewriting
+  `.local/harness/plans/<plan-stem>/state.json`
+- fail with a clear contention error when that state lock is already held
+  instead of waiting silently or risking a stale overwrite
+
 ## Shared Output Envelope
 
 Stateful commands should return an envelope shaped like:
@@ -294,6 +306,10 @@ Contract:
   step, keep the current node stable, preserve a conservative warning, and
   steer the controller toward repairing artifacts or rerunning the relevant
   step-closeout review instead of silently trusting older clean passes
+- when refreshing the cached `current_node`, acquire the shared per-plan state
+  lock before loading and rewriting `state.json`; if another command is already
+  mutating local state, return a clear contention error instead of risking a
+  stale cache overwrite
 
 Recommended next action examples:
 

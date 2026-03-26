@@ -208,6 +208,31 @@ func TestSubmitEvidenceRejectsLandInProgress(t *testing.T) {
 	}
 }
 
+func TestSubmitEvidenceRejectsWhenStateMutationLockIsHeld(t *testing.T) {
+	root := t.TempDir()
+	relPlanPath := writeArchivedPlan(t, root, "docs/plans/archived/2026-03-21-evidence-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, relPlanPath); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	release, err := runstate.AcquireStateMutationLock(root, "2026-03-21-evidence-plan")
+	if err != nil {
+		t.Fatalf("acquire state lock: %v", err)
+	}
+	defer release()
+
+	result := evidence.Service{Workdir: root}.Submit("ci", []byte(`{"status":"success"}`))
+	if result.OK {
+		t.Fatalf("expected state-lock contention failure, got %#v", result)
+	}
+	if result.Summary != "Another local state mutation is already in progress." {
+		t.Fatalf("unexpected summary: %#v", result)
+	}
+	if len(result.Errors) != 1 || result.Errors[0].Path != "state" {
+		t.Fatalf("unexpected errors: %#v", result.Errors)
+	}
+}
+
 func writeArchivedPlan(t *testing.T, root, relPath string) string {
 	t.Helper()
 	return writePlan(t, root, relPath, "Archived Evidence Plan")

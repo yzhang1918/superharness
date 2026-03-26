@@ -187,6 +187,17 @@ func (s Service) Start(specBytes []byte) StartResult {
 			Errors:  []CommandError{{Path: "review", Message: err.Error()}},
 		}
 	}
+	planStem := strings.TrimSuffix(filepath.Base(lockedPlanPath), filepath.Ext(lockedPlanPath))
+	releaseState, err := runstate.AcquireStateMutationLock(s.Workdir, planStem)
+	if err != nil {
+		return StartResult{
+			OK:      false,
+			Command: "review start",
+			Summary: "Another local state mutation is already in progress.",
+			Errors:  []CommandError{{Path: "state", Message: err.Error()}},
+		}
+	}
+	defer releaseState()
 
 	now := s.now()
 	planPath, doc, planStem, relPlanPath, state, statePath, errResult := s.loadCurrentExecutingPlan(lockedPlanPath)
@@ -473,6 +484,17 @@ func (s Service) Aggregate(roundID string) AggregateResult {
 			Errors:  []CommandError{{Path: "review", Message: err.Error()}},
 		}
 	}
+	planStem := strings.TrimSuffix(filepath.Base(lockedPlanPath), filepath.Ext(lockedPlanPath))
+	releaseState, err := runstate.AcquireStateMutationLock(s.Workdir, planStem)
+	if err != nil {
+		return AggregateResult{
+			OK:      false,
+			Command: "review aggregate",
+			Summary: "Another local state mutation is already in progress.",
+			Errors:  []CommandError{{Path: "state", Message: err.Error()}},
+		}
+	}
+	defer releaseState()
 
 	_, _, planStem, _, state, statePath, errResult := s.loadCurrentExecutingPlan(lockedPlanPath)
 	if errResult != nil {

@@ -399,6 +399,34 @@ func TestStartRejectsWhenReviewMutationLockIsHeld(t *testing.T) {
 	assertStartError(t, result, "review")
 }
 
+func TestStartRejectsWhenStateMutationLockIsHeld(t *testing.T) {
+	root := t.TempDir()
+	planStem := "2026-03-18-review-contract"
+	writeExecutingPlan(t, root, "docs/plans/active/"+planStem+".md")
+	release, err := runstate.AcquireStateMutationLock(root, planStem)
+	if err != nil {
+		t.Fatalf("acquire state lock: %v", err)
+	}
+	defer release()
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	result := svc.Start(mustJSON(t, review.Spec{
+		Kind: "delta",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if result.OK {
+		t.Fatalf("expected start failure while state lock is held, got %#v", result)
+	}
+	assertStartError(t, result, "state")
+}
+
 func TestAggregateRejectsWhenReviewMutationLockIsHeld(t *testing.T) {
 	root := t.TempDir()
 	planStem := "2026-03-18-review-contract"
@@ -435,6 +463,49 @@ func TestAggregateRejectsWhenReviewMutationLockIsHeld(t *testing.T) {
 	assertAggregateError(t, result, "review")
 	if _, err := os.Stat(filepath.Join(root, ".local", "harness", "plans", planStem, "reviews", start.Artifacts.RoundID, "aggregate.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected no aggregate artifact while lock is held, got %v", err)
+	}
+}
+
+func TestAggregateRejectsWhenStateMutationLockIsHeld(t *testing.T) {
+	root := t.TempDir()
+	planStem := "2026-03-18-review-contract"
+	writeExecutingPlan(t, root, "docs/plans/active/"+planStem+".md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind: "delta",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+	submit := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSON(t, review.SubmissionInput{
+		Summary: "Looks good.",
+	}))
+	if !submit.OK {
+		t.Fatalf("submit failed: %#v", submit)
+	}
+
+	release, err := runstate.AcquireStateMutationLock(root, planStem)
+	if err != nil {
+		t.Fatalf("acquire state lock: %v", err)
+	}
+	defer release()
+
+	result := svc.Aggregate(start.Artifacts.RoundID)
+	if result.OK {
+		t.Fatalf("expected aggregate failure while state lock is held, got %#v", result)
+	}
+	assertAggregateError(t, result, "state")
+	if _, err := os.Stat(filepath.Join(root, ".local", "harness", "plans", planStem, "reviews", start.Artifacts.RoundID, "aggregate.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no aggregate artifact while state lock is held, got %v", err)
 	}
 }
 

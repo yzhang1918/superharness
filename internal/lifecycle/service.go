@@ -59,11 +59,12 @@ type editablePlan struct {
 
 func (s Service) ExecuteStart() Result {
 	now := s.now()
-	_, doc, _, planStem, relCurrentPath, state, statePath, result := s.loadCurrentPlan()
+	_, doc, _, planStem, relCurrentPath, state, statePath, release, result := s.loadCurrentPlan()
 	if result != nil {
 		result.Command = "execute start"
 		return *result
 	}
+	defer release()
 
 	if doc.DerivedPlanStatus() != "active" {
 		return errorResult("execute start", "Current plan is not active.", []CommandError{{
@@ -133,11 +134,12 @@ func (s Service) ExecuteStart() Result {
 
 func (s Service) Archive() Result {
 	now := s.now()
-	currentPath, doc, editable, planStem, relCurrentPath, state, statePath, result := s.loadCurrentPlan()
+	currentPath, doc, editable, planStem, relCurrentPath, state, statePath, release, result := s.loadCurrentPlan()
 	if result != nil {
 		result.Command = "archive"
 		return *result
 	}
+	defer release()
 	if doc.DerivedPlanStatus() != "active" || doc.DerivedLifecycle(state) != "executing" {
 		return errorResult("archive", "Current plan is not archive-ready.", []CommandError{{
 			Path:    "plan.lifecycle",
@@ -244,11 +246,12 @@ func (s Service) Archive() Result {
 
 func (s Service) Reopen(mode string) Result {
 	now := s.now()
-	currentPath, doc, editable, planStem, relCurrentPath, state, statePath, result := s.loadCurrentPlan()
+	currentPath, doc, editable, planStem, relCurrentPath, state, statePath, release, result := s.loadCurrentPlan()
 	if result != nil {
 		result.Command = "reopen"
 		return *result
 	}
+	defer release()
 	if doc.DerivedPlanStatus() != "archived" || doc.DerivedLifecycle(state) != "awaiting_merge_approval" {
 		return errorResult("reopen", "Current plan is not archived.", []CommandError{{
 			Path:    "plan.lifecycle",
@@ -380,11 +383,12 @@ func (s Service) Reopen(mode string) Result {
 
 func (s Service) Land(prURL, commit string) Result {
 	now := s.now()
-	currentPath, doc, _, planStem, relCurrentPath, state, statePath, result := s.loadCurrentPlan()
+	currentPath, doc, _, planStem, relCurrentPath, state, statePath, release, result := s.loadCurrentPlan()
 	if result != nil {
 		result.Command = "land"
 		return *result
 	}
+	defer release()
 	if doc.DerivedPlanStatus() != "archived" || doc.DerivedLifecycle(state) != "awaiting_merge_approval" {
 		return errorResult("land", "Current plan is not archived.", []CommandError{{
 			Path:    "plan.lifecycle",
@@ -496,11 +500,12 @@ func (s Service) Land(prURL, commit string) Result {
 
 func (s Service) LandComplete() Result {
 	now := s.now()
-	currentPath, doc, _, planStem, relCurrentPath, state, statePath, result := s.loadCurrentPlan()
+	currentPath, doc, _, planStem, relCurrentPath, state, statePath, release, result := s.loadCurrentPlan()
 	if result != nil {
 		result.Command = "land complete"
 		return *result
 	}
+	defer release()
 	if doc.DerivedPlanStatus() != "archived" || doc.DerivedLifecycle(state) != "awaiting_merge_approval" {
 		return errorResult("land complete", "Current plan is not archived.", []CommandError{{
 			Path:    "plan.lifecycle",
@@ -551,10 +556,29 @@ func (s Service) LandComplete() Result {
 	}
 }
 
-func (s Service) loadCurrentPlan() (string, *plan.Document, *editablePlan, string, string, *runstate.State, string, *Result) {
+func (s Service) loadCurrentPlan() (string, *plan.Document, *editablePlan, string, string, *runstate.State, string, func(), *Result) {
+	release := func() {}
 	currentPath, err := plan.DetectCurrentPath(s.Workdir)
 	if err != nil {
-		return "", nil, nil, "", "", nil, "", &Result{
+		return "", nil, nil, "", "", nil, "", release, &Result{
+			OK:      false,
+			Summary: "Unable to determine the current plan.",
+			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
+		}
+	}
+	planStem := strings.TrimSuffix(filepath.Base(currentPath), filepath.Ext(currentPath))
+	release, err = runstate.AcquireStateMutationLock(s.Workdir, planStem)
+	if err != nil {
+		return "", nil, nil, "", "", nil, "", func() {}, &Result{
+			OK:      false,
+			Summary: "Another local state mutation is already in progress.",
+			Errors:  []CommandError{{Path: "state", Message: err.Error()}},
+		}
+	}
+	currentPath, err = plan.DetectCurrentPathLocked(s.Workdir, planStem)
+	if err != nil {
+		release()
+		return "", nil, nil, "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Unable to determine the current plan.",
 			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
@@ -562,7 +586,8 @@ func (s Service) loadCurrentPlan() (string, *plan.Document, *editablePlan, strin
 	}
 	doc, err := plan.LoadFile(currentPath)
 	if err != nil {
-		return "", nil, nil, "", "", nil, "", &Result{
+		release()
+		return "", nil, nil, "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Unable to read the current plan.",
 			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
@@ -570,16 +595,17 @@ func (s Service) loadCurrentPlan() (string, *plan.Document, *editablePlan, strin
 	}
 	editable, err := loadEditablePlan(currentPath)
 	if err != nil {
-		return "", nil, nil, "", "", nil, "", &Result{
+		release()
+		return "", nil, nil, "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Unable to load the editable plan representation.",
 			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
 		}
 	}
-	planStem := strings.TrimSuffix(filepath.Base(currentPath), filepath.Ext(currentPath))
 	relCurrentPath, err := filepath.Rel(s.Workdir, currentPath)
 	if err != nil {
-		return "", nil, nil, "", "", nil, "", &Result{
+		release()
+		return "", nil, nil, "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Unable to relativize the current plan path.",
 			Errors:  []CommandError{{Path: "path", Message: err.Error()}},
@@ -588,13 +614,14 @@ func (s Service) loadCurrentPlan() (string, *plan.Document, *editablePlan, strin
 	relCurrentPath = filepath.ToSlash(relCurrentPath)
 	state, statePath, err := runstate.LoadState(s.Workdir, planStem)
 	if err != nil {
-		return "", nil, nil, "", "", nil, "", &Result{
+		release()
+		return "", nil, nil, "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Unable to read local harness state.",
 			Errors:  []CommandError{{Path: "state", Message: err.Error()}},
 		}
 	}
-	return currentPath, doc, editable, planStem, relCurrentPath, state, statePath, nil
+	return currentPath, doc, editable, planStem, relCurrentPath, state, statePath, release, nil
 }
 
 func loadEditablePlan(path string) (*editablePlan, error) {

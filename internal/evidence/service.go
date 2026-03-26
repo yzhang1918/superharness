@@ -114,11 +114,12 @@ type SyncRecord struct {
 
 func (s Service) Submit(kind string, inputBytes []byte) Result {
 	now := s.now().Format(time.RFC3339)
-	planPath, relPlanPath, planStem, state, statePath, result := s.loadCurrentArchivedPlan()
+	planPath, relPlanPath, planStem, state, statePath, release, result := s.loadCurrentArchivedPlan()
 	if result != nil {
 		result.Command = "evidence submit"
 		return *result
 	}
+	defer release()
 
 	kind = strings.TrimSpace(strings.ToLower(kind))
 	switch kind {
@@ -490,10 +491,30 @@ func writeJSONFile(path string, value any) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-func (s Service) loadCurrentArchivedPlan() (string, string, string, *runstate.State, string, *Result) {
+func (s Service) loadCurrentArchivedPlan() (string, string, string, *runstate.State, string, func(), *Result) {
+	release := func() {}
 	planPath, err := plan.DetectCurrentPath(s.Workdir)
 	if err != nil {
-		return "", "", "", nil, "", &Result{
+		return "", "", "", nil, "", release, &Result{
+			OK:      false,
+			Summary: "Unable to determine the current plan.",
+			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
+		}
+	}
+	planStem := strings.TrimSuffix(filepath.Base(planPath), filepath.Ext(planPath))
+	release, err = runstate.AcquireStateMutationLock(s.Workdir, planStem)
+	if err != nil {
+		return "", "", "", nil, "", func() {}, &Result{
+			OK:      false,
+			Summary: "Another local state mutation is already in progress.",
+			Errors:  []CommandError{{Path: "state", Message: err.Error()}},
+		}
+	}
+
+	planPath, err = plan.DetectCurrentPathLocked(s.Workdir, planStem)
+	if err != nil {
+		release()
+		return "", "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Unable to determine the current plan.",
 			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
@@ -501,16 +522,17 @@ func (s Service) loadCurrentArchivedPlan() (string, string, string, *runstate.St
 	}
 	doc, err := plan.LoadFile(planPath)
 	if err != nil {
-		return "", "", "", nil, "", &Result{
+		release()
+		return "", "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Unable to read the current plan.",
 			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
 		}
 	}
-	planStem := strings.TrimSuffix(filepath.Base(planPath), filepath.Ext(planPath))
 	relPlanPath, err := filepath.Rel(s.Workdir, planPath)
 	if err != nil {
-		return "", "", "", nil, "", &Result{
+		release()
+		return "", "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Unable to relativize the current plan path.",
 			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
@@ -519,14 +541,16 @@ func (s Service) loadCurrentArchivedPlan() (string, string, string, *runstate.St
 	relPlanPath = filepath.ToSlash(relPlanPath)
 	state, statePath, err := runstate.LoadState(s.Workdir, planStem)
 	if err != nil {
-		return "", "", "", nil, "", &Result{
+		release()
+		return "", "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Unable to read local harness state.",
 			Errors:  []CommandError{{Path: "state", Message: err.Error()}},
 		}
 	}
 	if doc.DerivedPlanStatus() != "archived" || doc.DerivedLifecycle(state) != "awaiting_merge_approval" {
-		return "", "", "", nil, "", &Result{
+		release()
+		return "", "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Evidence commands require the current archived candidate.",
 			Errors: []CommandError{{
@@ -539,7 +563,8 @@ func (s Service) loadCurrentArchivedPlan() (string, string, string, *runstate.St
 		(state.Land != nil &&
 			strings.TrimSpace(state.Land.LandedAt) != "" &&
 			strings.TrimSpace(state.Land.CompletedAt) == "")) {
-		return "", "", "", nil, "", &Result{
+		release()
+		return "", "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Evidence commands are not allowed after merge confirmation enters land cleanup.",
 			Errors: []CommandError{{
@@ -548,7 +573,7 @@ func (s Service) loadCurrentArchivedPlan() (string, string, string, *runstate.St
 			}},
 		}
 	}
-	return planPath, relPlanPath, planStem, state, statePath, nil
+	return planPath, relPlanPath, planStem, state, statePath, release, nil
 }
 
 func (s Service) now() time.Time {

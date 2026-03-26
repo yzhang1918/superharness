@@ -43,6 +43,20 @@ Agents do not set `current_node` directly. The CLI resolves it from tracked
 plan content plus command-owned artifacts and may cache the latest answer in a
 thin CLI-owned `state.json`.
 
+### Safe Local Persistence
+
+CLI-owned runstate files must stay parseable even when commands run close
+together or a process exits during persistence.
+
+- `.local/harness/current-plan.json` must be written with atomic replacement
+  rather than in-place overwrite writes
+- `.local/harness/plans/<plan-stem>/state.json` must also use atomic
+  replacement
+- any command that mutates a plan-local `state.json` must acquire a shared
+  per-plan state-mutation lock before it loads and rewrites that file
+- if the per-plan state lock is already held, the command should fail with a
+  clear error rather than waiting silently or risking a stale overwrite
+
 ### Durable Plan, Disposable Runtime
 
 Tracked plans remain the durable source of scope, step closeout, and archive
@@ -96,6 +110,10 @@ root
 - land entry and land completion milestones
 - the thin `state.json` cache containing the latest resolved `current_node`
   plus latest artifact pointers
+
+These CLI-owned JSON artifacts are disposable runtime state, but they still
+need crash-safe persistence so the controller can trust `harness status` after
+any interrupted or overlapping command.
 
 ### Agents Must Not Directly Edit
 

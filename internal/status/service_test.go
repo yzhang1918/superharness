@@ -79,6 +79,30 @@ func TestStatusExecutionStepImplementNode(t *testing.T) {
 	}
 }
 
+func TestStatusRejectsWhenStateMutationLockIsHeld(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return content
+	})
+
+	release, err := runstate.AcquireStateMutationLock(root, "2026-03-18-status-plan")
+	if err != nil {
+		t.Fatalf("acquire state lock: %v", err)
+	}
+	defer release()
+
+	result := status.Service{Workdir: root}.Read()
+	if result.OK {
+		t.Fatalf("expected status failure while state lock is held, got %#v", result)
+	}
+	if result.Summary != "Another local state mutation is already in progress." {
+		t.Fatalf("unexpected summary: %#v", result)
+	}
+	if len(result.Errors) != 1 || result.Errors[0].Path != "state" {
+		t.Fatalf("unexpected errors: %#v", result.Errors)
+	}
+}
+
 func TestStatusIgnoresNonStructuralReviewFactsForCurrentStep(t *testing.T) {
 	root := t.TempDir()
 	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {

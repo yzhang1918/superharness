@@ -56,6 +56,18 @@ func DetectCurrentPath(workdir string) (string, error) {
 	return "", ErrNoCurrentPlan
 }
 
+func DetectCurrentPathLocked(workdir, lockedPlanStem string) (string, error) {
+	currentPath, err := DetectCurrentPath(workdir)
+	if err != nil {
+		return "", err
+	}
+	currentStem := strings.TrimSuffix(filepath.Base(currentPath), filepath.Ext(currentPath))
+	if currentStem != strings.TrimSpace(lockedPlanStem) {
+		return "", fmt.Errorf("current plan changed from %q to %q while acquiring the local state lock; retry", lockedPlanStem, currentStem)
+	}
+	return currentPath, nil
+}
+
 func containsPath(paths []string, target string) bool {
 	for _, path := range paths {
 		if filepath.Clean(path) == target {
