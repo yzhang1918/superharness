@@ -193,8 +193,9 @@ and a fresh `go test ./... -count=1`.
 treating old symlink-based `superharness` installs as managed during upgrade,
 release smoke only exercised `--version` from the unpacked archive, and the
 validation layer did not assert the renamed module path directly. Commit
-`9a31320` fixed those gaps, and `review-002-delta` then passed cleanly with no
-remaining findings, closing Step 2.
+`9a31320` fixed those gaps, `review-002-delta` passed cleanly as the review-fix
+rerun, and `review-003-delta` then passed as the fresh `step_closeout` review
+with no remaining findings, closing Step 2.
 
 ### Step 3: Rename the GitHub repository and publish the renamed prerelease
 
