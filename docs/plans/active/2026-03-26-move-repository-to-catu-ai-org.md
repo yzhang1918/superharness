@@ -232,11 +232,24 @@ the release workflow succeeded, and the downloaded `darwin_arm64` archive from
 cleanly: the local checksum matched the published `SHA256SUMS`, the archive
 contained the expected `microharness_v0.1.0-alpha.4_darwin_arm64/` root with
 `harness`, and the unpacked binary reported `version: v0.1.0-alpha.4`,
-`mode: release`, and commit `98f4fc2c0b75de3dbb238ac833e50ca3c3492bc3`.
+`mode: release`, and commit `98f4fc2c0b75de3dbb238ac833e50ca3c3492bc3`. After
+`review-001-full` flagged that the GitHub/org verification only lived in
+`.local` artifacts, the branch gained a repo-owned
+`scripts/verify-release-namespace` verifier backed by Go logic in
+`scripts/releaseverify/` plus fake-`gh` smoke coverage. The same verifier now
+also ran live against `catu-ai/microharness@v0.1.0-alpha.4`, downloading
+`SHA256SUMS` and the `darwin_arm64` archive into the release-verification
+artifact directory and proving the org-owned release path through a durable
+checked-in command rather than ad hoc shell snippets alone.
 
 #### Review Notes
 
-PENDING_STEP_REVIEW
+`review-001-full` requested changes because the org transfer and release proof
+only existed in `.local` execution artifacts, not in a repo-owned verification
+path. The follow-up added `scripts/verify-release-namespace`, fake-`gh` smoke
+coverage in `tests/smoke/verify_release_namespace_test.go`, and a live rerun
+against `catu-ai/microharness@v0.1.0-alpha.4`. A fresh review round is still
+required after this repair.
 
 ## Validation Strategy
 
