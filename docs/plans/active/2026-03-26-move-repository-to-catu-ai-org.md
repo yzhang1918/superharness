@@ -187,7 +187,7 @@ namespace migration in more realistic branch context.
 
 ### Step 3: Transfer the repository and publish an org-hosted prerelease
 
-- Done: [ ]
+- Done: [x]
 
 #### Objective
 
@@ -248,8 +248,8 @@ checked-in command rather than ad hoc shell snippets alone.
 only existed in `.local` execution artifacts, not in a repo-owned verification
 path. The follow-up added `scripts/verify-release-namespace`, fake-`gh` smoke
 coverage in `tests/smoke/verify_release_namespace_test.go`, and a live rerun
-against `catu-ai/microharness@v0.1.0-alpha.4`. A fresh review round is still
-required after this repair.
+against `catu-ai/microharness@v0.1.0-alpha.4`. `review-002-delta` then passed
+cleanly with no findings, closing the repair loop for Step 3.
 
 ## Validation Strategy
 
