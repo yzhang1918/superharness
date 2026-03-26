@@ -102,6 +102,47 @@ func TestVerifyReleaseNamespaceFailsWhenAssetIsMissing(t *testing.T) {
 	support.RequireContains(t, result.Stderr, "is missing required asset microharness_v0.1.0-alpha.4_darwin_arm64.zip")
 }
 
+func TestVerifyReleaseNamespaceFailsWhenChecksumDoesNotMatch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("verify-release-namespace smoke test requires a POSIX shell")
+	}
+
+	repo := "catu-ai/microharness"
+	tag := "v0.1.0-alpha.4"
+	archiveName := "microharness_v0.1.0-alpha.4_darwin_arm64.zip"
+	archiveBody := []byte("tampered archive bytes")
+	wrongChecksum := sha256.Sum256([]byte("different bytes"))
+	fakeGHDir := fakeGHReleaseDir(
+		t,
+		repo,
+		tag,
+		map[string][]byte{
+			archiveName:  archiveBody,
+			"SHA256SUMS": []byte(fmt.Sprintf("%s  %s\n", hex.EncodeToString(wrongChecksum[:]), archiveName)),
+		},
+	)
+
+	downloadDir := filepath.Join(t.TempDir(), "downloads")
+	result := runCommand(
+		t,
+		support.RepoRoot(t),
+		envWithOverrides(t, map[string]string{
+			"PATH": installerPath(t, fakeGHDir),
+		}),
+		"/bin/bash",
+		filepath.Join(support.RepoRoot(t), "scripts", "verify-release-namespace"),
+		"--repo", repo,
+		"--tag", tag,
+		"--asset", "SHA256SUMS",
+		"--asset", archiveName,
+		"--download-dir", downloadDir,
+	)
+	if result.ExitCode == 0 {
+		t.Fatalf("expected verify-release-namespace to fail when the downloaded asset checksum does not match SHA256SUMS")
+	}
+	support.RequireContains(t, result.Stderr, "checksum mismatch for "+archiveName)
+}
+
 func TestVerifyReleaseNamespaceAgainstGitHubWhenEnabled(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("verify-release-namespace smoke test requires a POSIX shell")

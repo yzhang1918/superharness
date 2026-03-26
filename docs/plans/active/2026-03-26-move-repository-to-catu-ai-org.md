@@ -269,7 +269,12 @@ published assets but still stopped short of unpacking the archive and running
 the shipped binary. The current finalize repair closes that gap by extracting
 the downloaded zip and asserting that the packaged `harness --version` reports
 the expected prerelease version and `release` mode before the next fresh full
-review.
+review. `review-007-full` then narrowed the remaining risk to one more tests
+finding: fake-`gh` smoke covered matching checksums and missing assets, but it
+still lacked a negative-path assertion that a corrupted download is rejected.
+The latest finalize repair adds that checksum-mismatch smoke so the verifier's
+integrity gate is now covered from both the positive and negative sides before
+the next fresh full review.
 
 ## Validation Strategy
 
