@@ -246,7 +246,11 @@ the branch added an opt-in live GitHub smoke test plus a `Release` workflow
 step that enables it automatically after publishing assets. Local default
 `go test ./...` remains offline because the live path only runs when
 `MICROHARNESS_RUN_LIVE_GH_SMOKE=1`, while this execution also proved the live
-test manually against `catu-ai/microharness@v0.1.0-alpha.4`.
+test manually against `catu-ai/microharness@v0.1.0-alpha.4`. After
+`review-006-full` requested one more repair, the live smoke now goes past
+download and checksum verification by unpacking the published archive and
+running the extracted `./harness --version`, so the durable automated proof
+matches the original manual release-verification expectation end to end.
 
 #### Review Notes
 
@@ -259,7 +263,13 @@ cleanly with no findings, closing the first repair loop for Step 3.
 `review-005-full` later requested one more fix because the live GitHub release
 path still lacked durable automated coverage. The follow-up added an opt-in
 live smoke test and wired it into `.github/workflows/release.yml`; a fresh full
-review is still required after that branch-level repair.
+review was required after that branch-level repair. `review-006-full` then
+reduced the remaining gap to one tests finding: the live smoke downloaded the
+published assets but still stopped short of unpacking the archive and running
+the shipped binary. The current finalize repair closes that gap by extracting
+the downloaded zip and asserting that the packaged `harness --version` reports
+the expected prerelease version and `release` mode before the next fresh full
+review.
 
 ## Validation Strategy
 

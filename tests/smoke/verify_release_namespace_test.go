@@ -1,9 +1,11 @@
 package smoke_test
 
 import (
+	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -141,6 +143,18 @@ func TestVerifyReleaseNamespaceAgainstGitHubWhenEnabled(t *testing.T) {
 	support.RequireContains(t, result.Stdout, "Verified downloaded assets in "+downloadDir)
 	support.RequireFileExists(t, filepath.Join(downloadDir, "SHA256SUMS"))
 	support.RequireFileExists(t, filepath.Join(downloadDir, asset))
+
+	extractDir := filepath.Join(t.TempDir(), "extract")
+	extractZipAsset(t, filepath.Join(downloadDir, asset), extractDir)
+	binaryPath := filepath.Join(extractDir, strings.TrimSuffix(asset, ".zip"), "harness")
+	versionCmd := exec.Command(binaryPath, "--version")
+	versionCmd.Dir = support.RepoRoot(t)
+	versionOutput, err := versionCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run downloaded harness --version: %v\n%s", err, versionOutput)
+	}
+	support.RequireContains(t, string(versionOutput), "version: "+tag)
+	support.RequireContains(t, string(versionOutput), "mode: release")
 }
 
 func fakeGHReleaseDir(t *testing.T, repo, tag string, assets map[string][]byte) string {
@@ -234,4 +248,63 @@ func requiredEnv(t *testing.T, key string) string {
 		t.Fatalf("expected %s to be set when live GitHub verification is enabled", key)
 	}
 	return value
+}
+
+func extractZipAsset(t *testing.T, archivePath, destDir string) {
+	t.Helper()
+
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		t.Fatalf("open zip %s: %v", archivePath, err)
+	}
+	defer reader.Close()
+
+	for _, file := range reader.File {
+		targetPath := filepath.Join(destDir, file.Name)
+		cleanTarget := filepath.Clean(targetPath)
+		if !strings.HasPrefix(cleanTarget, filepath.Clean(destDir)+string(os.PathSeparator)) && cleanTarget != filepath.Clean(destDir) {
+			t.Fatalf("zip entry escaped extract dir: %s", file.Name)
+		}
+		if file.FileInfo().IsDir() {
+			if err := os.MkdirAll(cleanTarget, 0o755); err != nil {
+				t.Fatalf("mkdir extracted dir %s: %v", cleanTarget, err)
+			}
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(cleanTarget), 0o755); err != nil {
+			t.Fatalf("mkdir extracted parent for %s: %v", cleanTarget, err)
+		}
+
+		in, err := file.Open()
+		if err != nil {
+			t.Fatalf("open zip entry %s: %v", file.Name, err)
+		}
+
+		mode := file.Mode()
+		if mode == 0 {
+			mode = 0o644
+		}
+		if filepath.Base(cleanTarget) == "harness" {
+			mode = 0o755
+		}
+
+		out, err := os.OpenFile(cleanTarget, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+		if err != nil {
+			in.Close()
+			t.Fatalf("create extracted file %s: %v", cleanTarget, err)
+		}
+		if _, err := io.Copy(out, in); err != nil {
+			out.Close()
+			in.Close()
+			t.Fatalf("extract zip entry %s: %v", file.Name, err)
+		}
+		if err := out.Close(); err != nil {
+			in.Close()
+			t.Fatalf("close extracted file %s: %v", cleanTarget, err)
+		}
+		if err := in.Close(); err != nil {
+			t.Fatalf("close zip entry %s: %v", file.Name, err)
+		}
+	}
 }
