@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yzhang1918/microharness/internal/plan"
+	"github.com/catu-ai/microharness/internal/plan"
 )
 
 func TestLintFileAcceptsValidActivePlan(t *testing.T) {

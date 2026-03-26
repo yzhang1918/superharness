@@ -17,7 +17,7 @@ var (
 	buildErr  error
 )
 
-const versionPackage = "github.com/yzhang1918/microharness/internal/version"
+const versionPackage = "github.com/catu-ai/microharness/internal/version"
 
 func RepoRoot(t *testing.T) string {
 	t.Helper()

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yzhang1918/microharness/internal/evidence"
-	"github.com/yzhang1918/microharness/internal/plan"
-	"github.com/yzhang1918/microharness/internal/runstate"
-	"github.com/yzhang1918/microharness/internal/status"
+	"github.com/catu-ai/microharness/internal/evidence"
+	"github.com/catu-ai/microharness/internal/plan"
+	"github.com/catu-ai/microharness/internal/runstate"
+	"github.com/catu-ai/microharness/internal/status"
 )
 
 const (
@@ -1541,7 +1541,7 @@ func TestStatusArchivedNodesRequireReopenForUnscopedUnreadableHistory(t *testing
 						return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
 					},
 				}
-				if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/microharness/pull/13"}`)); !result.OK {
+				if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/microharness/pull/13"}`)); !result.OK {
 					t.Fatalf("publish evidence: %#v", result)
 				}
 				if result := svc.Submit("ci", []byte(`{"status":"not_applied","reason":"repository has no hosted CI in this test"}`)); !result.OK {
@@ -1604,7 +1604,7 @@ func TestStatusArchivedPlanReadyForAwaitMerge(t *testing.T) {
 			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
 		},
 	}
-	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/microharness/pull/13"}`)); !result.OK {
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/microharness/pull/13"}`)); !result.OK {
 		t.Fatalf("publish evidence: %#v", result)
 	}
 	if result := svc.Submit("ci", []byte(`{"status":"not_applied","reason":"repository has no hosted CI in this test"}`)); !result.OK {
@@ -1618,7 +1618,7 @@ func TestStatusArchivedPlanReadyForAwaitMerge(t *testing.T) {
 	if result.State.CurrentNode != "execution/finalize/await_merge" {
 		t.Fatalf("unexpected node: %#v", result.State)
 	}
-	if result.Facts == nil || result.Facts.PRURL != "https://github.com/yzhang1918/microharness/pull/13" || result.Facts.CIStatus != "not_applied" || result.Facts.SyncStatus != "fresh" {
+	if result.Facts == nil || result.Facts.PRURL != "https://github.com/catu-ai/microharness/pull/13" || result.Facts.CIStatus != "not_applied" || result.Facts.SyncStatus != "fresh" {
 		t.Fatalf("unexpected facts: %#v", result.Facts)
 	}
 	if result.Artifacts == nil || result.Artifacts.PublishRecordID == "" || result.Artifacts.CIRecordID == "" || result.Artifacts.SyncRecordID == "" {
@@ -1646,7 +1646,7 @@ func TestStatusWarnsInAwaitMergeWhenCompletedStepStillLacksCloseout(t *testing.T
 			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
 		},
 	}
-	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/microharness/pull/13"}`)); !result.OK {
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/microharness/pull/13"}`)); !result.OK {
 		t.Fatalf("publish evidence: %#v", result)
 	}
 	if result := svc.Submit("ci", []byte(`{"status":"not_applied","reason":"repository has no hosted CI in this test"}`)); !result.OK {
@@ -1696,7 +1696,7 @@ func TestStatusArchivedPlanReadyForAwaitMergeFromLegacyEvidenceCache(t *testing.
 	writeState(t, root, "2026-03-18-status-plan", map[string]any{
 		"latest_publish": map[string]any{
 			"attempt_id": "publish-legacy-001",
-			"pr_url":     "https://github.com/yzhang1918/microharness/pull/13",
+			"pr_url":     "https://github.com/catu-ai/microharness/pull/13",
 		},
 		"latest_ci": map[string]any{
 			"snapshot_id": "ci-legacy-001",
@@ -1712,7 +1712,7 @@ func TestStatusArchivedPlanReadyForAwaitMergeFromLegacyEvidenceCache(t *testing.
 	if result.State.CurrentNode != "execution/finalize/await_merge" {
 		t.Fatalf("expected legacy evidence fallback to reach await_merge, got %#v", result.State)
 	}
-	if result.Facts == nil || result.Facts.PRURL != "https://github.com/yzhang1918/microharness/pull/13" || result.Facts.CIStatus != "success" || result.Facts.SyncStatus != "fresh" {
+	if result.Facts == nil || result.Facts.PRURL != "https://github.com/catu-ai/microharness/pull/13" || result.Facts.CIStatus != "success" || result.Facts.SyncStatus != "fresh" {
 		t.Fatalf("unexpected facts: %#v", result.Facts)
 	}
 	if result.Artifacts == nil || result.Artifacts.PublishRecordID != "publish-legacy-001" || result.Artifacts.CIRecordID != "ci-legacy-001" {
@@ -1733,7 +1733,7 @@ func TestStatusArchivedPlanReadyForAwaitMergeWithSyncNotApplied(t *testing.T) {
 			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
 		},
 	}
-	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/microharness/pull/13"}`)); !result.OK {
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/microharness/pull/13"}`)); !result.OK {
 		t.Fatalf("publish evidence: %#v", result)
 	}
 	if result := svc.Submit("ci", []byte(`{"status":"success","provider":"github-actions"}`)); !result.OK {
@@ -1765,7 +1765,7 @@ func TestStatusArchivedPlanReadyForAwaitMergeWhenCIAndSyncAreBothNotApplied(t *t
 			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
 		},
 	}
-	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/microharness/pull/13"}`)); !result.OK {
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/microharness/pull/13"}`)); !result.OK {
 		t.Fatalf("publish evidence: %#v", result)
 	}
 	if result := svc.Submit("ci", []byte(`{"status":"not_applied","reason":"repository has no hosted CI in this test"}`)); !result.OK {
@@ -1793,7 +1793,7 @@ func TestStatusArchivedPlanStaysInPublishFromLegacyEvidenceCacheWhenDirty(t *tes
 	writeState(t, root, "2026-03-18-status-plan", map[string]any{
 		"latest_publish": map[string]any{
 			"attempt_id": "publish-legacy-001",
-			"pr_url":     "https://github.com/yzhang1918/microharness/pull/13",
+			"pr_url":     "https://github.com/catu-ai/microharness/pull/13",
 		},
 		"latest_ci": map[string]any{
 			"snapshot_id": "ci-legacy-001",
@@ -1830,7 +1830,7 @@ func TestStatusArchivedPlanStaysInPublishWhenEvidenceIsDirty(t *testing.T) {
 			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
 		},
 	}
-	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/microharness/pull/13"}`)); !result.OK {
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/microharness/pull/13"}`)); !result.OK {
 		t.Fatalf("publish evidence: %#v", result)
 	}
 	if result := svc.Submit("ci", []byte(`{"status":"pending","provider":"github-actions"}`)); !result.OK {
@@ -1865,7 +1865,7 @@ func TestStatusArchivedPlanStaysInPublishWhenSyncIsDirty(t *testing.T) {
 			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
 		},
 	}
-	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/yzhang1918/microharness/pull/13"}`)); !result.OK {
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/microharness/pull/13"}`)); !result.OK {
 		t.Fatalf("publish evidence: %#v", result)
 	}
 	if result := svc.Submit("ci", []byte(`{"status":"success","provider":"github-actions"}`)); !result.OK {
@@ -1896,7 +1896,7 @@ func TestStatusLandNode(t *testing.T) {
 	writeState(t, root, "2026-03-18-status-plan", map[string]any{
 		"current_node": "land",
 		"land": map[string]any{
-			"pr_url":    "https://github.com/yzhang1918/microharness/pull/99",
+			"pr_url":    "https://github.com/catu-ai/microharness/pull/99",
 			"commit":    "abc123",
 			"landed_at": "2026-03-18T12:00:00Z",
 		},

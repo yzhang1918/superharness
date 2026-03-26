@@ -1,7 +1,8 @@
 # Releasing
 
 `microharness` ships its first public alpha as GitHub Release archives built
-from the tracked release workflow.
+from the tracked release workflow at
+[catu-ai/microharness](https://github.com/catu-ai/microharness).
 
 ## Release Checklist
 

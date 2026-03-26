@@ -3,6 +3,8 @@
 `microharness` is a thin, agent-first harness CLI plus repository contract for
 human-steered, agent-executed work.
 
+GitHub home: [catu-ai/microharness](https://github.com/catu-ai/microharness)
+
 The goal is to keep the harness legible and maintainable:
 
 - tracked plans live in git
@@ -60,8 +62,9 @@ chosen install directory earlier in `PATH`.
 ## Public Alpha Release
 
 The first public release is binary-first. External users should download the
-archive that matches their platform from GitHub Releases, verify the published
-`SHA256SUMS`, and run the unpacked `harness` binary directly.
+archive that matches their platform from [GitHub
+Releases](https://github.com/catu-ai/microharness/releases), verify the
+published `SHA256SUMS`, and run the unpacked `harness` binary directly.
 
 Supported alpha release targets are:
 

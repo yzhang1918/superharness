@@ -1,4 +1,4 @@
-module github.com/yzhang1918/microharness
+module github.com/catu-ai/microharness
 
 go 1.26.0
 

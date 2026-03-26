@@ -20,7 +20,7 @@ EOF
 }
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-version_package="github.com/yzhang1918/microharness/internal/version"
+version_package="github.com/catu-ai/microharness/internal/version"
 output_dir="${repo_root}/dist/release"
 version=""
 platforms=()

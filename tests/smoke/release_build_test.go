@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yzhang1918/microharness/tests/support"
+	"github.com/catu-ai/microharness/tests/support"
 )
 
 func TestBuildReleaseProducesSupportedAlphaArchivesAndVersionedBinary(t *testing.T) {
@@ -739,11 +739,11 @@ func verifyBinaryMetadata(t *testing.T, binaryPath, version, goos, goarch, expec
 	if info.GoVersion == "" {
 		t.Fatalf("expected Go build info in %s", binaryPath)
 	}
-	if info.Main.Path != "github.com/yzhang1918/microharness" {
-		t.Fatalf("expected binary %s to record module path %q, got %q", binaryPath, "github.com/yzhang1918/microharness", info.Main.Path)
+	if info.Main.Path != "github.com/catu-ai/microharness" {
+		t.Fatalf("expected binary %s to record module path %q, got %q", binaryPath, "github.com/catu-ai/microharness", info.Main.Path)
 	}
-	if info.Path != "github.com/yzhang1918/microharness/cmd/harness" {
-		t.Fatalf("expected binary %s to record main package path %q, got %q", binaryPath, "github.com/yzhang1918/microharness/cmd/harness", info.Path)
+	if info.Path != "github.com/catu-ai/microharness/cmd/harness" {
+		t.Fatalf("expected binary %s to record main package path %q, got %q", binaryPath, "github.com/catu-ai/microharness/cmd/harness", info.Path)
 	}
 
 	binaryData := readFileBytes(t, binaryPath)

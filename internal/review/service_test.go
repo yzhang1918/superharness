@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yzhang1918/microharness/internal/plan"
-	"github.com/yzhang1918/microharness/internal/review"
-	"github.com/yzhang1918/microharness/internal/runstate"
+	"github.com/catu-ai/microharness/internal/plan"
+	"github.com/catu-ai/microharness/internal/review"
+	"github.com/catu-ai/microharness/internal/runstate"
 )
 
 func TestStartCreatesRoundAndUpdatesState(t *testing.T) {
