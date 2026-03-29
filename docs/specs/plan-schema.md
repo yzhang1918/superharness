@@ -3,7 +3,7 @@
 ## Purpose
 
 This document defines the normative v0.2 tracked-plan contract for
-`microharness`.
+`easyharness`.
 
 In v0.2, tracked plans keep durable scope, step closeout, and archive-time
 summaries. Runtime lifecycle, milestone timestamps, review rounds, evidence

@@ -1,8 +1,11 @@
 # Releasing
 
-`microharness` ships its first public alpha as GitHub Release archives built
+`easyharness` ships its first public alpha as GitHub Release archives built
 from the tracked release workflow at
-[catu-ai/microharness](https://github.com/catu-ai/microharness).
+[catu-ai/easyharness](https://github.com/catu-ai/easyharness).
+
+The release archive name follows the project name, while the unpacked
+executable remains `harness`.
 
 ## Release Checklist
 

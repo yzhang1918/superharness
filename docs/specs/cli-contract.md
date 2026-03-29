@@ -2,9 +2,10 @@
 
 ## Purpose
 
-`microharness` is a CLI for agents first. The command surface should help an
+`easyharness` is a CLI for agents first. The command surface should help an
 agent decide what to do next, not dump long raw logs and force the model to
-reconstruct workflow state from scratch.
+reconstruct workflow state from scratch. The public project name is
+`easyharness`, while the executable name remains `harness`.
 
 This document defines the normative v0.2 CLI contract. The command surface and
 JSON envelopes described here assume the canonical-node runtime model from
@@ -101,7 +102,7 @@ Stateful commands should return an envelope shaped like:
     "current_step": "Step 3: Implement local state and harness status"
   },
   "artifacts": {
-    "plan_path": "docs/plans/active/2026-03-17-microharness-cli-and-plan-foundations.md"
+    "plan_path": "docs/plans/active/2026-03-17-easyharness-cli-and-plan-foundations.md"
   },
   "next_actions": [
     {
