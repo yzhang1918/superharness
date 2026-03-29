@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/catu-ai/microharness/internal/plan"
+	"github.com/catu-ai/easyharness/internal/plan"
 )
 
 func TestLoadFileParsesCurrentStepAndDeferredItems(t *testing.T) {

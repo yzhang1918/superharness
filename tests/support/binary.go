@@ -17,7 +17,7 @@ var (
 	buildErr  error
 )
 
-const versionPackage = "github.com/catu-ai/microharness/internal/version"
+const versionPackage = "github.com/catu-ai/easyharness/internal/version"
 
 func RepoRoot(t *testing.T) string {
 	t.Helper()
@@ -28,7 +28,7 @@ func BuildBinary(t *testing.T) string {
 	t.Helper()
 
 	buildOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "microharness-harness-*")
+		dir, err := os.MkdirTemp("", "easyharness-harness-*")
 		if err != nil {
 			buildErr = fmt.Errorf("create temporary binary directory: %w", err)
 			return

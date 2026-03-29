@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	templateassets "github.com/catu-ai/microharness/assets/templates"
+	templateassets "github.com/catu-ai/easyharness/assets/templates"
 )
 
 const (

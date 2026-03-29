@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/catu-ai/microharness/tests/support"
+	"github.com/catu-ai/easyharness/tests/support"
 )
 
 const (
@@ -43,7 +43,7 @@ func TestPublishHandoffWithBuiltBinary(t *testing.T) {
 
 	publish := submitEvidence(t, workspace, "publish", "tmp/publish.json", map[string]any{
 		"status": "recorded",
-		"pr_url": "https://github.com/catu-ai/microharness/pull/99",
+		"pr_url": "https://github.com/catu-ai/easyharness/pull/99",
 		"branch": "codex/e2e-lifecycle-handoff-coverage",
 		"base":   "main",
 	})

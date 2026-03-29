@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/catu-ai/microharness/internal/plan"
-	"github.com/catu-ai/microharness/internal/runstate"
+	"github.com/catu-ai/easyharness/internal/plan"
+	"github.com/catu-ai/easyharness/internal/runstate"
 )
 
 var slotNamePattern = regexp.MustCompile(`[^a-z0-9]+`)

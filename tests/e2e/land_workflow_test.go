@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/catu-ai/microharness/tests/support"
+	"github.com/catu-ai/easyharness/tests/support"
 )
 
 const (
@@ -40,7 +40,7 @@ func TestLandWorkflowWithBuiltBinary(t *testing.T) {
 
 	submitEvidence(t, workspace, "publish", "tmp/publish.json", map[string]any{
 		"status": "recorded",
-		"pr_url": "https://github.com/catu-ai/microharness/pull/99",
+		"pr_url": "https://github.com/catu-ai/easyharness/pull/99",
 		"branch": "codex/e2e-lifecycle-handoff-coverage",
 		"base":   "main",
 	})
@@ -58,7 +58,7 @@ func TestLandWorkflowWithBuiltBinary(t *testing.T) {
 	preLandStatus := runStatus(t, workspace.Root)
 	assertNode(t, preLandStatus, "execution/finalize/await_merge")
 
-	land := support.Run(t, workspace.Root, "land", "--pr", "https://github.com/catu-ai/microharness/pull/99", "--commit", "abc123")
+	land := support.Run(t, workspace.Root, "land", "--pr", "https://github.com/catu-ai/easyharness/pull/99", "--commit", "abc123")
 	support.RequireSuccess(t, land)
 	support.RequireNoStderr(t, land)
 	landPayload := support.RequireJSONResult[lifecycleCommandResult](t, land)
@@ -68,7 +68,7 @@ func TestLandWorkflowWithBuiltBinary(t *testing.T) {
 
 	inLandStatus := runStatus(t, workspace.Root)
 	assertNode(t, inLandStatus, "land")
-	if inLandStatus.Facts.LandPRURL != "https://github.com/catu-ai/microharness/pull/99" {
+	if inLandStatus.Facts.LandPRURL != "https://github.com/catu-ai/easyharness/pull/99" {
 		t.Fatalf("expected land PR URL in status, got %#v", inLandStatus)
 	}
 	if len(inLandStatus.NextAction) < 2 || inLandStatus.NextAction[1].Command == nil || *inLandStatus.NextAction[1].Command != "harness land complete" {

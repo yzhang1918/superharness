@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/build-release --version <version> [--output-dir <path>] [--platform <goos/goarch>]
 
-Build versioned release archives and SHA256 checksums for microharness.
+Build versioned release archives and SHA256 checksums for easyharness.
 
 Options:
   --version <version>     Required release identifier (for example v0.1.0-alpha.1).
@@ -20,7 +20,7 @@ EOF
 }
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-version_package="github.com/catu-ai/microharness/internal/version"
+version_package="github.com/catu-ai/easyharness/internal/version"
 output_dir="${repo_root}/dist/release"
 version=""
 platforms=()
@@ -309,7 +309,7 @@ format_touch_timestamp() {
   exit 1
 }
 
-tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/microharness-release.XXXXXX")"
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/easyharness-release.XXXXXX")"
 trap 'rm -rf "${tmp_dir}"' EXIT
 artifact_output_dir="${tmp_dir}/artifacts"
 mkdir -p "${artifact_output_dir}"
@@ -337,7 +337,7 @@ for platform in "${platforms[@]}"; do
 
   goos="${platform%%/*}"
   goarch="${platform##*/}"
-  package_name="microharness_${version}_${goos}_${goarch}"
+  package_name="easyharness_${version}_${goos}_${goarch}"
   build_dir="${tmp_dir}/build/${goos}-${goarch}"
   stage_root="${tmp_dir}/staging/${package_name}"
   binary_path="${build_dir}/harness"

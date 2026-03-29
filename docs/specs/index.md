@@ -17,5 +17,5 @@
   non-normative recommendation that favors `easyharness` over
   `microharness` and `superharness` from a user-mental-model perspective.
 - [Testing Structure Proposal](./proposals/testing-structure.md): non-normative
-  proposal for how `microharness` should organize smoke, end-to-end, and
+  proposal for how `easyharness` should organize smoke, end-to-end, and
   resilience tests alongside the existing package-level Go test suite.

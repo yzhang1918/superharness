@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/catu-ai/microharness/tests/support"
+	"github.com/catu-ai/easyharness/tests/support"
 )
 
 func TestVerifyReleaseNamespaceWithFakeGHDownloadsAndChecksums(t *testing.T) {
@@ -21,9 +21,9 @@ func TestVerifyReleaseNamespaceWithFakeGHDownloadsAndChecksums(t *testing.T) {
 		t.Skip("verify-release-namespace smoke test requires a POSIX shell")
 	}
 
-	repo := "catu-ai/microharness"
+	repo := "catu-ai/easyharness"
 	tag := "v0.1.0-alpha.4"
-	archiveName := "microharness_v0.1.0-alpha.4_darwin_arm64.zip"
+	archiveName := "easyharness_v0.1.0-alpha.4_darwin_arm64.zip"
 	archiveBody := []byte("fake archive bytes")
 	checksum := sha256.Sum256(archiveBody)
 	fakeGHDir := fakeGHReleaseDir(
@@ -55,7 +55,7 @@ func TestVerifyReleaseNamespaceWithFakeGHDownloadsAndChecksums(t *testing.T) {
 		t.Fatalf("verify-release-namespace failed with exit %d\nstdout:\n%s\nstderr:\n%s", result.ExitCode, result.Stdout, result.Stderr)
 	}
 
-	support.RequireContains(t, result.Stdout, "Verified repo: catu-ai/microharness")
+	support.RequireContains(t, result.Stdout, "Verified repo: catu-ai/easyharness")
 	support.RequireContains(t, result.Stdout, "Verified release: v0.1.0-alpha.4")
 	support.RequireContains(t, result.Stdout, "Verified downloaded assets in "+downloadDir)
 	support.RequireFileExists(t, filepath.Join(downloadDir, "SHA256SUMS"))
@@ -65,9 +65,9 @@ func TestVerifyReleaseNamespaceWithFakeGHDownloadsAndChecksums(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fake gh log: %v", err)
 	}
-	support.RequireContains(t, string(logData), "repo view catu-ai/microharness --json nameWithOwner,url")
-	support.RequireContains(t, string(logData), "release view v0.1.0-alpha.4 -R catu-ai/microharness --json url,tagName,assets")
-	support.RequireContains(t, string(logData), "release download v0.1.0-alpha.4 -R catu-ai/microharness -D "+downloadDir+" --clobber -p SHA256SUMS -p "+archiveName)
+	support.RequireContains(t, string(logData), "repo view catu-ai/easyharness --json nameWithOwner,url")
+	support.RequireContains(t, string(logData), "release view v0.1.0-alpha.4 -R catu-ai/easyharness --json url,tagName,assets")
+	support.RequireContains(t, string(logData), "release download v0.1.0-alpha.4 -R catu-ai/easyharness -D "+downloadDir+" --clobber -p SHA256SUMS -p "+archiveName)
 }
 
 func TestVerifyReleaseNamespaceFailsWhenAssetIsMissing(t *testing.T) {
@@ -77,7 +77,7 @@ func TestVerifyReleaseNamespaceFailsWhenAssetIsMissing(t *testing.T) {
 
 	fakeGHDir := fakeGHReleaseDir(
 		t,
-		"catu-ai/microharness",
+		"catu-ai/easyharness",
 		"v0.1.0-alpha.4",
 		map[string][]byte{
 			"SHA256SUMS": []byte(""),
@@ -92,14 +92,14 @@ func TestVerifyReleaseNamespaceFailsWhenAssetIsMissing(t *testing.T) {
 		}),
 		"/bin/bash",
 		filepath.Join(support.RepoRoot(t), "scripts", "verify-release-namespace"),
-		"--repo", "catu-ai/microharness",
+		"--repo", "catu-ai/easyharness",
 		"--tag", "v0.1.0-alpha.4",
-		"--asset", "microharness_v0.1.0-alpha.4_darwin_arm64.zip",
+		"--asset", "easyharness_v0.1.0-alpha.4_darwin_arm64.zip",
 	)
 	if result.ExitCode == 0 {
 		t.Fatalf("expected verify-release-namespace to fail when the requested asset is missing")
 	}
-	support.RequireContains(t, result.Stderr, "is missing required asset microharness_v0.1.0-alpha.4_darwin_arm64.zip")
+	support.RequireContains(t, result.Stderr, "is missing required asset easyharness_v0.1.0-alpha.4_darwin_arm64.zip")
 }
 
 func TestVerifyReleaseNamespaceFailsWhenChecksumDoesNotMatch(t *testing.T) {
@@ -107,9 +107,9 @@ func TestVerifyReleaseNamespaceFailsWhenChecksumDoesNotMatch(t *testing.T) {
 		t.Skip("verify-release-namespace smoke test requires a POSIX shell")
 	}
 
-	repo := "catu-ai/microharness"
+	repo := "catu-ai/easyharness"
 	tag := "v0.1.0-alpha.4"
-	archiveName := "microharness_v0.1.0-alpha.4_darwin_arm64.zip"
+	archiveName := "easyharness_v0.1.0-alpha.4_darwin_arm64.zip"
 	archiveBody := []byte("tampered archive bytes")
 	wrongChecksum := sha256.Sum256([]byte("different bytes"))
 	fakeGHDir := fakeGHReleaseDir(
@@ -147,13 +147,13 @@ func TestVerifyReleaseNamespaceAgainstGitHubWhenEnabled(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("verify-release-namespace smoke test requires a POSIX shell")
 	}
-	if os.Getenv("MICROHARNESS_RUN_LIVE_GH_SMOKE") != "1" {
-		t.Skip("set MICROHARNESS_RUN_LIVE_GH_SMOKE=1 to enable live GitHub verification")
+	if os.Getenv("EASYHARNESS_RUN_LIVE_GH_SMOKE") != "1" {
+		t.Skip("set EASYHARNESS_RUN_LIVE_GH_SMOKE=1 to enable live GitHub verification")
 	}
 
-	repo := requiredEnv(t, "MICROHARNESS_LIVE_GH_REPO")
-	tag := requiredEnv(t, "MICROHARNESS_LIVE_GH_TAG")
-	asset := requiredEnv(t, "MICROHARNESS_LIVE_GH_ASSET")
+	repo := requiredEnv(t, "EASYHARNESS_LIVE_GH_REPO")
+	tag := requiredEnv(t, "EASYHARNESS_LIVE_GH_TAG")
+	asset := requiredEnv(t, "EASYHARNESS_LIVE_GH_ASSET")
 
 	ghPath, err := exec.LookPath("gh")
 	if err != nil {

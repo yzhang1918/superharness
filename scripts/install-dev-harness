@@ -47,12 +47,12 @@ done
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 binary_dir="${repo_root}/.local/bin"
 binary_path="${binary_dir}/harness"
-repo_module_line="module github.com/catu-ai/microharness"
+repo_module_line="module github.com/catu-ai/easyharness"
 legacy_repo_module_lines=(
   "module github.com/yzhang1918/microharness"
   "module github.com/yzhang1918/superharness"
 )
-version_package="github.com/catu-ai/microharness/internal/version"
+version_package="github.com/catu-ai/easyharness/internal/version"
 
 go_mod_matches_repo() {
   local go_mod_path="$1"
@@ -66,7 +66,7 @@ go_mod_matches_repo() {
   return 1
 }
 
-is_microharness_root() {
+is_easyharness_root() {
   local dir="$1"
   [[ -n "${dir}" ]] || return 1
   [[ -f "${dir}/scripts/install-dev-harness" ]] || return 1
@@ -141,9 +141,9 @@ wrapper_content() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-# microharness-install-dev-wrapper
+# easyharness-install-dev-wrapper
 fallback_binary_path=__FALLBACK_BINARY_PATH__
-repo_module_line='module github.com/catu-ai/microharness'
+repo_module_line='module github.com/catu-ai/easyharness'
 legacy_repo_module_lines=(
   'module github.com/yzhang1918/microharness'
   'module github.com/yzhang1918/superharness'
@@ -161,7 +161,7 @@ go_mod_matches_repo() {
   return 1
 }
 
-is_microharness_root() {
+is_easyharness_root() {
   local dir="$1"
   [[ -n "${dir}" ]] || return 1
   [[ -f "${dir}/scripts/install-dev-harness" ]] || return 1
@@ -174,7 +174,7 @@ find_repo_root() {
   local root=""
   if command -v git >/dev/null 2>&1; then
     root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-    if is_microharness_root "${root}"; then
+    if is_easyharness_root "${root}"; then
       printf '%s\n' "${root}"
       return 0
     fi
@@ -182,7 +182,7 @@ find_repo_root() {
 
   local dir="${PWD}"
   while :; do
-    if is_microharness_root "${dir}"; then
+    if is_easyharness_root "${dir}"; then
       printf '%s\n' "${dir}"
       return 0
     fi
@@ -206,8 +206,8 @@ if repo_root="$(find_repo_root)"; then
 elif [[ -x "${fallback_binary_path}" ]]; then
   binary_path="${fallback_binary_path}"
 else
-  echo "Could not find a microharness worktree from ${PWD}, and the fallback harness binary is unavailable at ${fallback_binary_path}." >&2
-  echo "Run scripts/install-dev-harness from a microharness worktree first." >&2
+  echo "Could not find an easyharness worktree from ${PWD}, and the fallback harness binary is unavailable at ${fallback_binary_path}." >&2
+  echo "Run scripts/install-dev-harness from an easyharness worktree first." >&2
   exit 1
 fi
 
@@ -217,7 +217,7 @@ EOF
   printf '%s\n' "${template//__FALLBACK_BINARY_PATH__/${fallback_binary_path}}"
 }
 
-legacy_microharness_link() {
+legacy_easyharness_link() {
   local path="$1"
   [[ -L "${path}" ]] || return 1
 
@@ -233,7 +233,7 @@ legacy_microharness_link() {
     */.local/bin/harness)
       local candidate_root=""
       candidate_root="$(cd "$(dirname "${target}")/../.." 2>/dev/null && pwd || true)"
-      if is_microharness_root "${candidate_root}"; then
+      if is_easyharness_root "${candidate_root}"; then
         return 0
       fi
       ;;
@@ -251,11 +251,11 @@ command_contents_match() {
   [[ "${current_contents}" == "$(wrapper_content)" ]]
 }
 
-managed_microharness_wrapper() {
+managed_easyharness_wrapper() {
   local path="$1"
   [[ -f "${path}" && ! -L "${path}" ]] || return 1
 
-  if grep -Fq '# microharness-install-dev-wrapper' "${path}"; then
+  if grep -Fq '# easyharness-install-dev-wrapper' "${path}"; then
     return 0
   fi
 
@@ -289,11 +289,11 @@ mkdir -p "${target_dir}"
 if [[ -e "${command_path}" || -L "${command_path}" ]]; then
   if [[ "${force}" -eq 1 ]]; then
     rm -f "${command_path}"
-  elif legacy_microharness_link "${command_path}"; then
+  elif legacy_easyharness_link "${command_path}"; then
     rm -f "${command_path}"
   elif command_contents_match "${command_path}"; then
     chmod 755 "${command_path}"
-  elif managed_microharness_wrapper "${command_path}"; then
+  elif managed_easyharness_wrapper "${command_path}"; then
     rm -f "${command_path}"
   else
     echo "Refusing to replace existing ${command_path}. Re-run with --force if you want to overwrite it." >&2
@@ -311,7 +311,7 @@ fi
 echo "Built dev harness binary at ${binary_path}"
 echo "Installed harness wrapper at ${command_path}"
 echo "Verified the repo-local binary directly at ${binary_path}"
-echo "Wrapper fallback binary outside microharness worktrees: ${binary_path}"
+echo "Wrapper fallback binary outside easyharness worktrees: ${binary_path}"
 
 if [[ ":${PATH}:" == *":${target_dir}:"* ]]; then
   resolved_path="$(command -v harness || true)"

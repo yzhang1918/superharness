@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/catu-ai/microharness/internal/runstate"
+	"github.com/catu-ai/easyharness/internal/runstate"
 )
 
 var ErrNoCurrentPlan = errors.New("no current plan found")

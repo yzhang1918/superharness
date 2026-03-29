@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/catu-ai/microharness/internal/runstate"
+	"github.com/catu-ai/easyharness/internal/runstate"
 )
 
 func TestDetectCurrentPathPrefersSingleActivePlanOverArchivedPointer(t *testing.T) {

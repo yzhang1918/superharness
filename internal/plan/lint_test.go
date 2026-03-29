@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/catu-ai/microharness/internal/plan"
+	"github.com/catu-ai/easyharness/internal/plan"
 )
 
 func TestLintFileAcceptsValidActivePlan(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "docs/plans/active/2026-03-17-microharness-cli-and-plan-foundations.md")
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-easyharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Valid Active Plan")
 	writeFile(t, path, content)
 
@@ -55,7 +55,7 @@ func TestLintFileRejectsLegacyRuntimeFrontmatter(t *testing.T) {
 
 func TestLintFileRejectsMissingDeferredItemsSection(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "docs/plans/active/2026-03-17-microharness-cli-and-plan-foundations.md")
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-easyharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Invalid Active Plan")
 	content = strings.Replace(content, "## Deferred Items\n\n- None.\n\n", "", 1)
 	writeFile(t, path, content)
@@ -69,7 +69,7 @@ func TestLintFileRejectsMissingDeferredItemsSection(t *testing.T) {
 
 func TestLintFileRejectsMissingAcceptanceCriteriaSectionWithoutPanic(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "docs/plans/active/2026-03-17-microharness-cli-and-plan-foundations.md")
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-easyharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Missing Acceptance Criteria")
 	content = strings.Replace(content, "## Acceptance Criteria\n\n- [ ] Criterion 1\n- [ ] Criterion 2\n\n", "", 1)
 	writeFile(t, path, content)
@@ -83,7 +83,7 @@ func TestLintFileRejectsMissingAcceptanceCriteriaSectionWithoutPanic(t *testing.
 
 func TestLintFileRejectsArchivedPlanWithPlaceholders(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "docs/plans/archived/2026-03-17-microharness-cli-and-plan-foundations.md")
+	path := filepath.Join(root, "docs/plans/archived/2026-03-17-easyharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Archived Placeholder Plan")
 	content = strings.ReplaceAll(content, "- Done: [ ]", "- Done: [x]")
 	content = checkAllBoxes(content)
@@ -128,7 +128,7 @@ func TestLintFileRejectsLegacyStepStatusMarkers(t *testing.T) {
 
 func TestLintFileRejectsArchivedDeferredItemsWithoutOutcomeSummaryWithoutPanic(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "docs/plans/archived/2026-03-17-microharness-cli-and-plan-foundations.md")
+	path := filepath.Join(root, "docs/plans/archived/2026-03-17-easyharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Archived Missing Outcome Summary")
 	content = strings.Replace(content, "- None.", "- `harness ui` is intentionally deferred.", 1)
 	content = makeArchiveReady(checkAllBoxes(strings.ReplaceAll(content, "- Done: [ ]", "- Done: [x]")))
@@ -144,7 +144,7 @@ func TestLintFileRejectsArchivedDeferredItemsWithoutOutcomeSummaryWithoutPanic(t
 
 func TestLintFileRejectsArchivedDeferredItemsWithoutFollowUpIssue(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "docs/plans/archived/2026-03-17-microharness-cli-and-plan-foundations.md")
+	path := filepath.Join(root, "docs/plans/archived/2026-03-17-easyharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Archived Deferred Item Plan")
 	content = strings.Replace(content, "- None.", "- `harness ui` is intentionally deferred.", 1)
 	content = makeArchiveReady(checkAllBoxes(strings.ReplaceAll(content, "- Done: [ ]", "- Done: [x]")))
@@ -159,7 +159,7 @@ func TestLintFileRejectsArchivedDeferredItemsWithoutFollowUpIssue(t *testing.T) 
 
 func TestLintFileAcceptsHistoricalTemplateVersion(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "docs/plans/active/2026-03-17-microharness-cli-and-plan-foundations.md")
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-easyharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Historical Template Version")
 	content = strings.Replace(content, "template_version: 0.2.0", "template_version: 0.0.1", 1)
 	writeFile(t, path, content)
@@ -172,7 +172,7 @@ func TestLintFileAcceptsHistoricalTemplateVersion(t *testing.T) {
 
 func TestLintFileRejectsFutureTemplateVersion(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "docs/plans/active/2026-03-17-microharness-cli-and-plan-foundations.md")
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-easyharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Future Template Version")
 	content = strings.Replace(content, "template_version: 0.2.0", "template_version: 9.9.9", 1)
 	writeFile(t, path, content)
@@ -199,7 +199,7 @@ func TestLintFileRejectsInvalidFilename(t *testing.T) {
 
 func TestLintFileRejectsInvalidStepHeading(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "docs/plans/active/2026-03-17-microharness-cli-and-plan-foundations.md")
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-easyharness-cli-and-plan-foundations.md")
 	content := mustRenderTemplate(t, "Bad Step Heading")
 	content = strings.Replace(content, "### Step 1: Replace with first step title", "### Step banana", 1)
 	writeFile(t, path, content)

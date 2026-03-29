@@ -187,7 +187,25 @@ for upgrade flow.
 
 #### Execution Notes
 
-PENDING_STEP_EXECUTION
+Renamed the live codebase, module path, release packaging, and validation
+fixtures from `microharness` to `easyharness` across `go.mod`, `cmd/`,
+`internal/`, `scripts/`, `tests/`, and the remaining live specs/proposals.
+The repo-local installer and wrapper now identify `easyharness` worktrees while
+still recognizing the older personal `microharness` and `superharness` module
+lines as legacy managed installs for takeover compatibility. TDD was not
+practical for this step because the slice is a repo-wide naming migration
+rather than an isolated behavior change, so validation focused on full
+repository build/test coverage plus release packaging checks instead.
+
+Validation passed with `scripts/install-dev-harness`, `go test ./... -count=1`,
+`scripts/build-release --version v0.1.0-alpha.5 --output-dir
+.local/release-easyharness-check --platform $(go env GOOS)/$(go env GOARCH)`,
+`unzip -l` on the generated
+`easyharness_v0.1.0-alpha.5_$(go env GOOS)_$(go env GOARCH).zip` confirming an
+`easyharness_*` package root with `harness` inside, a checksum match between
+`shasum -a 256` and `SHA256SUMS`, and a repo search showing that remaining
+live `microharness` references are limited to intentional historical context in
+the naming proposal plus explicit legacy-compatibility fixtures.
 
 #### Review Notes
 
