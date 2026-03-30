@@ -2,6 +2,7 @@ package smoke_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -208,7 +209,10 @@ func TestReleaseWorkflowWiresHomebrewTapPublishing(t *testing.T) {
 	support.RequireContains(t, workflow, `--version "${{ steps.release-version.outputs.version }}"`)
 	support.RequireContains(t, workflow, `verify-homebrew-install:`)
 	support.RequireContains(t, workflow, `runs-on: macos-latest`)
+	support.RequireContains(t, workflow, `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`)
 	support.RequireContains(t, workflow, `EASYHARNESS_RUN_LIVE_BREW_SMOKE: "1"`)
+	support.RequireContains(t, workflow, `EASYHARNESS_LIVE_GH_REPO: ${{ github.repository }}`)
+	support.RequireContains(t, workflow, `EASYHARNESS_LIVE_GH_TAG: ${{ steps.release-version.outputs.version }}`)
 	support.RequireContains(t, workflow, `go test ./tests/smoke -run TestVerifyHomebrewTapInstallAgainstGitHubWhenEnabled -count=1`)
 }
 
@@ -355,26 +359,7 @@ func requireInstalledHarnessVersion(t *testing.T, repoRoot string, env []string,
 func resolvePreviousHomebrewReleaseTag(t *testing.T, repoRoot string, env []string, repo, tag string) string {
 	t.Helper()
 
-	ghPath, err := exec.LookPath("gh")
-	if err != nil {
-		t.Fatalf("find gh on PATH: %v", err)
-	}
-
-	cmd := exec.Command(ghPath, "api", "repos/"+repo+"/releases?per_page=20")
-	cmd.Dir = repoRoot
-	cmd.Env = env
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("gh api releases failed: %v\n%s", err, output)
-	}
-
-	var releases []struct {
-		TagName string `json:"tag_name"`
-		Draft   bool   `json:"draft"`
-	}
-	if err := json.Unmarshal(output, &releases); err != nil {
-		t.Fatalf("parse gh release response: %v\n%s", err, output)
-	}
+	releases := listGitHubReleases(t, repoRoot, env, repo)
 	for i, release := range releases {
 		if release.TagName != tag {
 			continue
@@ -393,6 +378,41 @@ func resolvePreviousHomebrewReleaseTag(t *testing.T, repoRoot string, env []stri
 
 	t.Fatalf("release tag %s not found in GitHub release list", tag)
 	return ""
+}
+
+type githubRelease struct {
+	TagName string `json:"tag_name"`
+	Draft   bool   `json:"draft"`
+}
+
+func listGitHubReleases(t *testing.T, repoRoot string, env []string, repo string) []githubRelease {
+	t.Helper()
+
+	ghPath, err := exec.LookPath("gh")
+	if err != nil {
+		t.Fatalf("find gh on PATH: %v", err)
+	}
+
+	releases := make([]githubRelease, 0, 100)
+	for page := 1; ; page++ {
+		cmd := exec.Command(ghPath, "api", fmt.Sprintf("repos/%s/releases?per_page=100&page=%d", repo, page))
+		cmd.Dir = repoRoot
+		cmd.Env = env
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("gh api releases page %d failed: %v\n%s", page, err, output)
+		}
+
+		var pageReleases []githubRelease
+		if err := json.Unmarshal(output, &pageReleases); err != nil {
+			t.Fatalf("parse gh release response page %d: %v\n%s", page, err, output)
+		}
+		releases = append(releases, pageReleases...)
+		if len(pageReleases) < 100 {
+			break
+		}
+	}
+	return releases
 }
 
 func releaseSupportsHomebrewFormula(t *testing.T, checksumsPath string, tag string) bool {
