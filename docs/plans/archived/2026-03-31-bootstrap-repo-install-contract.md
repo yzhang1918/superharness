@@ -1,6 +1,6 @@
 ---
 template_version: 0.2.0
-created_at: 2026-03-31T00:08:51+08:00
+created_at: "2026-03-31T00:08:51+08:00"
 source_type: issue
 source_refs:
     - '#68'
@@ -305,26 +305,48 @@ slice and will be covered by full finalize review before archive.
 
 ## Validation Summary
 
-PENDING_UNTIL_ARCHIVE
+- `go test ./internal/install ./internal/cli -count=1`
+- `go test ./internal/install ./tests/smoke -run 'TestInstall|TestHelpShowsTopLevelUsage' -count=1`
+- `go test ./internal/install ./tests/smoke -run 'TestInstallIgnoresLiteralMarkerMentionsInUserOwnedProse|TestInstallRejectsInvalidScopeViaCLI|TestInstallRefreshesExistingManagedWrapperAndThenNoops|TestInstall' -count=1`
+- `go test ./internal/install ./tests/smoke -run 'TestInstallRecognizesManagedBlockWithCRLFLineEndings|TestInstallRejectsDuplicateManagedBlocksViaCLI|TestInstallSkillsScopeBootstrapsOnlySkills|TestInstall' -count=1`
+- `go test ./tests/smoke -run 'TestInstallDefaultScopeRecoversAfterMidFlightFailure' -count=1`
+- `go test ./... -count=1` after each finalize-repair batch, ending green on the final candidate
+- `harness install --scope agents --dry-run` in this repo after dogfooding the managed block, confirming the packaged contract now reruns as a no-op against the repo's own `AGENTS.md`
 
 ## Review Summary
 
-PENDING_UNTIL_ARCHIVE
+- `review-001-full`: changes requested for inline marker parsing and missing smoke coverage around failure paths and wrapper reruns
+- `review-002-full`: changes requested for CRLF marker recognition and missing smoke coverage for `skills` plus a structural CLI failure path
+- `review-003-full`: changes requested for CRLF newline preservation and apply-mode failure recovery coverage
+- `review-004-full`: changes requested for one more end-to-end retry case on the default full-scope install path
+- `review-005-full`: full finalize review passed with no findings
 
 ## Archive Summary
 
-PENDING_UNTIL_ARCHIVE
+- Archived At: 2026-03-31T01:01:53+08:00
+- Revision: 1
+- PR: NONE
+- Ready: Full finalize review passed in `review-005-full`; the candidate is ready for archive, publish evidence, and merge-handoff work.
+- Merge Handoff: Archive the plan, push the branch, open the PR, and record publish/CI/sync evidence until `harness status` reaches `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
 ### Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Added packaged bootstrap assets under `assets/bootstrap/` for the managed `AGENTS.md` delta and the repo-local harness skill pack.
+- Added `harness install` with direct-write default behavior, `--dry-run`, and `--scope agents|skills|all`.
+- Split this repo's `AGENTS.md` into easyharness-specific guidance plus the same managed harness contract that `harness install` installs elsewhere.
+- Added focused unit and CLI tests for marker handling, scoped installs, repeat-run no-op behavior, CRLF reruns, and error cases.
+- Added smoke coverage for fresh bootstrap, dry-run, duplicate marker rejection, `skills`-scope recovery, and default full-scope retry after a mid-flight failure.
+- Updated README and CLI specs so release-installed users have a concrete repository bootstrap story after installing the binary.
 
 ### Not Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Optional remote skill-pack installation or agent-assisted downloads remain deferred.
+- User-selectable bootstrap templates beyond the minimum default contract remain deferred.
+- Drift detection and upgrade prompts for stale installed bootstrap assets remain deferred.
 
 ### Follow-Up Issues
 
-NONE
+- [#71](https://github.com/catu-ai/easyharness/issues/71): Add repo-level harness customization via a tracked `.harness` directory.
+- [#80](https://github.com/catu-ai/easyharness/issues/80): Decide how `harness install` should detect stale repo bootstrap assets.
