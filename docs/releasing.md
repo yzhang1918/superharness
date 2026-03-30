@@ -84,4 +84,4 @@ The formula name remains `easyharness`, while the installed binary remains
 ## Contributor Baseline
 
 Release and CI jobs use the Go version recorded in `go.mod`, which is currently
-`go 1.26.0`.
+`go 1.25.0`.

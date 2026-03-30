@@ -78,7 +78,7 @@ Supported alpha release targets are:
 - `linux/arm64`
 
 Contributors should use the Go toolchain recorded in `go.mod`, which is
-currently `go 1.26.0`.
+currently `go 1.25.0`.
 
 Typical verification flow:
 
