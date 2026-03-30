@@ -280,8 +280,6 @@ release-workflow behavior changed together in one bounded slice.
 
 ## Validation Summary
 
-UPDATE_REQUIRED_AFTER_REOPEN
-
 - Added deterministic smoke coverage in
   `tests/smoke/homebrew_formula_test.go` for formula rendering, missing
   checksum failure, token-gated tap updates, detached-checkout push behavior,
@@ -296,10 +294,13 @@ UPDATE_REQUIRED_AFTER_REOPEN
   contract.
 - `go test ./... -count=1` passed after the final workflow, docs, and smoke
   repairs.
+- After PR `#65` reopened the candidate into revision 2, the exact failing CI
+  regression test
+  `go test ./tests/smoke -run TestUpdateHomebrewTapPushesFromDetachedCheckout -count=1`
+  passed once the verification clone was pinned to `--branch main`, and a
+  fresh `go test ./... -count=1` passed on the reopened revision.
 
 ## Review Summary
-
-UPDATE_REQUIRED_AFTER_REOPEN
 
 - `review-001-delta` and `review-002-delta` requested changes in Step 2 for
   detached-checkout tap pushes, incomplete archive-matrix assertions, missing
@@ -323,28 +324,30 @@ UPDATE_REQUIRED_AFTER_REOPEN
   the live Homebrew job's required env wiring in the workflow smoke test.
 - `review-014-full` passed clean across `correctness`, `tests`, and
   `docs_consistency`, so the candidate is now ready to archive.
+- After archive and PR creation, GitHub Actions reopened the candidate as
+  revision 2 because `TestUpdateHomebrewTapPushesFromDetachedCheckout`
+  verified the pushed formula by cloning the bare remote without pinning the
+  published `main` branch. The reopened repair now verifies that pushed state
+  through `git clone --branch main`, matching the helper's explicit push
+  target.
 
 ## Archive Summary
 
-UPDATE_REQUIRED_AFTER_REOPEN
-
-- Archived At: 2026-03-30T15:23:35+08:00
-- Revision: 1
-- PR: not created yet; post-archive publish evidence should record the PR URL.
-- Ready: `review-014-full` passed clean, acceptance criteria are satisfied,
-  the release workflow now owns the Homebrew tap update path on GitHub alone,
-  and the latest validation evidence covers formula render, tap update, live
-  staged-tap install, and upgrade/test behavior against the current public
-  release.
-- Merge Handoff: archive the plan, commit the tracked move plus summary
-  updates, push the branch, open or update the PR, and record publish/CI/sync
-  evidence before treating the candidate as merge-ready.
+- Archived At: revision 1 archived at 2026-03-30T15:23:35+08:00 and reopened
+  in revision 2 after PR `#65` failed CI.
+- Revision: 2
+- PR: revision 1 publish evidence recorded `https://github.com/catu-ai/easyharness/pull/65`,
+  but revision 2 must refresh that handoff after re-archive.
+- Ready: revision 2 narrows the only observed post-archive CI failure, and the
+  reopened validation evidence now covers the exact detached-checkout push test
+  that failed on GitHub plus a fresh `go test ./...` rerun.
+- Merge Handoff: rerun finalize review for revision 2, re-archive the plan,
+  push the branch update, refresh PR state if needed, and replace the recorded
+  publish/CI/sync evidence before treating the candidate as merge-ready.
 
 ## Outcome Summary
 
 ### Delivered
-
-UPDATE_REQUIRED_AFTER_REOPEN
 
 - Added repo-owned Homebrew formula rendering via
   `scripts/homebrewformula/main.go` and `scripts/render-homebrew-formula`,
@@ -366,8 +369,6 @@ UPDATE_REQUIRED_AFTER_REOPEN
 
 ### Not Delivered
 
-UPDATE_REQUIRED_AFTER_REOPEN
-
 - Separate stable-versus-prerelease Homebrew channels.
 - Nightly Homebrew distribution, including `--HEAD` guidance or a dedicated
   nightly formula.
@@ -376,10 +377,7 @@ UPDATE_REQUIRED_AFTER_REOPEN
 
 ### Follow-Up Issues
 
-UPDATE_REQUIRED_AFTER_REOPEN
-
 - `#61` Decide whether Homebrew should split stable and prerelease channels.
 - `#62` Evaluate nightly Homebrew distribution options.
 - `#64` Assess readiness for eventual Homebrew/core submission.
 - `#63` Evaluate package-manager distribution beyond Homebrew.
-
