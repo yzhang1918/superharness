@@ -9,7 +9,7 @@
 - [Plan Schema](./plan-schema.md): durable tracked-plan contract plus local
   state expectations.
 - [CLI Contract](./cli-contract.md): agent-facing command surface and JSON
-  contract.
+  contract, including repository bootstrap through `harness install`.
 
 ## Proposals
 

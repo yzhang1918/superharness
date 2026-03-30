@@ -1,37 +1,3 @@
-# AGENTS.md
-
-This document defines repo-specific guidance for how humans and Codex
-collaborate in `easyharness`.
-
-## Mission
-
-Build `easyharness` as a thin, git-native, agent-first harness system that is
-easier to understand and maintain than a scripts-heavy workflow. The project
-name is `easyharness`; the CLI executable remains `harness`.
-
-## Development Prerequisite
-
-Before using repo-local skills that call `harness`, make sure the command is
-available:
-
-```bash
-command -v harness
-```
-
-If not, bootstrap it from this repository:
-
-```bash
-scripts/install-dev-harness
-```
-
-If you change Go CLI code, rerun the installer before relying on the direct
-`harness` command again.
-
-The block below is the same harness-managed repository contract that
-`harness install --scope agents` would install into another repository.
-Keep easyharness-specific guidance outside the managed markers.
-
-<!-- easyharness:begin -->
 ## Harness Working Agreement
 
 1. Humans steer. Agents execute.
@@ -109,19 +75,3 @@ When entering the repository or resuming after compaction:
      `execution/finalize/await_merge` and a human has explicitly approved
      merge
    - `harness-reviewer` only inside spawned reviewer subagents
-<!-- easyharness:end -->
-
-## Git and PR Rules
-
-- main branch: `main`
-- working branches: `codex/<topic>`
-- commits: small and reviewable
-- append `Co-authored-by: Codex <codex@openai.com>` unless the human requests
-  otherwise
-- when writing multi-line git or gh bodies, prefer heredocs so shell quoting
-  does not eat backticks or other structured text
-- default merge strategy: `Merge commit`
-- do not rewrite shared history without explicit approval
-
-If work creates durable deferred scope, create or update GitHub issues before
-archive and record them in the plan.

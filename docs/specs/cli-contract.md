@@ -18,6 +18,7 @@ The current command surface is:
 
 - `harness plan template`
 - `harness plan lint`
+- `harness install`
 - `harness execute start`
 - `harness evidence submit`
 - `harness status`
@@ -61,6 +62,10 @@ default to markdown or plain text instead of the JSON envelope.
 
 `harness --version` is also a plain-text exception because it is a binary
 identity/debug probe rather than a workflow-state command.
+
+`harness install` is a JSON-first bootstrap command, but it may omit workflow
+`state` because it manages repo-owned bootstrap assets rather than the tracked
+plan lifecycle.
 
 ### Help Must Be Actionable
 
@@ -201,6 +206,38 @@ When a current step exists, `harness status` should infer it from the first
 unfinished tracked step and return it as `facts.current_step`.
 
 ## Command Contracts
+
+### `harness install`
+
+Purpose:
+
+- install or refresh the harness-managed bootstrap assets for the current
+  repository
+
+Contract:
+
+- default to direct-write behavior for the current repository
+- support `--dry-run` to preview the intended file actions without writing
+- support one command-level scope selector with values `agents`, `skills`, and
+  `all`, defaulting to `all`
+- manage `AGENTS.md` through one stable managed block delimited by explicit
+  markers instead of rewriting the whole file
+- insert the managed block when `AGENTS.md` exists without it, replace exactly
+  one valid existing managed block on rerun, and fail with a clear error when
+  marker layout is duplicated or otherwise ambiguous
+- treat the installed skill pack under `.agents/skills/` as CLI-managed files:
+  create or refresh known packaged files without deleting unrelated user-added
+  files in that tree
+- package the bootstrap assets with the harness release so the command works
+  without network access
+- return a JSON envelope that reports `mode`, `scope`, and per-file actions;
+  workflow `state` may be omitted because the command does not mutate tracked
+  plan lifecycle state
+
+Recommended next action:
+
+- run without `--dry-run` to apply the previewed bootstrap changes
+- open `AGENTS.md` and `.agents/skills/` to review the installed contract
 
 ### `harness plan template`
 

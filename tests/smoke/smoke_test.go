@@ -33,6 +33,18 @@ type lintResult struct {
 	} `json:"artifacts"`
 }
 
+type installResult struct {
+	OK      bool   `json:"ok"`
+	Command string `json:"command"`
+	Summary string `json:"summary"`
+	Mode    string `json:"mode"`
+	Scope   string `json:"scope"`
+	Actions []struct {
+		Path string `json:"path"`
+		Kind string `json:"kind"`
+	} `json:"actions"`
+}
+
 func TestHelpShowsTopLevelUsage(t *testing.T) {
 	workspace := support.NewWorkspace(t)
 
@@ -52,6 +64,7 @@ func TestHelpShowsTopLevelUsage(t *testing.T) {
 	support.RequireContains(t, result.CombinedOutput(), "archive         Freeze the current active plan")
 	support.RequireContains(t, result.CombinedOutput(), "reopen          Restore the current archived plan")
 	support.RequireContains(t, result.CombinedOutput(), "status          Summarize the current plan and local execution state")
+	support.RequireContains(t, result.CombinedOutput(), "install         Install or refresh the harness-managed repository bootstrap")
 }
 
 func TestVersionPrintsHumanReadableBuildInfo(t *testing.T) {
@@ -124,6 +137,75 @@ func TestPlanTemplatePrintsToStdoutByDefault(t *testing.T) {
 	support.RequireContains(t, result.Stdout, "created_at: 2026-03-22T00:00:00Z")
 	support.RequireContains(t, result.Stdout, "source_type: issue")
 	support.RequireContains(t, result.Stdout, "source_refs: [\"#6\"]")
+}
+
+func TestInstallBootstrapsFreshRepository(t *testing.T) {
+	workspace := support.NewWorkspace(t)
+
+	result := support.Run(t, workspace.Root, "install")
+	support.RequireSuccess(t, result)
+	support.RequireNoStderr(t, result)
+
+	payload := support.RequireJSONResult[installResult](t, result)
+	if !payload.OK || payload.Command != "install" {
+		t.Fatalf("expected install payload, got %#v", payload)
+	}
+	if payload.Mode != "apply" || payload.Scope != "all" {
+		t.Fatalf("unexpected install mode/scope: %#v", payload)
+	}
+
+	agentsPath := workspace.Path("AGENTS.md")
+	support.RequireFileExists(t, agentsPath)
+	agentsData, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	support.RequireContains(t, string(agentsData), "<!-- easyharness:begin -->")
+	support.RequireContains(t, string(agentsData), "<!-- easyharness:end -->")
+
+	support.RequireFileExists(t, workspace.Path(".agents/skills/harness-execute/SKILL.md"))
+	support.RequireFileExists(t, workspace.Path(".agents/skills/harness-reviewer/SKILL.md"))
+}
+
+func TestInstallDryRunDoesNotWriteRepositoryFiles(t *testing.T) {
+	workspace := support.NewWorkspace(t)
+
+	result := support.Run(t, workspace.Root, "install", "--dry-run")
+	support.RequireSuccess(t, result)
+	support.RequireNoStderr(t, result)
+
+	payload := support.RequireJSONResult[installResult](t, result)
+	if payload.Mode != "dry_run" {
+		t.Fatalf("expected dry_run mode, got %#v", payload)
+	}
+	if len(payload.Actions) == 0 {
+		t.Fatalf("expected planned actions, got %#v", payload)
+	}
+
+	support.RequireFileMissing(t, workspace.Path("AGENTS.md"))
+	support.RequireFileMissing(t, workspace.Path(".agents"))
+}
+
+func TestInstallRepeatRunReportsNoopActions(t *testing.T) {
+	workspace := support.NewWorkspace(t)
+
+	first := support.Run(t, workspace.Root, "install")
+	support.RequireSuccess(t, first)
+	support.RequireNoStderr(t, first)
+
+	second := support.Run(t, workspace.Root, "install")
+	support.RequireSuccess(t, second)
+	support.RequireNoStderr(t, second)
+
+	payload := support.RequireJSONResult[installResult](t, second)
+	if !strings.Contains(payload.Summary, "already up to date") {
+		t.Fatalf("expected no-op summary, got %#v", payload)
+	}
+	for _, action := range payload.Actions {
+		if action.Kind != "noop" {
+			t.Fatalf("expected noop repeat install actions, got %#v", payload.Actions)
+		}
+	}
 }
 
 func TestSupportRunUsesBuiltBinaryInsteadOfPATH(t *testing.T) {

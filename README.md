@@ -92,6 +92,21 @@ brew install catu-ai/tap/easyharness
 harness --version
 ```
 
+First-run repository bootstrap after installing the binary:
+
+```bash
+cd /path/to/your-repo
+harness install --dry-run
+harness install
+```
+
+`harness install` writes the minimum harness-managed repository contract for a
+repo: a managed block inside `AGENTS.md` plus the repo-local skill pack under
+`.agents/skills/`. The command is safe to rerun after upgrades. Repeated runs
+either refresh the known managed assets in place or report a no-op when the
+repository is already current. User-owned `AGENTS.md` content outside the
+managed block is preserved.
+
 Upgrade a Homebrew install with:
 
 ```bash
@@ -124,6 +139,7 @@ checkout.
 
 - `harness plan template`
 - `harness plan lint`
+- `harness install`
 - `harness execute start`
 - `harness evidence submit`
 - `harness status`
@@ -169,7 +185,9 @@ run `harness land complete` so status returns to `idle`. If an archived
 candidate becomes invalid before merge, reopen it with
 `harness reopen --mode finalize-fix` for narrow repair or
 `harness reopen --mode new-step` when the change deserves a new unfinished
-step.
+step. If a repository has not been bootstrapped yet, run `harness install`
+first so the managed `AGENTS.md` block and repo-local skills exist before the
+workflow starts.
 
 High-level guidance lives in [AGENTS.md](./AGENTS.md). The durable contracts
 for plans and CLI behavior live in [docs/specs/index.md](./docs/specs/index.md).
@@ -182,6 +200,7 @@ Execution detail for agents lives in `.agents/skills/`.
 - `docs/plans/`: tracked plans
 - `docs/specs/`: durable repo contracts
 - `.agents/skills/`: repo-local workflow skills
+- `AGENTS.md`: repo-specific guidance plus the harness-managed install block
 - `.local/harness/`: disposable runtime state, current-plan/last-landed
   markers, review artifacts, evidence artifacts, and trajectory
 
