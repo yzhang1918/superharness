@@ -170,7 +170,7 @@ func TestUpdateHomebrewTapPushesFromDetachedCheckout(t *testing.T) {
 	}
 
 	verifyDir := filepath.Join(tempDir, "verify")
-	mustRunGit(t, tempDir, "clone", remoteDir, verifyDir)
+	mustRunGit(t, tempDir, "clone", "--branch", "main", remoteDir, verifyDir)
 	renderedPath := filepath.Join(verifyDir, "Formula", "easyharness.rb")
 	renderedData, err := os.ReadFile(renderedPath)
 	if err != nil {

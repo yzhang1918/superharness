@@ -280,6 +280,8 @@ release-workflow behavior changed together in one bounded slice.
 
 ## Validation Summary
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - Added deterministic smoke coverage in
   `tests/smoke/homebrew_formula_test.go` for formula rendering, missing
   checksum failure, token-gated tap updates, detached-checkout push behavior,
@@ -296,6 +298,8 @@ release-workflow behavior changed together in one bounded slice.
   repairs.
 
 ## Review Summary
+
+UPDATE_REQUIRED_AFTER_REOPEN
 
 - `review-001-delta` and `review-002-delta` requested changes in Step 2 for
   detached-checkout tap pushes, incomplete archive-matrix assertions, missing
@@ -322,6 +326,8 @@ release-workflow behavior changed together in one bounded slice.
 
 ## Archive Summary
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - Archived At: 2026-03-30T15:23:35+08:00
 - Revision: 1
 - PR: not created yet; post-archive publish evidence should record the PR URL.
@@ -337,6 +343,8 @@ release-workflow behavior changed together in one bounded slice.
 ## Outcome Summary
 
 ### Delivered
+
+UPDATE_REQUIRED_AFTER_REOPEN
 
 - Added repo-owned Homebrew formula rendering via
   `scripts/homebrewformula/main.go` and `scripts/render-homebrew-formula`,
@@ -358,6 +366,8 @@ release-workflow behavior changed together in one bounded slice.
 
 ### Not Delivered
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - Separate stable-versus-prerelease Homebrew channels.
 - Nightly Homebrew distribution, including `--HEAD` guidance or a dedicated
   nightly formula.
@@ -366,7 +376,10 @@ release-workflow behavior changed together in one bounded slice.
 
 ### Follow-Up Issues
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - `#61` Decide whether Homebrew should split stable and prerelease channels.
 - `#62` Evaluate nightly Homebrew distribution options.
 - `#64` Assess readiness for eventual Homebrew/core submission.
 - `#63` Evaluate package-manager distribution beyond Homebrew.
+
