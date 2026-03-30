@@ -135,6 +135,9 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: read
+    env:
+      EASYHARNESS_HOMEBREW_TAP_BRANCH: main
+      EASYHARNESS_HOMEBREW_TAP_TOKEN: ${{ secrets.EASYHARNESS_HOMEBREW_TAP_TOKEN }}
     steps:
       - name: Determine release version
         id: release-version
@@ -156,13 +159,25 @@ jobs:
           ref: ${{ steps.release-version.outputs.version }}
           fetch-depth: 0
 
+      - name: Check out Homebrew tap
+        if: ${{ env.EASYHARNESS_HOMEBREW_TAP_TOKEN != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: catu-ai/homebrew-tap
+          ref: ${{ env.EASYHARNESS_HOMEBREW_TAP_BRANCH }}
+          token: ${{ env.EASYHARNESS_HOMEBREW_TAP_TOKEN }}
+          path: dist/homebrew-tap
+          fetch-depth: 0
+
       - name: Set up Go
+        if: ${{ env.EASYHARNESS_HOMEBREW_TAP_TOKEN == '' }}
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Download release checksum
+        if: ${{ env.EASYHARNESS_HOMEBREW_TAP_TOKEN == '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -175,6 +190,7 @@ jobs:
             -p SHA256SUMS
 
       - name: Render Homebrew formula
+        if: ${{ env.EASYHARNESS_HOMEBREW_TAP_TOKEN == '' }}
         run: |
           scripts/render-homebrew-formula \
             --repo "${{ github.repository }}" \
@@ -182,11 +198,29 @@ jobs:
             --checksums dist/homebrew/SHA256SUMS \
             --output dist/homebrew/easyharness.rb
 
-      - name: Install and test Homebrew formula
+      - name: Install and test Homebrew formula directly
+        if: ${{ env.EASYHARNESS_HOMEBREW_TAP_TOKEN == '' }}
         shell: bash
         run: |
           version="${{ steps.release-version.outputs.version }}"
           brew install --formula dist/homebrew/easyharness.rb
+          binary_path="$(brew --prefix)/bin/harness"
+          version_output="$("${binary_path}" --version)"
+          printf '%s\n' "${version_output}"
+          grep -F "version: ${version}" <<<"${version_output}"
+          grep -F "mode: release" <<<"${version_output}"
+          brew test easyharness
+
+      - name: Install and test Homebrew tap formula
+        if: ${{ env.EASYHARNESS_HOMEBREW_TAP_TOKEN != '' }}
+        shell: bash
+        run: |
+          version="${{ steps.release-version.outputs.version }}"
+          tap_root="$(brew --repository)/Library/Taps/catu-ai/homebrew-tap"
+          rm -rf "${tap_root}"
+          mkdir -p "$(dirname "${tap_root}")"
+          cp -R dist/homebrew-tap "${tap_root}"
+          brew install catu-ai/tap/easyharness
           binary_path="$(brew --prefix)/bin/harness"
           version_output="$("${binary_path}" --version)"
           printf '%s\n' "${version_output}"

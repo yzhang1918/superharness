@@ -209,6 +209,8 @@ func TestReleaseWorkflowWiresHomebrewTapPublishing(t *testing.T) {
 	support.RequireContains(t, workflow, `gh release download "${{ steps.release-version.outputs.version }}" \`)
 	support.RequireContains(t, workflow, `-D dist/homebrew \`)
 	support.RequireContains(t, workflow, `--checksums dist/homebrew/SHA256SUMS \`)
+	support.RequireContains(t, workflow, `cp -R dist/homebrew-tap "${tap_root}"`)
+	support.RequireContains(t, workflow, `brew install catu-ai/tap/easyharness`)
 	support.RequireContains(t, workflow, `brew install --formula dist/homebrew/easyharness.rb`)
 	support.RequireContains(t, workflow, `brew test easyharness`)
 }
