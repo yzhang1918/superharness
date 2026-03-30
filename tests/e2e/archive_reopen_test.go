@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/catu-ai/microharness/tests/support"
+	"github.com/catu-ai/easyharness/tests/support"
 )
 
 const (

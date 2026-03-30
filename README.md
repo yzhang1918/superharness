@@ -1,9 +1,11 @@
-# microharness
+# easyharness
 
-`microharness` is a thin, agent-first harness CLI plus repository contract for
+`easyharness` is a thin, git-native harness CLI plus repository contract for
 human-steered, agent-executed work.
 
-GitHub home: [catu-ai/microharness](https://github.com/catu-ai/microharness)
+GitHub home: [catu-ai/easyharness](https://github.com/catu-ai/easyharness)
+
+The project is named `easyharness`. The CLI executable remains `harness`.
 
 The goal is to keep the harness legible and maintainable:
 
@@ -33,7 +35,7 @@ By default the installer:
 - uses `~/.local/bin` by default, or `~/bin` when that is already on `PATH`
 - keeps parallel worktrees isolated by dispatching to the current worktree's
   `.local/bin/harness`
-- falls back outside `microharness` worktrees to the binary from the worktree
+- falls back outside `easyharness` worktrees to the binary from the worktree
   that last installed the wrapper
 
 Useful options:
@@ -63,7 +65,7 @@ chosen install directory earlier in `PATH`.
 
 The first public release is binary-first. External users should download the
 archive that matches their platform from [GitHub
-Releases](https://github.com/catu-ai/microharness/releases), verify the
+Releases](https://github.com/catu-ai/easyharness/releases), verify the
 published `SHA256SUMS`, and run the unpacked `harness` binary directly.
 
 Supported alpha release targets are:
@@ -84,8 +86,8 @@ Typical verification flow:
 Then unpack and inspect the release binary:
 
 ```bash
-unzip microharness_<version>_<goos>_<goarch>.zip
-cd microharness_<version>_<goos>_<goarch>
+unzip easyharness_<version>_<goos>_<goarch>.zip
+cd easyharness_<version>_<goos>_<goarch>
 ./harness --version
 ./harness --help
 ```
@@ -96,7 +98,7 @@ checkout.
 
 ## Current Command Surface
 
-`microharness` currently ships these commands:
+`easyharness` currently ships these commands:
 
 - `harness plan template`
 - `harness plan lint`

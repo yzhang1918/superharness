@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/catu-ai/microharness/internal/cli"
+	"github.com/catu-ai/easyharness/internal/cli"
 )
 
 func main() {

@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/catu-ai/microharness/tests/support"
+	"github.com/catu-ai/easyharness/tests/support"
 )
 
 func TestBuildReleaseProducesSupportedAlphaArchivesAndVersionedBinary(t *testing.T) {
@@ -44,7 +44,7 @@ func TestBuildReleaseProducesSupportedAlphaArchivesAndVersionedBinary(t *testing
 	secondChecksums := parseChecksums(t, readFile(t, filepath.Join(secondOutputDir, "SHA256SUMS")))
 	for _, platform := range expectedPlatforms {
 		goos, goarch := splitPlatform(t, platform)
-		archiveName := "microharness_" + version + "_" + goos + "_" + goarch + ".zip"
+		archiveName := "easyharness_" + version + "_" + goos + "_" + goarch + ".zip"
 		firstArchivePath := filepath.Join(firstOutputDir, archiveName)
 		secondArchivePath := filepath.Join(secondOutputDir, archiveName)
 		if _, err := os.Stat(firstArchivePath); err != nil {
@@ -86,7 +86,7 @@ func TestBuildReleaseCleansReusedOutputDirectory(t *testing.T) {
 	if err := os.WriteFile(staleFile, []byte("stale"), 0o644); err != nil {
 		t.Fatalf("write stale file: %v", err)
 	}
-	staleArchive := filepath.Join(outputDir, "microharness_stale.zip")
+	staleArchive := filepath.Join(outputDir, "easyharness_stale.zip")
 	if err := os.WriteFile(staleArchive, []byte("stale archive"), 0o644); err != nil {
 		t.Fatalf("write stale archive: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestBuildReleaseCleansReusedOutputDirectory(t *testing.T) {
 	goos, goarch := splitPlatform(t, hostPlatform)
 	wantEntries := map[string]bool{
 		"SHA256SUMS": true,
-		"microharness_" + version + "_" + goos + "_" + goarch + ".zip": true,
+		"easyharness_" + version + "_" + goos + "_" + goarch + ".zip": true,
 	}
 	entries, err := os.ReadDir(outputDir)
 	if err != nil {
@@ -174,7 +174,7 @@ func TestBuildReleaseSupportsOutputDirectoryWithSpaces(t *testing.T) {
 	runReleaseBuildForPlatforms(t, version, outputDir, hostPlatform)
 
 	goos, goarch := splitPlatform(t, hostPlatform)
-	archiveName := "microharness_" + version + "_" + goos + "_" + goarch + ".zip"
+	archiveName := "easyharness_" + version + "_" + goos + "_" + goarch + ".zip"
 	checksums := parseChecksums(t, readFile(t, filepath.Join(outputDir, "SHA256SUMS")))
 	archivePath := filepath.Join(outputDir, archiveName)
 	if _, err := os.Stat(archivePath); err != nil {
@@ -198,7 +198,7 @@ func TestBuildReleaseCreatesMissingSafeRootInFreshCheckout(t *testing.T) {
 	runReleaseBuildInDir(t, checkoutRoot, version, outputDir, hostPlatform)
 
 	goos, goarch := splitPlatform(t, hostPlatform)
-	archiveName := "microharness_" + version + "_" + goos + "_" + goarch + ".zip"
+	archiveName := "easyharness_" + version + "_" + goos + "_" + goarch + ".zip"
 	archivePath := filepath.Join(checkoutRoot, outputDir, archiveName)
 	if _, err := os.Stat(archivePath); err != nil {
 		t.Fatalf("expected archive in fresh checkout output dir %s: %v", archivePath, err)
@@ -251,7 +251,7 @@ func TestBuildReleaseOnlyCleansPreparedLeafForNestedOutputDirectories(t *testing
 	}
 
 	goos, goarch := splitPlatform(t, hostPlatform)
-	archiveName := "microharness_" + version + "_" + goos + "_" + goarch + ".zip"
+	archiveName := "easyharness_" + version + "_" + goos + "_" + goarch + ".zip"
 	if _, err := os.Stat(filepath.Join(leafDir, archiveName)); err != nil {
 		t.Fatalf("expected release archive in prepared nested leaf: %v", err)
 	}
@@ -457,7 +457,7 @@ func TestBuildReleaseDoesNotFollowSymlinkedOutputEntryDuringPublish(t *testing.T
 	checksumToolName, checksumToolPath := releaseChecksumTool(t)
 	goos, goarch := splitPlatform(t, hostPlatform)
 	version := "v0.1.0-alpha.1"
-	archiveName := "microharness_" + version + "_" + goos + "_" + goarch + ".zip"
+	archiveName := "easyharness_" + version + "_" + goos + "_" + goarch + ".zip"
 	archiveEntryPath := filepath.Join(outputDir, archiveName)
 
 	fakeBin := t.TempDir()
@@ -626,7 +626,7 @@ func verifyArchiveContents(t *testing.T, workspace *support.Workspace, archivePa
 	}
 	defer reader.Close()
 
-	packageRoot := "microharness_" + version + "_" + goos + "_" + goarch + "/"
+	packageRoot := "easyharness_" + version + "_" + goos + "_" + goarch + "/"
 	binaryName := packageRoot + "harness"
 	readmeName := packageRoot + "README.md"
 	licenseName := packageRoot + "LICENSE"
@@ -739,11 +739,11 @@ func verifyBinaryMetadata(t *testing.T, binaryPath, version, goos, goarch, expec
 	if info.GoVersion == "" {
 		t.Fatalf("expected Go build info in %s", binaryPath)
 	}
-	if info.Main.Path != "github.com/catu-ai/microharness" {
-		t.Fatalf("expected binary %s to record module path %q, got %q", binaryPath, "github.com/catu-ai/microharness", info.Main.Path)
+	if info.Main.Path != "github.com/catu-ai/easyharness" {
+		t.Fatalf("expected binary %s to record module path %q, got %q", binaryPath, "github.com/catu-ai/easyharness", info.Main.Path)
 	}
-	if info.Path != "github.com/catu-ai/microharness/cmd/harness" {
-		t.Fatalf("expected binary %s to record main package path %q, got %q", binaryPath, "github.com/catu-ai/microharness/cmd/harness", info.Path)
+	if info.Path != "github.com/catu-ai/easyharness/cmd/harness" {
+		t.Fatalf("expected binary %s to record main package path %q, got %q", binaryPath, "github.com/catu-ai/easyharness/cmd/harness", info.Path)
 	}
 
 	binaryData := readFileBytes(t, binaryPath)

@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/catu-ai/microharness/internal/evidence"
-	"github.com/catu-ai/microharness/internal/lifecycle"
-	"github.com/catu-ai/microharness/internal/plan"
-	"github.com/catu-ai/microharness/internal/review"
-	"github.com/catu-ai/microharness/internal/status"
-	versioninfo "github.com/catu-ai/microharness/internal/version"
+	"github.com/catu-ai/easyharness/internal/evidence"
+	"github.com/catu-ai/easyharness/internal/lifecycle"
+	"github.com/catu-ai/easyharness/internal/plan"
+	"github.com/catu-ai/easyharness/internal/review"
+	"github.com/catu-ai/easyharness/internal/status"
+	versioninfo "github.com/catu-ai/easyharness/internal/version"
 )
 
 type App struct {

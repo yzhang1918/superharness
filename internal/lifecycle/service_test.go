@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/catu-ai/microharness/internal/evidence"
-	"github.com/catu-ai/microharness/internal/lifecycle"
-	"github.com/catu-ai/microharness/internal/plan"
-	"github.com/catu-ai/microharness/internal/runstate"
-	"github.com/catu-ai/microharness/internal/status"
+	"github.com/catu-ai/easyharness/internal/evidence"
+	"github.com/catu-ai/easyharness/internal/lifecycle"
+	"github.com/catu-ai/easyharness/internal/plan"
+	"github.com/catu-ai/easyharness/internal/runstate"
+	"github.com/catu-ai/easyharness/internal/status"
 )
 
 func TestArchiveMovesPlanAndUpdatesPointers(t *testing.T) {
@@ -835,7 +835,7 @@ func TestReopenClearsStaleCIAndSyncSignals(t *testing.T) {
 		CurrentNode:   "execution/finalize/await_merge",
 		LatestCI:      &runstate.CIState{SnapshotID: "ci-2", Status: "failed"},
 		Sync:          &runstate.SyncState{Freshness: "stale", Conflicts: true},
-		LatestPublish: &runstate.Publish{AttemptID: "publish-1", PRURL: "https://github.com/catu-ai/microharness/pull/99"},
+		LatestPublish: &runstate.Publish{AttemptID: "publish-1", PRURL: "https://github.com/catu-ai/easyharness/pull/99"},
 	}); err != nil {
 		t.Fatalf("save archived state: %v", err)
 	}
@@ -874,7 +874,7 @@ func TestReopenRejectsLandCleanupInProgress(t *testing.T) {
 			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
 		},
 	}
-	land := svc.Land("https://github.com/catu-ai/microharness/pull/99", "abc123")
+	land := svc.Land("https://github.com/catu-ai/easyharness/pull/99", "abc123")
 	if !land.OK {
 		t.Fatalf("expected land success, got %#v", land)
 	}
@@ -916,7 +916,7 @@ func TestLandCompleteWritesIdleMarkerForStatus(t *testing.T) {
 			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
 		},
 	}
-	land := svc.Land("https://github.com/catu-ai/microharness/pull/99", "abc123")
+	land := svc.Land("https://github.com/catu-ai/easyharness/pull/99", "abc123")
 	if !land.OK {
 		t.Fatalf("expected land success, got %#v", land)
 	}
@@ -973,7 +973,7 @@ func TestLandUsesLegacyEvidenceCachesWhenPointersAreMissing(t *testing.T) {
 		PlanStem:       "2026-03-18-landed-plan",
 		Revision:       3,
 		LatestCI:       &runstate.CIState{SnapshotID: "ci-legacy", Status: "success"},
-		LatestPublish:  &runstate.Publish{AttemptID: "publish-legacy", PRURL: "https://github.com/catu-ai/microharness/pull/99"},
+		LatestPublish:  &runstate.Publish{AttemptID: "publish-legacy", PRURL: "https://github.com/catu-ai/easyharness/pull/99"},
 		Sync:           &runstate.SyncState{Freshness: "fresh", Conflicts: false},
 		LatestEvidence: nil,
 	}); err != nil {
@@ -985,7 +985,7 @@ func TestLandUsesLegacyEvidenceCachesWhenPointersAreMissing(t *testing.T) {
 		Now: func() time.Time {
 			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
 		},
-	}.Land("https://github.com/catu-ai/microharness/pull/99", "")
+	}.Land("https://github.com/catu-ai/easyharness/pull/99", "")
 	if !result.OK {
 		t.Fatalf("expected land success from legacy caches, got %#v", result)
 	}
@@ -1005,12 +1005,12 @@ func TestLandRejectsOverwriteDuringCleanup(t *testing.T) {
 			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
 		},
 	}
-	first := svc.Land("https://github.com/catu-ai/microharness/pull/99", "abc123")
+	first := svc.Land("https://github.com/catu-ai/easyharness/pull/99", "abc123")
 	if !first.OK {
 		t.Fatalf("expected initial land success, got %#v", first)
 	}
 
-	second := svc.Land("https://github.com/catu-ai/microharness/pull/100", "def456")
+	second := svc.Land("https://github.com/catu-ai/easyharness/pull/100", "def456")
 	if second.OK {
 		t.Fatalf("expected second land entry to fail, got %#v", second)
 	}
@@ -1019,7 +1019,7 @@ func TestLandRejectsOverwriteDuringCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.Land == nil || state.Land.PRURL != "https://github.com/catu-ai/microharness/pull/99" || state.Land.Commit != "abc123" {
+	if state == nil || state.Land == nil || state.Land.PRURL != "https://github.com/catu-ai/easyharness/pull/99" || state.Land.Commit != "abc123" {
 		t.Fatalf("expected original land record to remain intact, got %#v", state)
 	}
 }
@@ -1038,12 +1038,12 @@ func TestLandAllowsCommitEnrichmentDuringCleanup(t *testing.T) {
 			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
 		},
 	}
-	first := svc.Land("https://github.com/catu-ai/microharness/pull/99", "")
+	first := svc.Land("https://github.com/catu-ai/easyharness/pull/99", "")
 	if !first.OK {
 		t.Fatalf("expected initial land success, got %#v", first)
 	}
 
-	second := svc.Land("https://github.com/catu-ai/microharness/pull/99", "abc123")
+	second := svc.Land("https://github.com/catu-ai/easyharness/pull/99", "abc123")
 	if !second.OK {
 		t.Fatalf("expected commit enrichment success, got %#v", second)
 	}
@@ -1052,7 +1052,7 @@ func TestLandAllowsCommitEnrichmentDuringCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.Land == nil || state.Land.PRURL != "https://github.com/catu-ai/microharness/pull/99" || state.Land.Commit != "abc123" {
+	if state == nil || state.Land == nil || state.Land.PRURL != "https://github.com/catu-ai/easyharness/pull/99" || state.Land.Commit != "abc123" {
 		t.Fatalf("expected commit enrichment to update the existing land record, got %#v", state)
 	}
 }
@@ -1071,7 +1071,7 @@ func TestLandCompleteRollsBackStateWhenCurrentPlanWriteFails(t *testing.T) {
 			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
 		},
 	}
-	land := svc.Land("https://github.com/catu-ai/microharness/pull/99", "abc123")
+	land := svc.Land("https://github.com/catu-ai/easyharness/pull/99", "abc123")
 	if !land.OK {
 		t.Fatalf("expected land success, got %#v", land)
 	}
@@ -1106,7 +1106,7 @@ func seedMergeReadyEvidenceForLifecycle(t *testing.T, root string) {
 			return time.Date(2026, 3, 18, 5, 50, 0, 0, time.UTC)
 		},
 	}
-	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/microharness/pull/99"}`)); !result.OK {
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/easyharness/pull/99"}`)); !result.OK {
 		t.Fatalf("seed publish evidence: %#v", result)
 	}
 	if result := svc.Submit("ci", []byte(`{"status":"success","provider":"github-actions"}`)); !result.OK {

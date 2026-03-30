@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/catu-ai/microharness/internal/evidence"
-	"github.com/catu-ai/microharness/internal/plan"
-	"github.com/catu-ai/microharness/internal/runstate"
+	"github.com/catu-ai/easyharness/internal/evidence"
+	"github.com/catu-ai/easyharness/internal/plan"
+	"github.com/catu-ai/easyharness/internal/runstate"
 	"gopkg.in/yaml.v3"
 )
 

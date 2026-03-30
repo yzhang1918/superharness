@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the normative v0.2 state model for `microharness`.
+This document defines the normative v0.2 state model for `easyharness`.
 
 The v0.2 model replaces the v0.1 layered vocabulary of tracked lifecycle,
 derived step state, derived handoff state, and worktree hints with one

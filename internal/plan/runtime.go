@@ -3,7 +3,7 @@ package plan
 import (
 	"strings"
 
-	"github.com/catu-ai/microharness/internal/runstate"
+	"github.com/catu-ai/easyharness/internal/runstate"
 )
 
 func (d *Document) DerivedPlanStatus() string {

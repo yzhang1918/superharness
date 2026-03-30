@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/catu-ai/microharness/internal/plan"
+	"github.com/catu-ai/easyharness/internal/plan"
 )
 
 const (

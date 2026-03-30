@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/catu-ai/microharness/tests/support"
+	"github.com/catu-ai/easyharness/tests/support"
 )
 
 type commandResult struct {
@@ -373,7 +373,7 @@ exec "${binary_path}" "$@"
 	if err != nil {
 		t.Fatalf("read refreshed wrapper: %v", err)
 	}
-	support.RequireContains(t, string(refreshed), "# microharness-install-dev-wrapper")
+	support.RequireContains(t, string(refreshed), "# easyharness-install-dev-wrapper")
 }
 
 func TestInstallDevHarnessReplacesLegacySymlinkedBinaryWithoutForce(t *testing.T) {
@@ -449,7 +449,7 @@ func TestInstallDevHarnessReplacesLegacySymlinkedBinaryWithoutForce(t *testing.T
 			if err != nil {
 				t.Fatalf("read refreshed wrapper: %v", err)
 			}
-			support.RequireContains(t, string(refreshed), "# microharness-install-dev-wrapper")
+	support.RequireContains(t, string(refreshed), "# easyharness-install-dev-wrapper")
 			support.RequireContains(t, string(refreshed), filepath.Join(repoRoot, ".local", "bin", "harness"))
 		})
 	}
@@ -533,7 +533,7 @@ func newFakeWorktree(t *testing.T) (string, string) {
 
 	writeFixtureFile(t, filepath.Join(root, "scripts", "install-dev-harness"), "#!/usr/bin/env bash\n", 0o755)
 	writeFixtureFile(t, filepath.Join(root, "cmd", "harness", "main.go"), "package main\n", 0o644)
-	writeFixtureFile(t, filepath.Join(root, "go.mod"), "module github.com/catu-ai/microharness\n", 0o644)
+	writeFixtureFile(t, filepath.Join(root, "go.mod"), "module github.com/catu-ai/easyharness\n", 0o644)
 	writeFixtureFile(
 		t,
 		filepath.Join(root, ".local", "bin", "harness"),

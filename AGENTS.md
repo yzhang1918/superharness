@@ -1,11 +1,12 @@
 # AGENTS.md
 
-This document defines how humans and Codex collaborate in `microharness`.
+This document defines how humans and Codex collaborate in `easyharness`.
 
 ## Mission
 
-Build `microharness` as a thin, agent-first harness system that is easier to
-understand and maintain than a scripts-heavy workflow.
+Build `easyharness` as a thin, git-native, agent-first harness system that is
+easier to understand and maintain than a scripts-heavy workflow. The project
+name is `easyharness`; the CLI executable remains `harness`.
 
 ## Working Agreement
 
