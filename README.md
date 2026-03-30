@@ -63,10 +63,11 @@ chosen install directory earlier in `PATH`.
 
 ## Public Alpha Release
 
-The first public release is binary-first. External users should download the
-archive that matches their platform from [GitHub
-Releases](https://github.com/catu-ai/easyharness/releases), verify the
-published `SHA256SUMS`, and run the unpacked `harness` binary directly.
+The public alpha remains GitHub Release-backed. External users can either
+install `easyharness` from the dedicated Homebrew tap or download a release
+archive directly from [GitHub
+Releases](https://github.com/catu-ai/easyharness/releases). In both cases, the
+installed executable is still named `harness`.
 
 Supported alpha release targets are:
 
@@ -83,7 +84,28 @@ Typical verification flow:
 - macOS: `shasum -a 256 -c SHA256SUMS`
 - Linux: `sha256sum -c SHA256SUMS`
 
-Then unpack and inspect the release binary:
+Homebrew install flow:
+
+```bash
+brew tap catu-ai/tap
+brew install catu-ai/tap/easyharness
+harness --version
+```
+
+Upgrade a Homebrew install with:
+
+```bash
+brew update
+brew upgrade catu-ai/tap/easyharness
+```
+
+The default Homebrew formula currently tracks the public alpha release line.
+If `easyharness` later starts shipping stable tags, the same default formula
+will move to the stable line rather than keeping alpha on a separate package
+name.
+
+If you prefer to inspect the release archive directly, unpack and inspect the
+binary:
 
 ```bash
 unzip easyharness_<version>_<goos>_<goarch>.zip
@@ -169,4 +191,5 @@ Execution detail for agents lives in `.agents/skills/`.
 - no web UI yet
 - development installer remains available for contributors; GitHub Release
   packaging now exists for the public alpha binary
-- Homebrew flow is still deferred
+- Homebrew tap publishing depends on the tap repo and cross-repo token being
+  configured for tagged releases

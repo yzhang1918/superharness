@@ -100,3 +100,46 @@ jobs:
           EASYHARNESS_LIVE_GH_TAG: ${{ steps.release-version.outputs.version }}
           EASYHARNESS_LIVE_GH_ASSET: easyharness_${{ steps.release-version.outputs.version }}_linux_amd64.zip
         run: go test ./tests/smoke -run TestVerifyReleaseNamespaceAgainstGitHubWhenEnabled -count=1
+
+      - name: Render Homebrew formula
+        run: |
+          scripts/render-homebrew-formula \
+            --repo "${{ github.repository }}" \
+            --tag "${{ steps.release-version.outputs.version }}" \
+            --checksums dist/release/SHA256SUMS \
+            --output dist/homebrew/easyharness.rb
+
+      - name: Warn when Homebrew tap token is missing
+        if: ${{ secrets.EASYHARNESS_HOMEBREW_TAP_TOKEN == '' }}
+        shell: bash
+        run: |
+          echo "::warning title=Homebrew tap update skipped::Configure EASYHARNESS_HOMEBREW_TAP_TOKEN to publish Formula/easyharness.rb into catu-ai/homebrew-tap."
+
+      - name: Check out Homebrew tap
+        if: ${{ secrets.EASYHARNESS_HOMEBREW_TAP_TOKEN != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: catu-ai/homebrew-tap
+          token: ${{ secrets.EASYHARNESS_HOMEBREW_TAP_TOKEN }}
+          path: dist/homebrew-tap
+          fetch-depth: 0
+
+      - name: Update Homebrew tap formula
+        if: ${{ secrets.EASYHARNESS_HOMEBREW_TAP_TOKEN != '' }}
+        shell: bash
+        run: |
+          tap_dir="dist/homebrew-tap"
+          mkdir -p "${tap_dir}/Formula"
+          cp dist/homebrew/easyharness.rb "${tap_dir}/Formula/easyharness.rb"
+
+          cd "${tap_dir}"
+          if [[ -z "$(git status --short -- Formula/easyharness.rb)" ]]; then
+            echo "Homebrew formula already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/easyharness.rb
+          git commit -m "Update easyharness formula for ${{ steps.release-version.outputs.version }}"
+          git push origin HEAD

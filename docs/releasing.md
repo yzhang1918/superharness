@@ -5,7 +5,9 @@ from the tracked release workflow at
 [catu-ai/easyharness](https://github.com/catu-ai/easyharness).
 
 The release archive name follows the project name, while the unpacked
-executable remains `harness`.
+executable remains `harness`. Tagged releases can also update the dedicated
+Homebrew tap formula `easyharness` in `catu-ai/homebrew-tap`, which users
+install as `catu-ai/tap/easyharness`.
 
 ## Release Checklist
 
@@ -18,6 +20,8 @@ executable remains `harness`.
    `git tag v0.1.0-alpha.1 && git push origin v0.1.0-alpha.1`.
 6. Confirm the release workflow uploaded the release archives and
    `SHA256SUMS` file.
+7. If the Homebrew tap token is configured, confirm the workflow updated
+   `Formula/easyharness.rb` in `catu-ai/homebrew-tap`.
 
 You can also use the workflow-dispatch path to republish assets for an
 existing `v*` tag without creating a second tag. The workflow rejects branch
@@ -40,6 +44,36 @@ files look like they came from `2000-01-01 00:00`.
 - Archive entry timestamps are derived from the source commit time for the
   tagged revision, subject to ZIP's 2-second precision, rather than the
   wall-clock publish time.
+- The default Homebrew formula `easyharness` tracks the current public release
+  line: alpha today, stable later if stable tags are introduced.
+
+## Homebrew Tap Publishing
+
+Homebrew publishing uses the separate public repository
+`catu-ai/homebrew-tap`. Because Homebrew lets users omit the `homebrew-`
+prefix in tap commands, that repository is installed as `catu-ai/tap`.
+
+Tagged releases update the tap on GitHub alone once these prerequisites are in
+place:
+
+1. Create `catu-ai/homebrew-tap` with an initial commit on its default branch.
+2. Add a repository secret named `EASYHARNESS_HOMEBREW_TAP_TOKEN` to
+   `catu-ai/easyharness`.
+3. Give that token contents-write access to `catu-ai/homebrew-tap`.
+
+The release workflow renders `Formula/easyharness.rb` from the staged
+`dist/release/SHA256SUMS` file after the GitHub Release assets are published,
+then pushes the updated formula into the tap when the secret is available.
+
+If the secret is missing, the release workflow emits a warning and skips the
+tap update instead of blocking the archive upload. The repair path is:
+
+1. Configure or fix `EASYHARNESS_HOMEBREW_TAP_TOKEN`.
+2. Confirm `catu-ai/homebrew-tap` still has a writable default branch.
+3. Re-run the Release workflow with `workflow_dispatch` for the same `v*` tag.
+
+The formula name remains `easyharness`, while the installed binary remains
+`harness`.
 
 ## Contributor Baseline
 
