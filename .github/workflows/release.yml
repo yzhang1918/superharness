@@ -101,6 +101,7 @@ jobs:
           EASYHARNESS_RUN_LIVE_GH_SMOKE: "1"
           EASYHARNESS_LIVE_GH_REPO: ${{ github.repository }}
           EASYHARNESS_LIVE_GH_TAG: ${{ steps.release-version.outputs.version }}
+          EASYHARNESS_LIVE_GH_ASSET: easyharness_${{ steps.release-version.outputs.version }}_linux_amd64.zip
         run: go test ./tests/smoke -run TestVerifyReleaseNamespaceAgainstGitHubWhenEnabled -count=1
 
       - name: Render Homebrew formula
