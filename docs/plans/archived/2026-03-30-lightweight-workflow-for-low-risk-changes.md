@@ -330,7 +330,10 @@ focused package coverage with
 `go test ./internal/plan ./internal/status ./internal/lifecycle ./internal/cli -count=1`,
 targeted workflow coverage with `go test ./tests/e2e -count=1`, and the full
 repository suite with `go test ./... -count=1`. The final focused rerun after
-the Step 3 repair revalidated the lightweight scenario coverage catalog.
+the Step 3 repair revalidated the lightweight scenario coverage catalog. After
+publish handoff revealed stale sync against `origin/main`, reopened in
+`finalize-fix`, merged `origin/main`, and reran `go test ./... -count=1` for
+revision 2 before the second finalize review.
 
 ## Review Summary
 
@@ -339,18 +342,22 @@ through `review-006-delta`, which found one important gap: the new lightweight
 E2E was missing from `currentScenarioCoverage`. After registering that
 scenario and rerunning the E2E suite, `review-007-delta` passed clean. The
 full archive-candidate review, `review-008-full`, then passed clean across the
-`correctness` and `risk_scan` dimensions with no remaining findings.
+`correctness` and `risk_scan` dimensions with no remaining findings. After
+reopen to revision 2 for stale sync against `origin/main`, merged the updated
+mainline, reran full validation, and `review-009-full` again passed clean
+across `correctness` and `risk_scan`.
 
 ## Archive Summary
 
-- Archived At: 2026-03-31T00:48:26+08:00
-- Revision: 1
-- PR: Pending post-archive publish from branch `codex/issue-69-lightweight-workflow`.
+- Archived At: 2026-03-31T00:55:41+08:00
+- Revision: 2
+- PR: https://github.com/catu-ai/easyharness/pull/79
 - Ready: The candidate has clean step reviews, a clean finalize review, all
   acceptance criteria checked, and validation evidence recorded in the plan.
-- Merge Handoff: After archive, commit and push the archived plan move, open
-  the PR, and capture publish, CI, and sync evidence before waiting for merge
-  approval.
+- Merge Handoff: Revision 2 restored sync freshness by integrating
+  `origin/main`; after re-archive, update publish/CI/sync evidence for the
+  current revision and wait for merge approval once CI is green and sync is
+  fresh.
 
 ## Outcome Summary
 
