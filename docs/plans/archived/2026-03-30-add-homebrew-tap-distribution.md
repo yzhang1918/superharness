@@ -330,20 +330,23 @@ release-workflow behavior changed together in one bounded slice.
   published `main` branch. The reopened repair now verifies that pushed state
   through `git clone --branch main`, matching the helper's explicit push
   target.
+- `review-015-full` passed clean across `correctness`, `tests`, and
+  `docs_consistency` for revision 2 after that CI-root-cause fix landed.
 
 ## Archive Summary
 
-- Archived At: revision 1 archived at 2026-03-30T15:23:35+08:00 and reopened
-  in revision 2 after PR `#65` failed CI.
+- Archived At: 2026-03-30T15:34:49+08:00
 - Revision: 2
+in revision 2 after PR `#65` failed CI.
 - PR: revision 1 publish evidence recorded `https://github.com/catu-ai/easyharness/pull/65`,
   but revision 2 must refresh that handoff after re-archive.
-- Ready: revision 2 narrows the only observed post-archive CI failure, and the
-  reopened validation evidence now covers the exact detached-checkout push test
-  that failed on GitHub plus a fresh `go test ./...` rerun.
-- Merge Handoff: rerun finalize review for revision 2, re-archive the plan,
-  push the branch update, refresh PR state if needed, and replace the recorded
-  publish/CI/sync evidence before treating the candidate as merge-ready.
+- Ready: `review-015-full` passed clean, revision 2 closes the only observed
+  post-archive CI failure, and the reopened validation evidence now covers the
+  exact detached-checkout push test that failed on GitHub plus a fresh
+  `go test ./...` rerun.
+- Merge Handoff: re-archive the plan, push the branch update, refresh the PR
+  state if needed, and replace the recorded publish/CI/sync evidence before
+  treating the candidate as merge-ready.
 
 ## Outcome Summary
 
