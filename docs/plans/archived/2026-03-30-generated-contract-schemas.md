@@ -285,6 +285,8 @@ Follow-up review `review-003-delta` reran clean with a pass decision.
 - Follow-up repair validation after review findings passed with
   `go test ./internal/contracts ./internal/cli ./tests/smoke -count=1`, plus
   the final full-suite run of `go test ./...`.
+- After reopening in `finalize-fix` mode for sync freshness, the branch merged
+  `origin/main` cleanly and reran `go test ./...` on revision 2.
 
 ## Review Summary
 
@@ -296,19 +298,23 @@ Follow-up review `review-003-delta` reran clean with a pass decision.
   pass decision.
 - Finalize full review `review-004-full` passed on `correctness`, `tests`, and
   `docs_consistency` with no findings.
+- After sync-driven reopen to revision 2, finalize delta review
+  `review-005-delta` found one blocker: the reopened plan still carried stale
+  reopen sentinel markers in the durable summary sections.
+- Follow-up finalize delta review `review-006-delta` reran clean with a pass
+  decision after the revision 2 durable summary sections were refreshed.
 
 ## Archive Summary
 
-- Archived At: 2026-03-31T00:43:59+08:00
-- Revision: 1
-- PR: NONE. Publish evidence should record the PR URL after archive.
-- Ready: `review-004-full` passed as the pre-archive full review, all tracked
-  steps are complete, acceptance criteria are satisfied, and the branch now
-  leaves the repository with generated contract schemas, a generated schema
-  index, and drift checks that cover stale-file cleanup as well as index drift.
-- Merge Handoff: Run `harness archive`, commit the archive move plus the
-  contract/schema/docs/test changes, push the branch, open the PR, then record
-  publish, CI, and sync evidence until status reaches merge approval.
+- Archived At: 2026-03-31T00:52:59+08:00
+- Revision: 2
+- PR: https://github.com/catu-ai/easyharness/pull/76
+- Ready: The revision 2 candidate merged the narrow `origin/main` baseline
+  change cleanly, reran `go test ./...`, and passed `review-006-delta` as the
+  finalize repair review, so the reopened candidate is ready to archive again.
+- Merge Handoff: Re-archive the plan, push the updated branch to PR #76, and
+  refresh publish, CI, and sync evidence until status reaches merge approval
+  again.
 
 ## Outcome Summary
 
