@@ -267,6 +267,13 @@ end-to-end test that writes `AGENTS.md`, fails mid-flight while refreshing a
 read-only managed skill file, then succeeds cleanly after the blocker is
 removed.
 
+After the candidate was first archived and published as PR #81, `origin/main`
+advanced by two commits, including the merged Go-baseline change from #73.
+The archived candidate was therefore reopened with `harness reopen --mode
+finalize-fix`, merged with `origin/main`, and revalidated with
+`go test ./... -count=1` so revision 2 could go back through finalize review
+before re-archive.
+
 Validation passed with `go test ./internal/install ./internal/cli ./tests/smoke
 -run 'TestInstall|TestHelpShowsTopLevelUsage' -count=1`, a repo-local
 `harness install --scope agents --dry-run` no-op after dogfooding, and
@@ -305,6 +312,8 @@ slice and will be covered by full finalize review before archive.
 
 ## Validation Summary
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - `go test ./internal/install ./internal/cli -count=1`
 - `go test ./internal/install ./tests/smoke -run 'TestInstall|TestHelpShowsTopLevelUsage' -count=1`
 - `go test ./internal/install ./tests/smoke -run 'TestInstallIgnoresLiteralMarkerMentionsInUserOwnedProse|TestInstallRejectsInvalidScopeViaCLI|TestInstallRefreshesExistingManagedWrapperAndThenNoops|TestInstall' -count=1`
@@ -315,6 +324,8 @@ slice and will be covered by full finalize review before archive.
 
 ## Review Summary
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - `review-001-full`: changes requested for inline marker parsing and missing smoke coverage around failure paths and wrapper reruns
 - `review-002-full`: changes requested for CRLF marker recognition and missing smoke coverage for `skills` plus a structural CLI failure path
 - `review-003-full`: changes requested for CRLF newline preservation and apply-mode failure recovery coverage
@@ -322,6 +333,8 @@ slice and will be covered by full finalize review before archive.
 - `review-005-full`: full finalize review passed with no findings
 
 ## Archive Summary
+
+UPDATE_REQUIRED_AFTER_REOPEN
 
 - Archived At: 2026-03-31T01:01:53+08:00
 - Revision: 1
@@ -333,6 +346,8 @@ slice and will be covered by full finalize review before archive.
 
 ### Delivered
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - Added packaged bootstrap assets under `assets/bootstrap/` for the managed `AGENTS.md` delta and the repo-local harness skill pack.
 - Added `harness install` with direct-write default behavior, `--dry-run`, and `--scope agents|skills|all`.
 - Split this repo's `AGENTS.md` into easyharness-specific guidance plus the same managed harness contract that `harness install` installs elsewhere.
@@ -342,11 +357,15 @@ slice and will be covered by full finalize review before archive.
 
 ### Not Delivered
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - Optional remote skill-pack installation or agent-assisted downloads remain deferred.
 - User-selectable bootstrap templates beyond the minimum default contract remain deferred.
 - Drift detection and upgrade prompts for stale installed bootstrap assets remain deferred.
 
 ### Follow-Up Issues
+
+UPDATE_REQUIRED_AFTER_REOPEN
 
 - [#71](https://github.com/catu-ai/easyharness/issues/71): Add repo-level harness customization via a tracked `.harness` directory.
 - [#80](https://github.com/catu-ai/easyharness/issues/80): Decide how `harness install` should detect stale repo bootstrap assets.
