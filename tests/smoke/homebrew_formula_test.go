@@ -175,6 +175,27 @@ func TestUpdateHomebrewTapPushesFromDetachedCheckout(t *testing.T) {
 	}
 }
 
+func TestReleaseWorkflowWiresHomebrewTapPublishing(t *testing.T) {
+	workflowPath := filepath.Join(support.RepoRoot(t), ".github", "workflows", "release.yml")
+	workflowData, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatalf("read release workflow: %v", err)
+	}
+	workflow := string(workflowData)
+
+	support.RequireContains(t, workflow, `EASYHARNESS_HOMEBREW_TAP_TOKEN: ${{ secrets.EASYHARNESS_HOMEBREW_TAP_TOKEN }}`)
+	support.RequireContains(t, workflow, `if: ${{ env.EASYHARNESS_HOMEBREW_TAP_TOKEN != '' }}`)
+	support.RequireContains(t, workflow, `scripts/render-homebrew-formula \`)
+	support.RequireContains(t, workflow, `--repo "${{ github.repository }}"`)
+	support.RequireContains(t, workflow, `--tag "${{ steps.release-version.outputs.version }}"`)
+	support.RequireContains(t, workflow, `--checksums dist/release/SHA256SUMS`)
+	support.RequireContains(t, workflow, `--output dist/homebrew/easyharness.rb`)
+	support.RequireContains(t, workflow, `scripts/update-homebrew-tap \`)
+	support.RequireContains(t, workflow, `--formula dist/homebrew/easyharness.rb`)
+	support.RequireContains(t, workflow, `--tap-dir dist/homebrew-tap`)
+	support.RequireContains(t, workflow, `--version "${{ steps.release-version.outputs.version }}"`)
+}
+
 func mustRunGit(t *testing.T, workdir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
