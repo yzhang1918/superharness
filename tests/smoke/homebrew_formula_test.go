@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -206,13 +207,105 @@ func TestReleaseWorkflowWiresHomebrewTapPublishing(t *testing.T) {
 	support.RequireContains(t, workflow, `--version "${{ steps.release-version.outputs.version }}"`)
 	support.RequireContains(t, workflow, `verify-homebrew-install:`)
 	support.RequireContains(t, workflow, `runs-on: macos-latest`)
-	support.RequireContains(t, workflow, `gh release download "${{ steps.release-version.outputs.version }}" \`)
-	support.RequireContains(t, workflow, `-D dist/homebrew \`)
-	support.RequireContains(t, workflow, `--checksums dist/homebrew/SHA256SUMS \`)
-	support.RequireContains(t, workflow, `cp -R dist/homebrew-tap "${tap_root}"`)
-	support.RequireContains(t, workflow, `brew install catu-ai/tap/easyharness`)
-	support.RequireContains(t, workflow, `brew install --formula dist/homebrew/easyharness.rb`)
-	support.RequireContains(t, workflow, `brew test easyharness`)
+	support.RequireContains(t, workflow, `EASYHARNESS_RUN_LIVE_BREW_SMOKE: "1"`)
+	support.RequireContains(t, workflow, `go test ./tests/smoke -run TestVerifyHomebrewTapInstallAgainstGitHubWhenEnabled -count=1`)
+}
+
+func TestVerifyHomebrewTapInstallAgainstGitHubWhenEnabled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Homebrew smoke test requires a POSIX environment")
+	}
+	if os.Getenv("EASYHARNESS_RUN_LIVE_BREW_SMOKE") != "1" {
+		t.Skip("set EASYHARNESS_RUN_LIVE_BREW_SMOKE=1 to enable live Homebrew verification")
+	}
+
+	repo := requiredEnv(t, "EASYHARNESS_LIVE_GH_REPO")
+	tag := requiredEnv(t, "EASYHARNESS_LIVE_GH_TAG")
+
+	brewPath, err := exec.LookPath("brew")
+	if err != nil {
+		t.Skip("brew not available on PATH")
+	}
+
+	repoRoot := support.RepoRoot(t)
+	env := envWithOverrides(t, map[string]string{
+		"PATH": strings.Join([]string{filepath.Dir(brewPath), installerPath(t)}, string(os.PathListSeparator)),
+	})
+
+	brewRepoResult := runCommand(t, repoRoot, env, brewPath, "--repository")
+	if brewRepoResult.ExitCode != 0 {
+		t.Fatalf("brew --repository failed with exit %d\nstdout:\n%s\nstderr:\n%s", brewRepoResult.ExitCode, brewRepoResult.Stdout, brewRepoResult.Stderr)
+	}
+	brewRepo := strings.TrimSpace(brewRepoResult.Stdout)
+	tapRoot := filepath.Join(brewRepo, "Library", "Taps", "catu-ai", "homebrew-tap")
+	if _, err := os.Stat(tapRoot); err == nil {
+		t.Skipf("tap path already exists at %s; refusing to clobber a real tap checkout", tapRoot)
+	}
+
+	t.Cleanup(func() {
+		_ = exec.Command(brewPath, "uninstall", "--force", "easyharness").Run()
+		_ = os.RemoveAll(tapRoot)
+	})
+
+	downloadDir := filepath.Join(t.TempDir(), "downloads")
+	verifyResult := runCommand(
+		t,
+		repoRoot,
+		env,
+		"/bin/bash",
+		filepath.Join(repoRoot, "scripts", "verify-release-namespace"),
+		"--repo", repo,
+		"--tag", tag,
+		"--asset", "SHA256SUMS",
+		"--download-dir", downloadDir,
+	)
+	if verifyResult.ExitCode != 0 {
+		t.Fatalf("verify-release-namespace failed with exit %d\nstdout:\n%s\nstderr:\n%s", verifyResult.ExitCode, verifyResult.Stdout, verifyResult.Stderr)
+	}
+
+	formulaPath := filepath.Join(tapRoot, "Formula", "easyharness.rb")
+	if err := os.MkdirAll(filepath.Dir(formulaPath), 0o755); err != nil {
+		t.Fatalf("mkdir staged tap formula dir: %v", err)
+	}
+
+	renderResult := runCommand(
+		t,
+		repoRoot,
+		env,
+		"/bin/bash",
+		filepath.Join(repoRoot, "scripts", "render-homebrew-formula"),
+		"--repo", repo,
+		"--tag", tag,
+		"--checksums", filepath.Join(downloadDir, "SHA256SUMS"),
+		"--output", formulaPath,
+	)
+	if renderResult.ExitCode != 0 {
+		t.Fatalf("render-homebrew-formula failed with exit %d\nstdout:\n%s\nstderr:\n%s", renderResult.ExitCode, renderResult.Stdout, renderResult.Stderr)
+	}
+
+	installResult := runCommand(t, repoRoot, env, brewPath, "install", "catu-ai/tap/easyharness")
+	if installResult.ExitCode != 0 {
+		t.Fatalf("brew install catu-ai/tap/easyharness failed with exit %d\nstdout:\n%s\nstderr:\n%s", installResult.ExitCode, installResult.Stdout, installResult.Stderr)
+	}
+
+	prefixResult := runCommand(t, repoRoot, env, brewPath, "--prefix")
+	if prefixResult.ExitCode != 0 {
+		t.Fatalf("brew --prefix failed with exit %d\nstdout:\n%s\nstderr:\n%s", prefixResult.ExitCode, prefixResult.Stdout, prefixResult.Stderr)
+	}
+	binaryPath := filepath.Join(strings.TrimSpace(prefixResult.Stdout), "bin", "harness")
+	versionCmd := exec.Command(binaryPath, "--version")
+	versionCmd.Dir = repoRoot
+	versionOutput, err := versionCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run installed harness --version: %v\n%s", err, versionOutput)
+	}
+	support.RequireContains(t, string(versionOutput), "version: "+tag)
+	support.RequireContains(t, string(versionOutput), "mode: release")
+
+	testResult := runCommand(t, repoRoot, env, brewPath, "test", "easyharness")
+	if testResult.ExitCode != 0 {
+		t.Fatalf("brew test easyharness failed with exit %d\nstdout:\n%s\nstderr:\n%s", testResult.ExitCode, testResult.Stdout, testResult.Stderr)
+	}
 }
 
 func mustRunGit(t *testing.T, workdir string, args ...string) {

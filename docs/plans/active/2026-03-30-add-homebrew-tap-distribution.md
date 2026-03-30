@@ -186,9 +186,9 @@ asserted two of the four platform asset branches, and the token-gated tap
 update flow was not exercised deterministically.
 
 The repair batch introduced `scripts/update-homebrew-tap`, which skips cleanly
-when `EASYHARNESS_HOMEBREW_TAP_TOKEN` is absent, resolves the tap repo default
-branch from `origin/HEAD`, and pushes with an explicit
-`HEAD:refs/heads/<branch>` refspec so detached checkouts work. The release
+when `EASYHARNESS_HOMEBREW_TAP_TOKEN` is absent, pushes with an explicit
+`HEAD:refs/heads/<branch>` refspec, and takes the tap branch as an explicit
+input so detached checkouts do not depend on `origin/HEAD`. The release
 workflow now delegates the tap update to that script. The smoke suite now
 asserts all four rendered asset URL/checksum pairs and covers both the
 missing-token skip path and the detached-checkout commit/push path with local

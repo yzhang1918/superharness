@@ -23,9 +23,8 @@ install as `catu-ai/tap/easyharness`.
 7. If the Homebrew tap token is configured, confirm the workflow updated
    `Formula/easyharness.rb` in `catu-ai/homebrew-tap`.
 8. Confirm the release workflow's Homebrew verification job passed.
-   When the tap token is configured, it should install `catu-ai/tap/easyharness`
-   and pass `brew test easyharness`. Without the token, it falls back to
-   installing the rendered formula file directly.
+   It should stage a local `catu-ai/tap` checkout from the rendered formula,
+   install `catu-ai/tap/easyharness`, and pass `brew test easyharness`.
 
 You can also use the workflow-dispatch path to republish assets for an
 existing `v*` tag without creating a second tag. The workflow rejects branch
