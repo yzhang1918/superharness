@@ -1,8 +1,9 @@
 ---
 template_version: 0.2.0
-created_at: 2026-03-31T15:51:27+08:00
+created_at: "2026-03-31T15:51:27+08:00"
 source_type: issue
-source_refs: ["https://github.com/catu-ai/easyharness/issues/72"]
+source_refs:
+    - https://github.com/catu-ai/easyharness/issues/72
 ---
 
 # Centralize contract schemas and generated reference docs
@@ -59,25 +60,25 @@ behavioral contract or tightening existing plain-string fields into enums.
 
 ## Acceptance Criteria
 
-- [ ] A centralized Go contract module exists and is the documented field-level
+- [x] A centralized Go contract module exists and is the documented field-level
       source of truth for public CLI JSON outputs, shared reusable JSON shapes,
       and CLI-owned `.local/harness/` JSON artifacts.
-- [ ] The repository contains a checked-in JSON Schema registry composed of a
+- [x] The repository contains a checked-in JSON Schema registry composed of a
       discoverable central index plus stable schema files for the covered
       command outputs and local artifact families.
-- [ ] Generated schemas declare their dialect/version explicitly and use
+- [x] Generated schemas declare their dialect/version explicitly and use
       reusable shared definitions or references for repeated shapes instead of
       duplicating those shapes inline across files.
-- [ ] Generated schemas include enough consumer-facing metadata to support both
+- [x] Generated schemas include enough consumer-facing metadata to support both
       validation and useful reference docs, at minimum titles and descriptions,
       with examples where they materially improve clarity.
-- [ ] The generated schema surface preserves the current contract semantics for
+- [x] The generated schema surface preserves the current contract semantics for
       this slice and does not introduce new enum restrictions for existing
       plain-string fields.
-- [ ] Reference docs are generated from or directly driven by the schema
+- [x] Reference docs are generated from or directly driven by the schema
       registry so the repository no longer hand-maintains duplicate field tables
       for the covered contract surface.
-- [ ] Drift checks fail when the centralized Go contracts, generated schema
+- [x] Drift checks fail when the centralized Go contracts, generated schema
       artifacts, or generated reference docs fall out of sync.
 
 ## Deferred Items
@@ -367,26 +368,82 @@ step.
 
 ## Validation Summary
 
-PENDING_UNTIL_ARCHIVE
+- Centralized contract ownership stayed compile- and behavior-compatible across
+  the touched command packages with focused validation on
+  `./internal/status`, `./internal/lifecycle`, `./internal/review`,
+  `./internal/evidence`, `./internal/install`, and `./internal/runstate`.
+- The contract generation pipeline now has deterministic refresh and drift
+  enforcement through `scripts/sync-contract-artifacts` and
+  `scripts/sync-contract-artifacts --check`, backed by targeted
+  `internal/contractsync` regression coverage.
+- Repository-level validation passed with focused smoke coverage for contract
+  sync drift, including stale schema and stale generated-doc cases, plus a
+  full `go test ./...` pass after the finalize repair series landed.
 
 ## Review Summary
 
-PENDING_UNTIL_ARCHIVE
+- `review-001-full` found two compatibility gaps in the initial generator:
+  schemas were not modeling nullable non-omitempty pointer/slice/map fields
+  the way the current runtime can serialize them, and the contract-sync check
+  path lacked explicit negative regression coverage for stale/missing files.
+  Those fixes landed in `5e3d58b`.
+- `review-002-full` found a correctness mismatch where early `harness review
+  start` failures still emitted the generic `review` command identifier instead
+  of `review start`, plus a generated lifecycle contract omission for
+  `harness land complete`. Those fixes landed in `09565cb`.
+- `review-003-full` found two input-schema mismatches and one prose mismatch:
+  `review.spec.dimensions` was still nullable in input schemas, optional
+  `review.submission.findings` was being treated as required/non-nullable, and
+  `docs/specs/cli-contract.md` implied every stateful command emitted the same
+  `state` shape. Those fixes landed in `032177a`.
+- `review-004-full` reduced the remaining inconsistency to one blocking docs
+  scope error and one non-blocking smoke gap: the status spec still described
+  `plan_status` and `lifecycle` as globally forbidden instead of forbidding
+  them specifically for `harness status`, and the smoke suite still lacked a
+  stale generated-doc failure path. Those fixes landed in `0bbbdf9`.
+- `review-005-full` passed clean with no blocking or non-blocking findings and
+  serves as the structural `pre_archive` gate for this revision.
 
 ## Archive Summary
 
-PENDING_UNTIL_ARCHIVE
+- Archived At: 2026-03-31T16:48:48+08:00
+- Revision: 1
+- PR: not created yet; publish evidence will record the PR URL after archive.
+- Ready: `review-005-full` passed clean, acceptance criteria are satisfied,
+  and the candidate is ready for archive plus publish/CI/sync evidence work.
+- Merge Handoff: archive the plan, commit the tracked move plus the latest
+  closeout updates, push `codex/centralize-contract-schemas-docs`, open or
+  refresh the PR, and record publish/CI/sync evidence until status reaches
+  `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
 ### Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Added a centralized Go contract layer under `internal/contracts/` that now
+  owns the field-level JSON source of truth for covered command results, shared
+  shapes, and CLI-owned `.local/harness/` artifacts.
+- Refactored the runtime packages to consume those centralized contracts
+  without changing the public JSON field names or broadening the contract to
+  enums.
+- Added the `contract-sync` generation pipeline, checked-in schema registry
+  under `schema/`, and generated reference docs under
+  `docs/reference/contracts/`.
+- Updated the README and normative specs so field-level reference material now
+  points at the generated contract surface instead of duplicated prose tables.
+- Added contract-sync regression coverage and smoke drift checks for stale
+  schema artifacts and stale generated docs, then closed the remaining finalize
+  review findings through `review-005-full`.
 
 ### Not Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Enum promotion for currently plain-string public fields such as
+  `current_node`, `review_status`, `ci_status`, or `sync_status`.
+- Any alternate registry output such as OpenAPI in addition to JSON Schema.
+- Machine-readable schema support for markdown tracked plans.
 
 ### Follow-Up Issues
 
-NONE
+- `#72` continues to track the broader contract-surface follow-up scope,
+  including future enum decisions, whether to emit additional registry formats,
+  and any later choice to model markdown plans with a machine-readable schema.
