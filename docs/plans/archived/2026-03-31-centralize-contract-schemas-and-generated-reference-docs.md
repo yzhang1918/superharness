@@ -374,8 +374,6 @@ step.
 
 ## Validation Summary
 
-UPDATE_REQUIRED_AFTER_REOPEN
-
 - Centralized contract ownership stayed compile- and behavior-compatible across
   the touched command packages with focused validation on
   `./internal/status`, `./internal/lifecycle`, `./internal/review`,
@@ -387,10 +385,14 @@ UPDATE_REQUIRED_AFTER_REOPEN
 - Repository-level validation passed with focused smoke coverage for contract
   sync drift, including stale schema and stale generated-doc cases, plus a
   full `go test ./...` pass after the finalize repair series landed.
+- Revision 2 validated the schema-only follow-up with
+  `scripts/sync-contract-artifacts`, `scripts/sync-contract-artifacts --check`,
+  `go test ./internal/contractsync`, the targeted
+  `TestSyncContractArtifactsCheck*` smoke coverage, and a final
+  `go test ./...` pass after removing generated markdown pages and adding
+  explicit public-vs-runtime surface markers to `schema/index.json`.
 
 ## Review Summary
-
-UPDATE_REQUIRED_AFTER_REOPEN
 
 - `review-001-full` found two compatibility gaps in the initial generator:
   schemas were not modeling nullable non-omitempty pointer/slice/map fields
@@ -412,27 +414,33 @@ UPDATE_REQUIRED_AFTER_REOPEN
   them specifically for `harness status`, and the smoke suite still lacked a
   stale generated-doc failure path. Those fixes landed in `0bbbdf9`.
 - `review-005-full` passed clean with no blocking or non-blocking findings and
-  serves as the structural `pre_archive` gate for this revision.
+  served as the structural `pre_archive` gate for revision 1 before reopen.
+- `review-006-full` on revision 2 correctly pushed the follow-up further: it
+  flagged the stale Outcome Summary text that still described
+  `docs/reference/contracts/` as delivered, and it required a clearer boundary
+  between stable public command surfaces and CLI-owned runtime artifacts.
+  Those fixes landed in `d98c528` and `239a847`.
+- `review-007-full` passed clean with no blocking or non-blocking findings and
+  serves as the structural `pre_archive` gate for revision 2.
 
 ## Archive Summary
 
-UPDATE_REQUIRED_AFTER_REOPEN
-
-- Archived At: 2026-03-31T16:48:48+08:00
-- Revision: 1
-- PR: not created yet; publish evidence will record the PR URL after archive.
-- Ready: `review-005-full` passed clean, acceptance criteria are satisfied,
-  and the candidate is ready for archive plus publish/CI/sync evidence work.
-- Merge Handoff: archive the plan, commit the tracked move plus the latest
-  closeout updates, push `codex/centralize-contract-schemas-docs`, open or
-  refresh the PR, and record publish/CI/sync evidence until status reaches
+- Archived At: 2026-03-31T20:52:43+08:00
+- Revision: 2
+- PR: revision 1 publish evidence already points at
+  `https://github.com/catu-ai/easyharness/pull/85`; refresh it for revision 2
+  after archive.
+- Ready: revision 2 removes the generated markdown contract surface entirely,
+  leaves `schema/` as the only checked-in field-level artifact surface, and
+  passed `review-007-full` as the current `pre_archive` gate.
+- Merge Handoff: archive revision 2, commit the tracked move plus these
+  closeout updates, push `codex/centralize-contract-schemas-docs`, refresh PR
+  #85, and record updated publish/CI/sync evidence until status returns to
   `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
 ### Delivered
-
-UPDATE_REQUIRED_AFTER_REOPEN
 
 - Added a centralized Go contract layer under `internal/contracts/` that now
   owns the field-level JSON source of truth for covered command results, shared
@@ -448,11 +456,12 @@ UPDATE_REQUIRED_AFTER_REOPEN
   field tables or generated per-schema markdown.
 - Added contract-sync regression coverage and smoke drift checks for stale
   schema artifacts and for deprecated generated markdown files reappearing,
-  then closed the remaining finalize review findings through `review-005-full`.
+  then closed the remaining finalize review findings through `review-007-full`.
+- Added explicit surface labeling in `schema/index.json` so consumers can tell
+  which entries are stable public command surfaces and which entries are merely
+  CLI-owned runtime artifacts documented for safe inspection.
 
 ### Not Delivered
-
-UPDATE_REQUIRED_AFTER_REOPEN
 
 - Enum promotion for currently plain-string public fields such as
   `current_node`, `review_status`, `ci_status`, or `sync_status`.
@@ -460,8 +469,6 @@ UPDATE_REQUIRED_AFTER_REOPEN
 - Machine-readable schema support for markdown tracked plans.
 
 ### Follow-Up Issues
-
-UPDATE_REQUIRED_AFTER_REOPEN
 
 - `#72` continues to track the broader contract-surface follow-up scope,
   including future enum decisions, whether to emit additional registry formats,
