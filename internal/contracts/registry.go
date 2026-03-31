@@ -38,7 +38,7 @@ func SchemaRegistry() []SchemaEntry {
 			Group:       "command_results",
 			Path:        "schema/commands/lifecycle.result.schema.json",
 			Title:       "Lifecycle command result",
-			Description: "Shared JSON output shape for lifecycle commands such as `harness execute start`, `harness archive`, `harness reopen`, and `harness land`.",
+			Description: "Shared JSON output shape for lifecycle commands such as `harness execute start`, `harness archive`, `harness reopen`, `harness land`, and `harness land complete`.",
 			Type:        reflect.TypeFor[LifecycleResult](),
 		},
 		{

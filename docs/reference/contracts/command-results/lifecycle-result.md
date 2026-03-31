@@ -2,7 +2,7 @@
 
 # Lifecycle command result
 
-Shared JSON output shape for lifecycle commands such as `harness execute start`, `harness archive`, `harness reopen`, and `harness land`.
+Shared JSON output shape for lifecycle commands such as `harness execute start`, `harness archive`, `harness reopen`, `harness land`, and `harness land complete`.
 
 - Schema JSON: [lifecycle.result.schema.json](../../../../schema/commands/lifecycle.result.schema.json)
 - Registry entry: [schema/index.json](../../../../schema/index.json)

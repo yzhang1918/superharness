@@ -564,7 +564,7 @@ func (s Service) loadCurrentExecutingPlan(lockedPlanPath string) (string, *plan.
 		if err != nil {
 			return "", nil, "", "", nil, "", &StartResult{
 				OK:      false,
-				Command: "review",
+				Command: "review start",
 				Summary: "Unable to determine the current plan.",
 				Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
 			}
@@ -574,7 +574,7 @@ func (s Service) loadCurrentExecutingPlan(lockedPlanPath string) (string, *plan.
 	if err != nil {
 		return "", nil, "", "", nil, "", &StartResult{
 			OK:      false,
-			Command: "review",
+			Command: "review start",
 			Summary: "Unable to read the current plan.",
 			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
 		}
@@ -585,7 +585,7 @@ func (s Service) loadCurrentExecutingPlan(lockedPlanPath string) (string, *plan.
 	if err != nil {
 		return "", nil, "", "", nil, "", &StartResult{
 			OK:      false,
-			Command: "review",
+			Command: "review start",
 			Summary: "Unable to relativize the current plan path.",
 			Errors:  []CommandError{{Path: "plan", Message: err.Error()}},
 		}
@@ -595,7 +595,7 @@ func (s Service) loadCurrentExecutingPlan(lockedPlanPath string) (string, *plan.
 	if err != nil {
 		return "", nil, "", "", nil, "", &StartResult{
 			OK:      false,
-			Command: "review",
+			Command: "review start",
 			Summary: "Unable to read local harness state.",
 			Errors:  []CommandError{{Path: "state", Message: err.Error()}},
 		}
@@ -603,7 +603,7 @@ func (s Service) loadCurrentExecutingPlan(lockedPlanPath string) (string, *plan.
 	if doc.DerivedPlanStatus() != "active" || doc.DerivedLifecycle(state) != "executing" {
 		return "", nil, "", "", nil, "", &StartResult{
 			OK:      false,
-			Command: "review",
+			Command: "review start",
 			Summary: "Review commands require an active executing plan.",
 			Errors: []CommandError{{
 				Path:    "plan.lifecycle",

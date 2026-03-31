@@ -689,3 +689,20 @@ func assertAggregateError(t *testing.T, result review.AggregateResult, path stri
 	}
 	t.Fatalf("expected aggregate error for %s, got %#v", path, result.Errors)
 }
+
+func TestStartUsesReviewStartCommandIdentifierOnPlanDetectionFailure(t *testing.T) {
+	root := t.TempDir()
+
+	result := review.Service{Workdir: root}.Start(mustJSON(t, review.Spec{
+		Kind: "full",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check setup failures."},
+		},
+	}))
+	if result.OK {
+		t.Fatalf("expected start failure when no current plan exists, got %#v", result)
+	}
+	if result.Command != "review start" {
+		t.Fatalf("expected review start command identifier, got %#v", result)
+	}
+}

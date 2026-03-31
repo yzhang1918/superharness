@@ -158,5 +158,5 @@
     }
   },
   "title": "Lifecycle command result",
-  "description": "Shared JSON output shape for lifecycle commands such as `harness execute start`, `harness archive`, `harness reopen`, and `harness land`."
+  "description": "Shared JSON output shape for lifecycle commands such as `harness execute start`, `harness archive`, `harness reopen`, `harness land`, and `harness land complete`."
 }
