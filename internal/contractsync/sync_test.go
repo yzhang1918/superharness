@@ -74,6 +74,22 @@ func TestReviewInputSchemasMatchValidatorBoundaries(t *testing.T) {
 	}
 }
 
+func TestSchemaIndexNoLongerPointsAtGeneratedMarkdown(t *testing.T) {
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	files, err := expectedFiles(repoRoot)
+	if err != nil {
+		t.Fatalf("expectedFiles: %v", err)
+	}
+
+	index := string(files["schema/index.json"])
+	if strings.Contains(index, "\"doc_path\"") {
+		t.Fatalf("expected schema index to omit doc_path references, got %s", index)
+	}
+	if _, ok := files["docs/reference/contracts/README.md"]; ok {
+		t.Fatal("expected contract sync to stop generating docs/reference/contracts/README.md")
+	}
+}
+
 func TestCheckFilesFailsOnMissingAndUnexpectedGeneratedFiles(t *testing.T) {
 	workdir := t.TempDir()
 	ownedRoots := []string{
@@ -117,8 +133,7 @@ func TestWriteFilesReplacesOwnedRoots(t *testing.T) {
 	}
 
 	expected := map[string][]byte{
-		"schema/index.json":                  []byte("{\"title\":\"ok\"}\n"),
-		"docs/reference/contracts/README.md": []byte("# ok\n"),
+		"schema/index.json": []byte("{\"title\":\"ok\"}\n"),
 	}
 	if err := writeFiles(workdir, ownedRoots, expected); err != nil {
 		t.Fatalf("writeFiles: %v", err)
@@ -129,6 +144,9 @@ func TestWriteFilesReplacesOwnedRoots(t *testing.T) {
 	}
 	if data, err := os.ReadFile(filepath.Join(workdir, "schema", "index.json")); err != nil || string(data) != "{\"title\":\"ok\"}\n" {
 		t.Fatalf("unexpected schema/index.json contents: err=%v data=%q", err, data)
+	}
+	if _, err := os.Stat(filepath.Join(workdir, "docs", "reference", "contracts")); !os.IsNotExist(err) {
+		t.Fatalf("expected deprecated generated docs root to be removed, got err=%v", err)
 	}
 }
 

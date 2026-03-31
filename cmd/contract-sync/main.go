@@ -18,8 +18,8 @@ func main() {
 		os.Exit(1)
 	}
 	if *check {
-		fmt.Println("Contract schemas and reference docs are in sync.")
+		fmt.Println("Contract schemas are in sync.")
 		return
 	}
-	fmt.Println("Updated contract schemas and reference docs.")
+	fmt.Println("Updated contract schemas.")
 }

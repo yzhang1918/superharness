@@ -19,10 +19,11 @@ Exact transition enumeration lives in
 details live in [Plan Schema](./plan-schema.md) and
 [CLI Contract](./cli-contract.md).
 
-Generated field-level references for the CLI-owned local JSON artifacts
-described here live under
-[`docs/reference/contracts/`](../reference/contracts/README.md), with the
-checked-in JSON Schema registry indexed at [`schema/index.json`](../../schema/index.json).
+Field-level JSON structure for the CLI-owned local artifacts described here
+lives in the checked-in schema registry at
+[`schema/index.json`](../../schema/index.json). See
+[Contract Registry](./contract.md) for the ownership model and discovery
+entrypoints.
 
 ## Non-Goals
 

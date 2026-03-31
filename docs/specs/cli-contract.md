@@ -13,11 +13,11 @@ JSON envelopes described here assume the canonical-node runtime model from
 [State Transitions](./state-transitions.md).
 
 The prose in this spec remains normative for command purpose, workflow intent,
-and compatibility boundaries. Generated field-level references for the current
-JSON command outputs and inputs live under
-[`docs/reference/contracts/`](../reference/contracts/README.md), backed by the
-checked-in JSON Schema registry at [`schema/index.json`](../../schema/index.json)
-and sourced from the Go-owned contract module under `internal/contracts`.
+and compatibility boundaries. Field-level JSON structure for the current
+command outputs and inputs lives in the checked-in schema registry at
+[`schema/index.json`](../../schema/index.json), sourced from the Go-owned
+contract module under `internal/contracts` and explained at
+[Contract Registry](./contract.md).
 
 ## Command Surface
 

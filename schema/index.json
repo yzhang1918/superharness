@@ -8,7 +8,6 @@
       "title": "Current plan pointer file",
       "description": "Worktree-level pointer artifact at `.local/harness/current-plan.json`.",
       "path": "schema/artifacts/current-plan.schema.json",
-      "doc_path": "docs/reference/contracts/artifacts/current-plan.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/artifacts/current-plan.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.CurrentPlanFile"
     },
@@ -18,7 +17,6 @@
       "title": "CI evidence record artifact",
       "description": "Command-owned CI evidence artifact.",
       "path": "schema/artifacts/evidence-ci-record.schema.json",
-      "doc_path": "docs/reference/contracts/artifacts/evidence-ci-record.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/artifacts/evidence-ci-record.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.EvidenceCIRecord"
     },
@@ -28,7 +26,6 @@
       "title": "Publish evidence record artifact",
       "description": "Command-owned publish evidence artifact.",
       "path": "schema/artifacts/evidence-publish-record.schema.json",
-      "doc_path": "docs/reference/contracts/artifacts/evidence-publish-record.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/artifacts/evidence-publish-record.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.EvidencePublishRecord"
     },
@@ -38,7 +35,6 @@
       "title": "Sync evidence record artifact",
       "description": "Command-owned sync evidence artifact.",
       "path": "schema/artifacts/evidence-sync-record.schema.json",
-      "doc_path": "docs/reference/contracts/artifacts/evidence-sync-record.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/artifacts/evidence-sync-record.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.EvidenceSyncRecord"
     },
@@ -48,7 +44,6 @@
       "title": "Plan-local state file",
       "description": "Plan-local runtime state artifact at `.local/harness/plans/\u003cplan-stem\u003e/state.json`.",
       "path": "schema/artifacts/local-state.schema.json",
-      "doc_path": "docs/reference/contracts/artifacts/local-state.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/artifacts/local-state.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.LocalStateFile"
     },
@@ -58,7 +53,6 @@
       "title": "Review aggregate artifact",
       "description": "Command-owned review aggregate artifact.",
       "path": "schema/artifacts/review-aggregate.schema.json",
-      "doc_path": "docs/reference/contracts/artifacts/review-aggregate.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/artifacts/review-aggregate.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.ReviewAggregate"
     },
@@ -68,7 +62,6 @@
       "title": "Review ledger artifact",
       "description": "Command-owned review ledger artifact for one review round.",
       "path": "schema/artifacts/review-ledger.schema.json",
-      "doc_path": "docs/reference/contracts/artifacts/review-ledger.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/artifacts/review-ledger.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.ReviewLedger"
     },
@@ -78,7 +71,6 @@
       "title": "Review manifest artifact",
       "description": "Command-owned review manifest artifact for one review round.",
       "path": "schema/artifacts/review-manifest.schema.json",
-      "doc_path": "docs/reference/contracts/artifacts/review-manifest.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/artifacts/review-manifest.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.ReviewManifest"
     },
@@ -88,7 +80,6 @@
       "title": "Review submission artifact",
       "description": "Command-owned reviewer submission artifact.",
       "path": "schema/artifacts/review-submission.schema.json",
-      "doc_path": "docs/reference/contracts/artifacts/review-submission.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/artifacts/review-submission.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.ReviewSubmission"
     },
@@ -98,7 +89,6 @@
       "title": "CI evidence input",
       "description": "JSON input consumed by `harness evidence submit --kind ci`.",
       "path": "schema/inputs/evidence.ci.schema.json",
-      "doc_path": "docs/reference/contracts/command-inputs/evidence-ci.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/inputs/evidence.ci.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.EvidenceCIInput"
     },
@@ -108,7 +98,6 @@
       "title": "Publish evidence input",
       "description": "JSON input consumed by `harness evidence submit --kind publish`.",
       "path": "schema/inputs/evidence.publish.schema.json",
-      "doc_path": "docs/reference/contracts/command-inputs/evidence-publish.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/inputs/evidence.publish.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.EvidencePublishInput"
     },
@@ -118,7 +107,6 @@
       "title": "Sync evidence input",
       "description": "JSON input consumed by `harness evidence submit --kind sync`.",
       "path": "schema/inputs/evidence.sync.schema.json",
-      "doc_path": "docs/reference/contracts/command-inputs/evidence-sync.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/inputs/evidence.sync.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.EvidenceSyncInput"
     },
@@ -128,7 +116,6 @@
       "title": "Review start input",
       "description": "JSON input consumed by `harness review start`.",
       "path": "schema/inputs/review.spec.schema.json",
-      "doc_path": "docs/reference/contracts/command-inputs/review-spec.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/inputs/review.spec.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.ReviewSpec"
     },
@@ -138,7 +125,6 @@
       "title": "Review submission input",
       "description": "JSON input consumed by `harness review submit`.",
       "path": "schema/inputs/review.submission.schema.json",
-      "doc_path": "docs/reference/contracts/command-inputs/review-submission.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/inputs/review.submission.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.ReviewSubmissionInput"
     },
@@ -148,7 +134,6 @@
       "title": "Evidence submit command result",
       "description": "JSON output for `harness evidence submit`.",
       "path": "schema/commands/evidence.submit.result.schema.json",
-      "doc_path": "docs/reference/contracts/command-results/evidence-submit-result.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/commands/evidence.submit.result.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.EvidenceSubmitResult"
     },
@@ -158,7 +143,6 @@
       "title": "Install command result",
       "description": "JSON output for `harness install`.",
       "path": "schema/commands/install.result.schema.json",
-      "doc_path": "docs/reference/contracts/command-results/install-result.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/commands/install.result.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.InstallResult"
     },
@@ -168,7 +152,6 @@
       "title": "Lifecycle command result",
       "description": "Shared JSON output shape for lifecycle commands such as `harness execute start`, `harness archive`, `harness reopen`, `harness land`, and `harness land complete`.",
       "path": "schema/commands/lifecycle.result.schema.json",
-      "doc_path": "docs/reference/contracts/command-results/lifecycle-result.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/commands/lifecycle.result.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.LifecycleResult"
     },
@@ -178,7 +161,6 @@
       "title": "Review aggregate command result",
       "description": "JSON output for `harness review aggregate`.",
       "path": "schema/commands/review.aggregate.result.schema.json",
-      "doc_path": "docs/reference/contracts/command-results/review-aggregate-result.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/commands/review.aggregate.result.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.ReviewAggregateResult"
     },
@@ -188,7 +170,6 @@
       "title": "Review start command result",
       "description": "JSON output for `harness review start`.",
       "path": "schema/commands/review.start.result.schema.json",
-      "doc_path": "docs/reference/contracts/command-results/review-start-result.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/commands/review.start.result.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.ReviewStartResult"
     },
@@ -198,7 +179,6 @@
       "title": "Review submit command result",
       "description": "JSON output for `harness review submit`.",
       "path": "schema/commands/review.submit.result.schema.json",
-      "doc_path": "docs/reference/contracts/command-results/review-submit-result.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/commands/review.submit.result.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.ReviewSubmitResult"
     },
@@ -208,7 +188,6 @@
       "title": "Status command result",
       "description": "JSON output for `harness status`.",
       "path": "schema/commands/status.result.schema.json",
-      "doc_path": "docs/reference/contracts/command-results/status-result.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/commands/status.result.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.StatusResult"
     },
@@ -218,7 +197,6 @@
       "title": "Error detail",
       "description": "Reusable path-plus-message error shape embedded in multiple command results.",
       "path": "schema/shared/error-detail.schema.json",
-      "doc_path": "docs/reference/contracts/shared/error-detail.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/shared/error-detail.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.ErrorDetail"
     },
@@ -228,7 +206,6 @@
       "title": "Next action",
       "description": "Reusable next-action shape embedded in multiple command results.",
       "path": "schema/shared/next-action.schema.json",
-      "doc_path": "docs/reference/contracts/shared/next-action.md",
       "id": "https://github.com/catu-ai/easyharness/tree/main/schema/shared/next-action.schema.json",
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.NextAction"
     }
