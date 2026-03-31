@@ -164,7 +164,7 @@ func (s Service) Archive() Result {
 		return errorResult("archive", "Unable to update Archive Summary.", []CommandError{{Path: "section.Archive Summary", Message: err.Error()}})
 	}
 
-	targetPath := filepath.Join(s.Workdir, "docs", "plans", "archived", filepath.Base(currentPath))
+	targetPath := plan.ArchivedPathFor(s.Workdir, planStem, currentPath, doc.WorkflowProfile())
 	if _, err := os.Stat(targetPath); err == nil {
 		return errorResult("archive", "Archived target path already exists.", []CommandError{{Path: "path", Message: fmt.Sprintf("target already exists: %s", targetPath)}})
 	}
@@ -221,6 +221,18 @@ func (s Service) Archive() Result {
 		return errorResult("archive", "Unable to remove the active plan after archiving.", rollbackErrors)
 	}
 
+	nextActions := []NextAction{
+		{Command: nil, Description: "Commit and push the tracked plan change created by archiving before treating the candidate as truly waiting for merge approval."},
+		{Command: nil, Description: "Wait for human merge approval or merge manually from the PR once checks are green."},
+		{Command: nil, Description: "If new feedback or remote changes invalidate the archived candidate, reopen with `harness reopen --mode finalize-fix` for narrow repair or `harness reopen --mode new-step` when the change deserves a new unfinished step."},
+	}
+	if doc.UsesLightweightProfile() {
+		nextActions = append([]NextAction{
+			{Command: nil, Description: "Update the agreed repo-visible breadcrumb, such as the PR body note that explains why the lightweight path was used, before treating the candidate as truly waiting for merge approval."},
+			{Command: nil, Description: "Commit and push the tracked active-plan removal created by lightweight archiving before treating the candidate as truly waiting for merge approval."},
+		}, nextActions...)
+	}
+
 	return Result{
 		OK:      true,
 		Command: "archive",
@@ -236,11 +248,7 @@ func (s Service) Archive() Result {
 			LocalStatePath:  statePath,
 			CurrentPlanPath: currentPlanPath,
 		},
-		NextAction: []NextAction{
-			{Command: nil, Description: "Commit and push the archived plan move before treating the candidate as truly waiting for merge approval."},
-			{Command: nil, Description: "Wait for human merge approval or merge manually from the PR once checks are green."},
-			{Command: nil, Description: "If new feedback or remote changes invalidate the archived candidate, reopen with `harness reopen --mode finalize-fix` for narrow repair or `harness reopen --mode new-step` when the change deserves a new unfinished step."},
-		},
+		NextAction: nextActions,
 	}
 }
 
@@ -289,7 +297,7 @@ func (s Service) Reopen(mode string) Result {
 		return errorResult("reopen", "Unable to refresh Outcome Summary.", []CommandError{{Path: "section.Outcome Summary", Message: err.Error()}})
 	}
 
-	targetPath := filepath.Join(s.Workdir, "docs", "plans", "active", filepath.Base(currentPath))
+	targetPath := plan.ActivePathFor(s.Workdir, planStem, currentPath, doc.WorkflowProfile())
 	if _, err := os.Stat(targetPath); err == nil {
 		return errorResult("reopen", "Active target path already exists.", []CommandError{{Path: "path", Message: fmt.Sprintf("target already exists: %s", targetPath)}})
 	}

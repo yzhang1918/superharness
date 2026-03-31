@@ -6,8 +6,8 @@
 - [State Transitions](./state-transitions.md): exhaustive enumeration of every
   allowed v0.2 `current_node` transition, including command-driven milestones
   and derived progression rules.
-- [Plan Schema](./plan-schema.md): durable tracked-plan contract plus local
-  state expectations.
+- [Plan Schema](./plan-schema.md): shared plan contract for tracked `standard`
+  plans, local `lightweight` plans, and local state expectations.
 - [CLI Contract](./cli-contract.md): agent-facing command surface and JSON
   contract, including repository bootstrap through `harness install`.
 

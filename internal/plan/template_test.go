@@ -54,3 +54,25 @@ func TestRenderTemplateUsesEmptyArrayForMissingSourceRefs(t *testing.T) {
 		t.Fatalf("expected empty source_refs array, got:\n%s", rendered)
 	}
 }
+
+func TestRenderTemplateLightweightSeedsWorkflowProfileAndSingleStep(t *testing.T) {
+	rendered, err := plan.RenderTemplate(plan.TemplateOptions{
+		Title:           "Lightweight Plan",
+		WorkflowProfile: plan.WorkflowProfileLightweight,
+	})
+	if err != nil {
+		t.Fatalf("RenderTemplate returned error: %v", err)
+	}
+	for _, want := range []string{
+		"workflow_profile: lightweight",
+		"### Step 1: Describe the low-risk change",
+		"Describe the narrow low-risk change to make.",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered lightweight template missing %q\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "### Step 2:") {
+		t.Fatalf("expected lightweight template to collapse to a single step\n%s", rendered)
+	}
+}

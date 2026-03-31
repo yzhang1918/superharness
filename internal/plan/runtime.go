@@ -17,6 +17,17 @@ func (d *Document) DerivedPlanStatus() string {
 	}
 }
 
+func (d *Document) WorkflowProfile() string {
+	if d == nil {
+		return WorkflowProfileStandard
+	}
+	return normalizeWorkflowProfile(d.Frontmatter.WorkflowProfile)
+}
+
+func (d *Document) UsesLightweightProfile() bool {
+	return d.WorkflowProfile() == WorkflowProfileLightweight
+}
+
 func (d *Document) ExecutionStarted(state *runstate.State) bool {
 	if state == nil {
 		return false

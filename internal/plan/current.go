@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/catu-ai/easyharness/internal/runstate"
@@ -14,11 +13,13 @@ import (
 var ErrNoCurrentPlan = errors.New("no current plan found")
 
 func DetectCurrentPath(workdir string) (string, error) {
-	activeMatches, err := filepath.Glob(filepath.Join(workdir, "docs", "plans", "active", "*.md"))
+	activeMatches, err := activeCandidatePaths(workdir)
 	if err != nil {
 		return "", err
 	}
-	sort.Strings(activeMatches)
+	if len(activeMatches) > 1 {
+		return "", fmt.Errorf("multiple active plans found; state resolution must fail rather than guess")
+	}
 
 	if current, err := runstate.LoadCurrentPlan(workdir); err != nil {
 		return "", err
@@ -34,9 +35,6 @@ func DetectCurrentPath(workdir string) (string, error) {
 			if len(activeMatches) == 1 {
 				return activeMatches[0], nil
 			}
-			if len(activeMatches) > 1 {
-				return "", fmt.Errorf("multiple active plans found; current-plan.json points to archived work and cannot disambiguate")
-			}
 		}
 
 		if _, err := os.Stat(currentPath); err == nil {
@@ -48,9 +46,6 @@ func DetectCurrentPath(workdir string) (string, error) {
 
 	if len(activeMatches) == 1 {
 		return activeMatches[0], nil
-	}
-	if len(activeMatches) > 1 {
-		return "", fmt.Errorf("multiple active plans found; add .local/harness/current-plan.json to disambiguate")
 	}
 
 	return "", ErrNoCurrentPlan
@@ -75,8 +70,4 @@ func containsPath(paths []string, target string) bool {
 		}
 	}
 	return false
-}
-
-func currentLooksArchived(path string) bool {
-	return strings.Contains(path, filepath.Join("docs", "plans", "archived")+string(os.PathSeparator))
 }

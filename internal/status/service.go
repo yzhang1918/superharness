@@ -304,6 +304,18 @@ func (s Service) Read() Result {
 		result.Warnings = append(result.Warnings, buildMissingStepCloseoutWarnings(result.State.CurrentNode, missingStepReminder)...)
 		result.NextAction = prependMissingStepCloseoutActions(result.State.CurrentNode, result.NextAction, facts, reviewCtx, missingStepReminder)
 	}
+	if doc.UsesLightweightProfile() &&
+		(result.State.CurrentNode == "execution/finalize/publish" || result.State.CurrentNode == "execution/finalize/await_merge") &&
+		(missingStepReminder == nil || !missingStepReminder.hasDebt()) {
+		action := NextAction{
+			Command:     nil,
+			Description: "Leave or verify the agreed repo-visible breadcrumb, such as a PR body note explaining why the lightweight path was used, before waiting for merge approval.",
+		}
+		result.NextAction = append([]NextAction{action}, result.NextAction...)
+		if !strings.Contains(result.Summary, "lightweight path") {
+			result.Summary += " The lightweight path still needs its repo-visible breadcrumb."
+		}
+	}
 	if facts.empty() {
 		result.Facts = nil
 	} else {
@@ -1155,7 +1167,12 @@ func containsNextActionCommand(actions []NextAction, command string) bool {
 }
 
 func buildPublishNextActions(facts *Facts) []NextAction {
-	actions := make([]NextAction, 0)
+	actions := []NextAction{
+		{
+			Command:     nil,
+			Description: "Commit and push the tracked plan change created by archiving before treating the candidate as merge-ready.",
+		},
+	}
 
 	switch {
 	case facts == nil || facts.PublishStatus == "":

@@ -23,13 +23,13 @@ type scenarioCoverage struct {
 }
 
 var canonicalTransitionFamilies = []transitionFamily{
-	{ID: "idle_to_plan", From: "idle", To: "plan", Driver: "Derived from tracked plan presence", RequiredInputs: "Exactly one active plan exists and execution-start is absent"},
+	{ID: "idle_to_plan", From: "idle", To: "plan", Driver: "Derived from current plan presence", RequiredInputs: "Execution-start is absent, and exactly one active tracked plan exists under `docs/plans/active/`"},
 	{ID: "plan_self", From: "plan", To: "plan", Driver: "state-preserving", RequiredInputs: "state-preserving update"},
 	{ID: "plan_to_step_implement", From: "plan", To: "execution/step-<n>/implement", Driver: "harness execute start", RequiredInputs: "Current plan is approved for execution and has at least one unfinished step"},
 	{ID: "step_implement_self", From: "execution/step-<n>/implement", To: "execution/step-<n>/implement", Driver: "state-preserving", RequiredInputs: "state-preserving update"},
 	{ID: "step_implement_to_review", From: "execution/step-<n>/implement", To: "execution/step-<n>/review", Driver: "harness review start", RequiredInputs: "The command binds the new round to the current step"},
-	{ID: "step_implement_to_next_step_implement", From: "execution/step-<n>/implement", To: "execution/step-<m>/implement", Driver: "Derived from tracked plan edits", RequiredInputs: "Step `<n>` becomes durably complete, any required step review is clean, and another unfinished step exists"},
-	{ID: "step_implement_to_finalize_review", From: "execution/step-<n>/implement", To: "execution/finalize/review", Driver: "Derived from tracked plan edits", RequiredInputs: "Step `<n>` becomes durably complete, any required step review is clean, and no unfinished steps remain"},
+	{ID: "step_implement_to_next_step_implement", From: "execution/step-<n>/implement", To: "execution/step-<m>/implement", Driver: "Derived from current plan edits", RequiredInputs: "Step `<n>` becomes durably complete, any required step review is clean, and another unfinished step exists"},
+	{ID: "step_implement_to_finalize_review", From: "execution/step-<n>/implement", To: "execution/finalize/review", Driver: "Derived from current plan edits", RequiredInputs: "Step `<n>` becomes durably complete, any required step review is clean, and no unfinished steps remain"},
 	{ID: "step_review_self", From: "execution/step-<n>/review", To: "execution/step-<n>/review", Driver: "state-preserving", RequiredInputs: "state-preserving update"},
 	{ID: "step_review_to_step_implement_clean", From: "execution/step-<n>/review", To: "execution/step-<n>/implement", Driver: "harness review aggregate", RequiredInputs: "Latest aggregate is clean"},
 	{ID: "step_review_to_step_implement_repair", From: "execution/step-<n>/review", To: "execution/step-<n>/implement", Driver: "harness review aggregate", RequiredInputs: "Latest aggregate has actionable findings or an unrecoverable conservative outcome"},
@@ -38,7 +38,7 @@ var canonicalTransitionFamilies = []transitionFamily{
 	{ID: "finalize_review_to_finalize_archive", From: "execution/finalize/review", To: "execution/finalize/archive", Driver: "Derived from clean finalize review", RequiredInputs: "Finalize review is satisfied and archive closeout work remains"},
 	{ID: "finalize_fix_self", From: "execution/finalize/fix", To: "execution/finalize/fix", Driver: "state-preserving", RequiredInputs: "state-preserving update"},
 	{ID: "finalize_fix_to_finalize_review", From: "execution/finalize/fix", To: "execution/finalize/review", Driver: "harness review start", RequiredInputs: "A new finalize review round is started after repair"},
-	{ID: "finalize_fix_to_new_step_implement", From: "execution/finalize/fix", To: "execution/step-<m>/implement", Driver: "Derived from tracked plan edits", RequiredInputs: "Reopen mode is `new-step`, the first new unfinished step has been added, and that new step is now current"},
+	{ID: "finalize_fix_to_new_step_implement", From: "execution/finalize/fix", To: "execution/step-<m>/implement", Driver: "Derived from current plan edits", RequiredInputs: "Reopen mode is `new-step`, the first new unfinished step has been added, and that new step is now current"},
 	{ID: "finalize_archive_self", From: "execution/finalize/archive", To: "execution/finalize/archive", Driver: "state-preserving", RequiredInputs: "state-preserving update"},
 	{ID: "finalize_archive_to_publish", From: "execution/finalize/archive", To: "execution/finalize/publish", Driver: "harness archive", RequiredInputs: "Finalize review is satisfied and archive closeout is ready"},
 	{ID: "publish_self", From: "execution/finalize/publish", To: "execution/finalize/publish", Driver: "state-preserving", RequiredInputs: "state-preserving update"},
@@ -135,6 +135,24 @@ var currentScenarioCoverage = []scenarioCoverage{
 			"finalize_review_self",
 			"finalize_review_to_finalize_archive",
 			"finalize_archive_self",
+			"finalize_archive_to_publish",
+			"publish_self",
+			"publish_to_await_merge",
+		},
+	},
+	{
+		ID:       "lightweight_workflow",
+		TestName: "TestLightweightWorkflowWithBuiltBinary",
+		TransitionIDs: []string{
+			"idle_to_plan",
+			"plan_self",
+			"plan_to_step_implement",
+			"step_implement_to_review",
+			"step_review_self",
+			"step_review_to_step_implement_clean",
+			"step_implement_to_finalize_review",
+			"finalize_review_self",
+			"finalize_review_to_finalize_archive",
 			"finalize_archive_to_publish",
 			"publish_self",
 			"publish_to_await_merge",
@@ -381,7 +399,11 @@ func splitMarkdownRow(line string) []string {
 }
 
 func trimInlineCode(value string) string {
-	return strings.Trim(strings.TrimSpace(value), "`")
+	trimmed := strings.TrimSpace(value)
+	if strings.HasPrefix(trimmed, "`") && strings.HasSuffix(trimmed, "`") && strings.Count(trimmed, "`") == 2 {
+		return strings.TrimSuffix(strings.TrimPrefix(trimmed, "`"), "`")
+	}
+	return trimmed
 }
 
 func extractInlineCode(line string) (string, bool) {

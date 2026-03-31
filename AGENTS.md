@@ -48,7 +48,9 @@ Keep easyharness-specific guidance outside the managed markers.
 The default harness split in this repository is:
 
 - tracked plan in `docs/plans/`: scope, durable step closeout, archive-ready summaries
+- `.local/harness/plans/archived/`: archived lightweight plan snapshots
 - `.local/harness/`: disposable runtime state, review artifacts, evidence artifacts, and trajectory
+- `docs/specs/`: normative harness contracts
 - `.agents/skills/`: repo-local harness workflow skills
 
 If a tracked plan conflicts with a repo-local skill, the tracked plan wins.
@@ -62,6 +64,22 @@ For medium or large work:
 3. Execute
 4. Archive / publish / await merge approval
 5. Land
+
+For approved low-risk work that explicitly uses `workflow_profile:
+lightweight`, keep the same workflow shape but store the active plan under
+`docs/plans/active/` like any other plan. Only the archived lightweight
+snapshot moves to `.local/harness/plans/archived/<plan-stem>.md`. That
+shortcut does not remove human steering, low-risk eligibility checks, or the
+requirement to leave a repo-visible breadcrumb such as a PR body note.
+
+Use `lightweight` only when all of these are true:
+
+- the whole slice is one bounded low-risk maintenance change
+- the edits are limited to README/docs/comments/copy or similarly
+  non-behavioral cleanup
+- no `harness` behavior, normative spec, state rule, persistence behavior,
+  release or CI workflow, or security-sensitive logic changes
+- if the boundary is unclear, default to `standard`
 
 Use `harness reopen --mode finalize-fix|new-step` when an archived candidate
 is no longer merge-ready because of new feedback, remote changes, or other
@@ -98,7 +116,9 @@ When entering the repository or resuming after compaction:
 
 1. Read `README.md` if you need repository purpose or setup context.
 2. Run `harness status`.
-3. If `harness status` reports a current plan artifact, open that tracked plan.
+3. If `harness status` reports a current plan artifact, open that plan.
+   Active work always uses a tracked plan under `docs/plans/active/`; archived
+   lightweight candidates may live under `.local/harness/plans/archived/`.
    If status reports `idle`, there is no current plan to resume yet.
 4. Most resumed work should continue in `harness-execute`.
 5. Switch only when `harness status` and the workflow boundary clearly call for
@@ -120,6 +140,9 @@ When entering the repository or resuming after compaction:
   otherwise
 - when writing multi-line git or gh bodies, prefer heredocs so shell quoting
   does not eat backticks or other structured text
+- when using the lightweight workflow, leave the agreed repo-visible breadcrumb
+  in the PR body or other approved review surface before treating the candidate
+  as ready to wait for merge approval
 - default merge strategy: `Merge commit`
 - do not rewrite shared history without explicit approval
 

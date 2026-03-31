@@ -39,9 +39,9 @@ plus the latest relevant artifacts.
 
 ### CLI-Owned Resolution
 
-Agents do not set `current_node` directly. The CLI resolves it from tracked
-plan content plus command-owned artifacts and may cache the latest answer in a
-thin CLI-owned `state.json`.
+Agents do not set `current_node` directly. The CLI resolves it from the
+current plan artifact plus command-owned artifacts and may cache the latest
+answer in a thin CLI-owned `state.json`.
 
 ### Safe Local Persistence
 
@@ -59,9 +59,13 @@ together or a process exits during persistence.
 
 ### Durable Plan, Disposable Runtime
 
-Tracked plans remain the durable source of scope, step closeout, and archive
-summaries. Runtime trajectory, milestone timestamps, and external-fact capture
-belong in `.local/harness/`.
+Tracked active plans remain the durable source of scope, step closeout, and
+archive summaries for both profiles. Lightweight work uses the same schema and
+the same tracked active-plan location, but its archived snapshot moves into
+`.local/harness/plans/archived/` so the workflow can stay lightweight for
+narrow low-risk changes. Runtime trajectory, milestone timestamps, and
+external-fact capture also belong in `.local/harness/`. There is no separate
+local active lightweight plan path in this model.
 
 ### Explicit Command Boundaries
 
@@ -90,7 +94,7 @@ root
 
 ## Ownership Split
 
-### Tracked Plan Owns
+### Plan Artifact Owns
 
 - durable scope and non-goals
 - acceptance criteria
@@ -98,6 +102,11 @@ root
 - step-local `Execution Notes`
 - step-local `Review Notes`
 - archive-time summaries and outcome notes
+
+For active work in both profiles, this plan artifact is a tracked file under
+`docs/plans/active/`. Standard archives stay tracked under
+`docs/plans/archived/`. Lightweight archived snapshots move to
+`.local/harness/plans/archived/`.
 
 ### Command-Owned Runtime Artifacts Own
 
@@ -126,24 +135,30 @@ any interrupted or overlapping command.
 
 ## Current Plan Selection
 
-v0.2 assumes one active tracked plan per repository.
+v0.2 assumes one active plan artifact per repository.
 
 Resolution rules:
 
-- if exactly one active plan exists under `docs/plans/active/`, that plan is
-  current for `plan` and `execution/...` nodes
+- if more than one active tracked plan exists under `docs/plans/active/`,
+  state resolution is invalid and should fail rather than guess
+- lightweight archived snapshots under `.local/harness/plans/archived/` do not
+  count as active-plan candidates
+- if `.local/harness/current-plan.json` points to the sole active plan path and
+  that path still exists, that plan is current
+- otherwise, if exactly one active tracked plan exists under
+  `docs/plans/active/`, that plan is current for `plan` and `execution/...`
+  nodes
 - if no active plan exists, CLI-owned archived or landed context may still
   identify the current archived candidate or the most recent landed candidate
-- if multiple active plans exist, state resolution is invalid and should fail
-  rather than guess
 
 ## Runtime Inputs
 
 `harness status` resolves `current_node` from:
 
-- the tracked plan content
+- the current plan content
+- the plan path and optional `workflow_profile: lightweight`
 - whether execution-start has been recorded
-- the first unfinished step from the tracked plan
+- the first unfinished step from the current plan
 - review artifacts for the current step or the finalize gate
 - append-only `ci`, `publish`, and `sync` evidence
 - archive, reopen, and land milestones
@@ -163,6 +178,10 @@ Resolution rules:
 The exact transition matrix is normative in
 [State Transitions](./state-transitions.md).
 
+The lightweight profile does not add a second node tree. It reuses the same
+canonical nodes while changing where the archived snapshot lives and what
+closeout guidance `harness status` should emphasize.
+
 ## Node Semantics
 
 ### `idle`
@@ -171,8 +190,8 @@ No current work is in flight. This is the normal post-land resting state.
 
 ### `plan`
 
-A current active plan exists, but execution has not started. Plan edits,
-approval, and step refinement happen here.
+A current tracked active plan exists, but execution has not started. Plan
+edits, approval, and step refinement happen here for both profiles.
 
 ### `execution/step-<n>/implement`
 
@@ -204,12 +223,15 @@ can be claimed again.
 
 Finalize review is satisfied and the remaining work is archive-closeout:
 refreshing required summaries, resolving placeholders, and preparing for the
-tracked-file move.
+appropriate archive move or snapshot update.
 
 ### `execution/finalize/publish`
 
 The plan is already archived, but merge readiness still depends on external
-handoff facts recorded through `publish`, `ci`, and `sync` evidence.
+handoff facts recorded through `publish`, `ci`, and `sync` evidence. For
+lightweight work, this phase is also where status should remind the controller
+to leave the agreed repo-visible breadcrumb, such as a PR body note explaining
+why the lightweight path was used.
 
 ### `execution/finalize/await_merge`
 

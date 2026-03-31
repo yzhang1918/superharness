@@ -2,19 +2,28 @@
 
 ## Purpose
 
-This document defines the normative v0.2 tracked-plan contract for
-`easyharness`.
+This document defines the normative v0.2 plan contract for `easyharness`.
 
-In v0.2, tracked plans keep durable scope, step closeout, and archive-time
-summaries. Runtime lifecycle, milestone timestamps, review rounds, evidence
-history, and resolved node state live in `.local/harness/`.
+In v0.2, standard and lightweight plans share one markdown schema. Active plans
+for both profiles live in tracked markdown under `docs/plans/active/`.
+Lightweight diverges only at archive time, when the archived snapshot moves
+into command-owned local storage. Runtime lifecycle, milestone timestamps,
+review rounds, evidence history, and resolved node state live in
+`.local/harness/`.
 
 ## Directory Layout
 
-Tracked plans live in:
+Tracked plan locations live in:
 
 - `docs/plans/active/`
 - `docs/plans/archived/`
+
+Lightweight local archived snapshots live in:
+
+- `.local/harness/plans/archived/<plan-stem>.md`
+
+There is no local active lightweight plan path in v0.2. Both `standard` and
+`lightweight` active plans live under `docs/plans/active/`.
 
 Command-owned local artifacts live under:
 
@@ -23,14 +32,19 @@ Command-owned local artifacts live under:
 - `.local/harness/plans/<plan-stem>/reviews/`
 - `.local/harness/plans/<plan-stem>/evidence/`
 
-The tracked plan is the durable contract. `.local` is disposable execution
-support and trajectory.
+Tracked plans remain durable repository history for active work and standard
+archives. Lightweight archived snapshots are command-owned local execution
+artifacts. `.local` is still disposable execution support and trajectory;
+lightweight workflow use must therefore leave a small repo-visible breadcrumb
+outside the local archive path, as defined by the CLI and agent guidance
+contracts.
 
 ## Source of Truth
 
 The source-of-truth split is:
 
-- this schema document defines the tracked-plan contract
+- this schema document defines the shared plan contract for standard and
+  lightweight profiles
 - [the packaged plan template asset](../../assets/templates/plan-template.md)
   is the canonical authoring example shipped by harness
 - `harness plan template` is a convenience wrapper around the packaged asset
@@ -57,8 +71,7 @@ The file stem is the durable identifier used by command-owned local state:
 
 ## Frontmatter
 
-Every plan must start with YAML frontmatter containing exactly these durable
-fields:
+Every plan must start with YAML frontmatter containing these durable fields:
 
 ```yaml
 ---
@@ -91,17 +104,62 @@ source_refs: []
   - array of external references such as issue IDs or URLs
   - use `[]` when there are none
 
+### Optional Fields
+
+- `workflow_profile`
+  - optional explicit workflow selector
+  - supported value is `lightweight`
+  - omitted means `standard`
+  - `standard` must not be written explicitly; omitting the field preserves
+    the current standard behavior
+  - tracked plans under `docs/plans/active/` may set this field only to
+    `lightweight`
+  - tracked plans under `docs/plans/archived/` must omit this field
+  - local archived plans under `.local/harness/plans/archived/` must set it to
+    `lightweight`
+
+## Lightweight Eligibility
+
+`workflow_profile: lightweight` is allowed only when every rule below is true:
+
+- the whole slice is one intentionally narrow low-risk change that can be
+  planned, implemented, and validated as a single bounded step
+- the expected edits are limited to non-behavioral repository maintenance such
+  as README wording, documentation copy, comments, or similarly narrow
+  explanatory cleanup
+- no `harness` CLI behavior, state resolution rule, review/archive contract,
+  persistence behavior, release or CI automation, security-sensitive logic, or
+  other user-visible product behavior changes
+- if the boundary is unclear, the risk is disputed, or the slice stops looking
+  obviously lightweight, it must use `standard`
+
+Examples that may use `lightweight`:
+
+- fixing a broken README link
+- correcting narrow documentation wording
+- cleaning up comments without changing behavior
+
+Examples that must stay `standard`:
+
+- any change under `docs/specs/` that changes the product contract
+- any change to Go code, tests that prove new behavior, or release/CI workflow
+  logic
+- any change that needs more than one meaningful implementation step or a
+  broader review posture than bounded low-risk maintenance
+
 ### Removed v0.1 Runtime Fields
 
-v0.2 tracked plans must not carry these top-level runtime fields:
+v0.2 plans must not carry these top-level runtime fields:
 
 - `status`
 - `lifecycle`
 - `revision`
 - `updated_at`
 
-Path placement already answers active vs archived. Runtime milestones and
-revision history belong in command-owned artifacts, not tracked frontmatter.
+Path placement plus optional `workflow_profile: lightweight` answer whether a
+plan is standard or lightweight and whether it is active or archived. Runtime
+milestones and revision history belong in command-owned artifacts, not plan
+frontmatter.
 
 ## Required Sections
 
@@ -188,7 +246,8 @@ Rules:
 
 ## Placeholder Policy
 
-These exact active-plan placeholders are allowed:
+These exact active-plan placeholders are allowed in active tracked plans for
+both profiles:
 
 - `Execution Notes`: `PENDING_STEP_EXECUTION`
 - `Review Notes`: `PENDING_STEP_REVIEW`
@@ -244,12 +303,45 @@ Archive readiness rules:
 - if there are no deferred items and no follow-up, `Follow-Up Issues` may stay
   `NONE`
 
+## Lightweight Eligibility
+
+`workflow_profile: lightweight` is only for narrow low-risk work that keeps
+human steering but does not justify a tracked archived plan artifact.
+
+The lightweight profile is eligible only when all of these are true:
+
+- the human explicitly approves using the lightweight profile
+- the plan still describes a small bounded slice that one short plan can steer
+- the expected change is limited to low-risk repository surfaces such as:
+  - README or docs wording
+  - comments or other non-behavioral text cleanup
+  - similarly narrow metadata or wording fixes that do not change product
+    behavior, state transitions, or command semantics
+- the controller can explain the lightweight choice in one small repo-visible
+  breadcrumb such as a PR body note
+
+The lightweight profile is not eligible when any of these are true:
+
+- the change affects CLI, runtime, release, review, archive, evidence, or
+  state-machine behavior
+- the change modifies normative product contracts, schema meaning, or command
+  semantics
+- the change spans multiple risk areas or would make a reviewer reasonably ask
+  for a tracked archive record
+- the controller is unsure whether the slice is truly low-risk
+
+When there is any doubt, escalate to the standard tracked-plan workflow.
+
 ## Active Plan Rules
 
 An active plan must satisfy all of these:
 
 - the file lives under `docs/plans/active/`
+- lightweight does not create a separate local active-plan location
 - the required frontmatter fields are present
+- any optional `workflow_profile` field is compatible with the path:
+  - omitted means `standard`
+  - explicit `workflow_profile` is allowed only for `lightweight`
 - every step uses a `Done` marker
 - archive-only summary sections may still contain the documented active-plan
   placeholders
@@ -260,7 +352,12 @@ An active plan must satisfy all of these:
 
 An archived plan must satisfy all of these:
 
-- the file lives under `docs/plans/archived/`
+- the file lives under either:
+  - `docs/plans/archived/`
+  - `.local/harness/plans/archived/`
+- any optional `workflow_profile` field is compatible with the path:
+  - tracked archived plans must omit `workflow_profile`
+  - local archived plans require `workflow_profile: lightweight`
 - every acceptance criterion is checked
 - every step is `Done: [x]`
 - every step-local acceptance checkbox is checked when present
@@ -291,7 +388,10 @@ tracked archive summary. It is no longer tracked as frontmatter.
 `harness reopen --mode <...>` is a mechanical transition from archived back to
 active:
 
-- move the file from `docs/plans/archived/` to `docs/plans/active/`
+- move the file from the archived path back to the corresponding active path:
+  - `docs/plans/archived/` -> `docs/plans/active/` for `standard`
+  - `.local/harness/plans/archived/` -> `docs/plans/active/` for
+    `lightweight`
 - preserve prior archive-time wording
 - prepend `UPDATE_REQUIRED_AFTER_REOPEN` markers to reopen-sensitive summaries
 - clear stale review and evidence facts that belonged to the invalidated
@@ -324,7 +424,12 @@ Mode-specific rules:
 - acceptance criteria or step-local acceptance criteria that are not checkboxes
 - missing step `Done` markers or legacy `Status:` lines
 - missing required step subsections
-- plans stored outside `docs/plans/active/` or `docs/plans/archived/`
+- unsupported `workflow_profile` values
+- plans stored outside:
+  - `docs/plans/active/`
+  - `docs/plans/archived/`
+  - `.local/harness/plans/archived/`
+- plans whose path and `workflow_profile` disagree
 - archived plans with unchecked acceptance criteria, incomplete steps, or
   unchecked step-local acceptance criteria
 - archived plans that still contain active-plan or reopen update placeholders

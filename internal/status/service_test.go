@@ -53,6 +53,61 @@ func TestStatusPlanNodeForActivePlan(t *testing.T) {
 	}
 }
 
+func TestStatusPlanNodeForTrackedLightweightPlan(t *testing.T) {
+	root := t.TempDir()
+	relPath := "docs/plans/active/2026-03-18-status-lightweight.md"
+	writePlan(t, root, relPath, func(content string) string {
+		return strings.Replace(content, "source_refs: []", "source_refs: []\nworkflow_profile: lightweight", 1)
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if !result.OK {
+		t.Fatalf("expected OK status result, got %#v", result)
+	}
+	if result.State.CurrentNode != "plan" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if result.Artifacts == nil || !strings.Contains(result.Artifacts.PlanPath, relPath) {
+		t.Fatalf("unexpected artifacts: %#v", result.Artifacts)
+	}
+}
+
+func TestStatusLightweightPublishPromptsForBreadcrumb(t *testing.T) {
+	root := t.TempDir()
+	relPath := ".local/harness/plans/archived/2026-03-18-status-lightweight.md"
+	writePlan(t, root, relPath, func(content string) string {
+		content = strings.Replace(content, "source_refs: []", "source_refs: []\nworkflow_profile: lightweight", 1)
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, relPath)
+	writeState(t, root, "2026-03-18-status-lightweight", map[string]any{
+		"plan_path": relPath,
+		"plan_stem": "2026-03-18-status-lightweight",
+		"revision":  1,
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/publish" {
+		t.Fatalf("unexpected node: %#v", result.State)
+	}
+	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "repo-visible breadcrumb") {
+		t.Fatalf("expected breadcrumb guidance first, got %#v", result.NextAction)
+	}
+	foundCommitPush := false
+	for _, action := range result.NextAction {
+		if strings.Contains(action.Description, "Commit and push the tracked plan change created by archiving") {
+			foundCommitPush = true
+			break
+		}
+	}
+	if !foundCommitPush {
+		t.Fatalf("expected publish guidance to mention commit/push for the tracked archive change, got %#v", result.NextAction)
+	}
+	if !strings.Contains(result.Summary, "repo-visible breadcrumb") {
+		t.Fatalf("expected summary to mention breadcrumb, got %q", result.Summary)
+	}
+}
+
 func TestStatusExecutionStepImplementNode(t *testing.T) {
 	root := t.TempDir()
 	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
@@ -1362,7 +1417,14 @@ func TestStatusArchivedPlanNeedsPublishEvidence(t *testing.T) {
 	if result.State.CurrentNode != "execution/finalize/publish" {
 		t.Fatalf("unexpected node: %#v", result.State)
 	}
-	if len(result.NextAction) < 2 || result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness evidence submit --kind publish --input <json>" {
+	foundPublishSubmit := false
+	for _, action := range result.NextAction {
+		if action.Command != nil && *action.Command == "harness evidence submit --kind publish --input <json>" {
+			foundPublishSubmit = true
+			break
+		}
+	}
+	if !foundPublishSubmit {
 		t.Fatalf("unexpected next actions: %#v", result.NextAction)
 	}
 }
@@ -1410,6 +1472,35 @@ func TestStatusWarnsInArchivedPublishWhenCompletedStepStillLacksCloseout(t *test
 	}
 	if !foundPublishGuidance {
 		t.Fatalf("expected ordinary publish follow-up to remain after the reopen guidance, got %#v", result.NextAction)
+	}
+}
+
+func TestStatusLightweightPublishPrioritizesRepairDebtBeforeBreadcrumb(t *testing.T) {
+	root := t.TempDir()
+	relPath := ".local/harness/plans/archived/2026-03-18-status-lightweight.md"
+	writePlan(t, root, relPath, func(content string) string {
+		content = strings.Replace(content, "source_refs: []", "source_refs: []\nworkflow_profile: lightweight", 1)
+		return completeAllStepsWithoutCloseout(content, true)
+	})
+	writeCurrentPlan(t, root, relPath)
+	writeReviewManifest(t, root, "2026-03-18-status-lightweight", "review-002-delta", map[string]any{
+		"review_title": stepTwoTitle,
+		"step":         2,
+		"revision":     1,
+	})
+	writeReviewAggregate(t, root, "2026-03-18-status-lightweight", "review-002-delta", map[string]any{
+		"decision": "pass",
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/publish" {
+		t.Fatalf("expected publish node to stay stable, got %#v", result.State)
+	}
+	if len(result.NextAction) < 2 || !strings.Contains(result.NextAction[0].Description, stepOneTitle) {
+		t.Fatalf("expected reopen guidance to remain first when lightweight publish still has closeout debt, got %#v", result.NextAction)
+	}
+	if strings.Contains(result.NextAction[0].Description, "repo-visible breadcrumb") {
+		t.Fatalf("did not expect breadcrumb guidance to outrank repair-first actions, got %#v", result.NextAction)
 	}
 }
 
@@ -1734,7 +1825,14 @@ func TestStatusArchivedPlanStaysInPublishFromLegacyEvidenceCacheWhenDirty(t *tes
 	if result.Facts == nil || result.Facts.CIStatus != "failed" {
 		t.Fatalf("unexpected facts: %#v", result.Facts)
 	}
-	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Fix the CI failures") {
+	foundFixCI := false
+	for _, action := range result.NextAction {
+		if strings.Contains(action.Description, "Fix the CI failures") {
+			foundFixCI = true
+			break
+		}
+	}
+	if !foundFixCI {
 		t.Fatalf("unexpected next actions: %#v", result.NextAction)
 	}
 }
@@ -1769,7 +1867,14 @@ func TestStatusArchivedPlanStaysInPublishWhenEvidenceIsDirty(t *testing.T) {
 	if result.Facts == nil || result.Facts.CIStatus != "pending" {
 		t.Fatalf("unexpected facts: %#v", result.Facts)
 	}
-	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Wait for the relevant post-archive CI") {
+	foundPendingCI := false
+	for _, action := range result.NextAction {
+		if strings.Contains(action.Description, "Wait for the relevant post-archive CI") {
+			foundPendingCI = true
+			break
+		}
+	}
+	if !foundPendingCI {
 		t.Fatalf("unexpected next actions: %#v", result.NextAction)
 	}
 }
@@ -1804,7 +1909,14 @@ func TestStatusArchivedPlanStaysInPublishWhenSyncIsDirty(t *testing.T) {
 	if result.Facts == nil || result.Facts.SyncStatus != "conflicted" {
 		t.Fatalf("unexpected facts: %#v", result.Facts)
 	}
-	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Resolve merge conflicts") {
+	foundResolveConflicts := false
+	for _, action := range result.NextAction {
+		if strings.Contains(action.Description, "Resolve merge conflicts") {
+			foundResolveConflicts = true
+			break
+		}
+	}
+	if !foundResolveConflicts {
 		t.Fatalf("unexpected next actions: %#v", result.NextAction)
 	}
 }

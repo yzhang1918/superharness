@@ -55,6 +55,8 @@ when it is genuinely impractical, and record the reason in the step's
 2. If `harness status` points to a current tracked plan that is already
    approved for execution, stay in `harness-execute` and open that plan from
    `plan_path`.
+   Active work uses a tracked plan even when the profile is lightweight; only
+   archived lightweight snapshots move into `.local/`.
 3. Identify the active or next plan step.
 4. Use the status output to answer four questions:
    - which tracked plan is current
@@ -87,6 +89,8 @@ when it is genuinely impractical, and record the reason in the step's
     stopping to ask the human whether routine review closeout should happen
 - `execution/finalize/publish`
   - the plan is archived, but publish, CI, or sync evidence still needs work
+  - for lightweight work, keep the repo-visible breadcrumb requirement in view
+    while driving the candidate toward `await_merge`
 - `execution/finalize/await_merge`
   - the archived candidate is merge-ready; stay in execute until explicit
     human merge approval switches the controller into `harness-land`

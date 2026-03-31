@@ -29,7 +29,7 @@ func TestDetectCurrentPathPrefersSingleActivePlanOverArchivedPointer(t *testing.
 	}
 }
 
-func TestDetectCurrentPathUsesCurrentPointerToDisambiguateMultipleActivePlans(t *testing.T) {
+func TestDetectCurrentPathErrorsWhenCurrentPointerWouldMaskMultipleActivePlans(t *testing.T) {
 	root := t.TempDir()
 	activePathA := filepath.Join(root, "docs", "plans", "active", "2026-03-18-first.md")
 	activePathB := filepath.Join(root, "docs", "plans", "active", "2026-03-18-second.md")
@@ -40,12 +40,8 @@ func TestDetectCurrentPathUsesCurrentPointerToDisambiguateMultipleActivePlans(t 
 		t.Fatalf("save current plan: %v", err)
 	}
 
-	got, err := DetectCurrentPath(root)
-	if err != nil {
-		t.Fatalf("detect current path: %v", err)
-	}
-	if got != activePathB {
-		t.Fatalf("expected current pointer %s, got %s", activePathB, got)
+	if _, err := DetectCurrentPath(root); err == nil {
+		t.Fatal("expected error when current pointer would mask multiple active plans")
 	}
 }
 
@@ -101,6 +97,44 @@ func TestDetectCurrentPathLockedRejectsStemChange(t *testing.T) {
 
 	if _, err := DetectCurrentPathLocked(root, "2026-03-18-first"); err == nil {
 		t.Fatal("expected DetectCurrentPathLocked to reject stem change")
+	}
+}
+
+func TestDetectCurrentPathPrefersSingleTrackedPlanOverArchivedLightweightPointer(t *testing.T) {
+	root := t.TempDir()
+	activePath := filepath.Join(root, "docs", "plans", "active", "2026-03-18-lightweight.md")
+	archivedLightweightPath := filepath.Join(root, ".local", "harness", "plans", "archived", "2026-03-17-lightweight.md")
+	writeTestFile(t, activePath)
+	writeTestFile(t, archivedLightweightPath)
+
+	if _, err := runstate.SaveCurrentPlan(root, filepath.ToSlash(filepath.Join(".local", "harness", "plans", "archived", "2026-03-17-lightweight.md"))); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	got, err := DetectCurrentPath(root)
+	if err != nil {
+		t.Fatalf("detect current path: %v", err)
+	}
+	if got != activePath {
+		t.Fatalf("expected tracked active plan %s, got %s", activePath, got)
+	}
+}
+
+func TestDetectCurrentPathKeepsArchivedLightweightPointerWhenNoActivePlanExists(t *testing.T) {
+	root := t.TempDir()
+	archivedLightweightPath := filepath.Join(root, ".local", "harness", "plans", "archived", "2026-03-18-lightweight.md")
+	writeTestFile(t, archivedLightweightPath)
+
+	if _, err := runstate.SaveCurrentPlan(root, filepath.ToSlash(filepath.Join(".local", "harness", "plans", "archived", "2026-03-18-lightweight.md"))); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	got, err := DetectCurrentPath(root)
+	if err != nil {
+		t.Fatalf("detect current path: %v", err)
+	}
+	if got != archivedLightweightPath {
+		t.Fatalf("expected archived lightweight plan %s, got %s", archivedLightweightPath, got)
 	}
 }
 

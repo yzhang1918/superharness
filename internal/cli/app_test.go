@@ -193,6 +193,23 @@ func TestPlanTemplateHelpExitsZero(t *testing.T) {
 	}
 }
 
+func TestPlanTemplateLightweightFlagSeedsLocalVariant(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+
+	exitCode := app.Run([]string{"plan", "template", "--title", "Lightweight Plan", "--lightweight"})
+	if exitCode != 0 {
+		t.Fatalf("expected lightweight template success, got %d: %s", exitCode, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "workflow_profile: lightweight") {
+		t.Fatalf("expected workflow_profile in template, got %s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "### Step 2:") {
+		t.Fatalf("expected lightweight template to collapse to one step, got %s", stdout.String())
+	}
+}
+
 func TestRootHelpMentionsVersionFlag(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
