@@ -210,7 +210,8 @@ help explain the node:
 - latest evidence record IDs
 - last-landed context
 
-Legacy v0.1 fields are not part of the contract and must not be emitted:
+Legacy v0.1 fields are not part of the `harness status` contract and must not
+be emitted by `harness status`:
 
 - `plan_status`
 - `lifecycle`

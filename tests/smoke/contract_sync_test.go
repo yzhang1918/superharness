@@ -64,6 +64,47 @@ func TestSyncContractArtifactsCheckFailsOnStaleGeneratedFiles(t *testing.T) {
 	}
 }
 
+func TestSyncContractArtifactsCheckFailsOnStaleGeneratedDocs(t *testing.T) {
+	repoRoot := support.RepoRoot(t)
+	cloneRoot := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(cloneRoot, 0o755); err != nil {
+		t.Fatalf("mkdir clone root: %v", err)
+	}
+	copyCurrentRepo(t, repoRoot, cloneRoot)
+
+	stalePath := filepath.Join(cloneRoot, "docs", "reference", "contracts", "README.md")
+	if err := os.WriteFile(stalePath, []byte("# stale generated docs\n"), 0o644); err != nil {
+		t.Fatalf("write stale docs: %v", err)
+	}
+
+	checkCmd := exec.Command(filepath.Join(cloneRoot, "scripts", "sync-contract-artifacts"), "--check")
+	checkCmd.Dir = cloneRoot
+	output, err := checkCmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected stale generated docs check to fail:\n%s", output)
+	}
+	if !strings.Contains(string(output), "stale generated file") {
+		t.Fatalf("expected stale-file error, got:\n%s", output)
+	}
+
+	syncCmd := exec.Command(filepath.Join(cloneRoot, "scripts", "sync-contract-artifacts"))
+	syncCmd.Dir = cloneRoot
+	output, err = syncCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("sync-contract-artifacts repair run: %v\n%s", err, output)
+	}
+
+	checkCmd = exec.Command(filepath.Join(cloneRoot, "scripts", "sync-contract-artifacts"), "--check")
+	checkCmd.Dir = cloneRoot
+	output, err = checkCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("post-repair sync-contract-artifacts --check: %v\n%s", err, output)
+	}
+	if !strings.Contains(string(output), "Contract schemas and reference docs are in sync.") {
+		t.Fatalf("unexpected post-repair check output:\n%s", output)
+	}
+}
+
 func copyCurrentRepo(t *testing.T, src, dst string) {
 	t.Helper()
 	archive := exec.Command("tar", "-cf", "-", "--exclude=.git", "--exclude=.local", ".")
