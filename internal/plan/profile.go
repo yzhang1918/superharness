@@ -25,9 +25,9 @@ func normalizeWorkflowProfile(value string) string {
 func inferWorkflowProfileFromPath(path string) string {
 	clean := filepath.ToSlash(filepath.Clean(path))
 	switch {
-	case strings.Contains(clean, "/docs/plans/") || strings.HasPrefix(clean, "docs/plans/"):
+	case strings.Contains(clean, "/docs/plans/archived/") || strings.HasPrefix(clean, "docs/plans/archived/"):
 		return WorkflowProfileStandard
-	case strings.Contains(clean, "/.local/harness/plans/") || strings.HasPrefix(clean, ".local/harness/plans/"):
+	case strings.Contains(clean, "/.local/harness/plans/archived/") || strings.HasPrefix(clean, ".local/harness/plans/archived/"):
 		return WorkflowProfileLightweight
 	default:
 		return ""
@@ -41,29 +41,16 @@ func inferPathKind(path string) string {
 		return "active"
 	case strings.Contains(clean, "/docs/plans/archived/") || strings.HasPrefix(clean, "docs/plans/archived/"):
 		return "archived"
-	case strings.Contains(clean, "/.local/harness/plans/") || strings.HasPrefix(clean, ".local/harness/plans/"):
-		switch {
-		case strings.Contains(clean, "/active/"):
-			return "active"
-		case strings.Contains(clean, "/archived/"):
-			return "archived"
-		}
+	case strings.Contains(clean, "/.local/harness/plans/archived/") || strings.HasPrefix(clean, ".local/harness/plans/archived/"):
+		return "archived"
 	}
 	return ""
 }
 
 func activeCandidatePaths(workdir string) ([]string, error) {
-	patterns := []string{
-		filepath.Join(workdir, "docs", "plans", "active", "*.md"),
-		filepath.Join(workdir, ".local", "harness", "plans", "*", "active", "*.md"),
-	}
-	paths := make([]string, 0)
-	for _, pattern := range patterns {
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
-			return nil, err
-		}
-		paths = append(paths, matches...)
+	paths, err := filepath.Glob(filepath.Join(workdir, "docs", "plans", "active", "*.md"))
+	if err != nil {
+		return nil, err
 	}
 	sort.Strings(paths)
 	return paths, nil
@@ -76,17 +63,12 @@ func currentLooksArchived(path string) bool {
 func ArchivedPathFor(workdir, planStem, currentPath string, profile string) string {
 	switch normalizeWorkflowProfile(profile) {
 	case WorkflowProfileLightweight:
-		return filepath.Join(workdir, ".local", "harness", "plans", planStem, "archived", filepath.Base(currentPath))
+		return filepath.Join(workdir, ".local", "harness", "plans", "archived", filepath.Base(currentPath))
 	default:
 		return filepath.Join(workdir, "docs", "plans", "archived", filepath.Base(currentPath))
 	}
 }
 
 func ActivePathFor(workdir, planStem, currentPath string, profile string) string {
-	switch normalizeWorkflowProfile(profile) {
-	case WorkflowProfileLightweight:
-		return filepath.Join(workdir, ".local", "harness", "plans", planStem, "active", filepath.Base(currentPath))
-	default:
-		return filepath.Join(workdir, "docs", "plans", "active", filepath.Base(currentPath))
-	}
+	return filepath.Join(workdir, "docs", "plans", "active", filepath.Base(currentPath))
 }

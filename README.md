@@ -10,7 +10,8 @@ The project is named `easyharness`. The CLI executable remains `harness`.
 The goal is to keep the harness legible and maintainable:
 
 - standard plans live in git
-- lightweight low-risk plans live in `.local/harness/`
+- lightweight low-risk active plans still live in git
+- lightweight archived snapshots live in `.local/harness/`
 - runtime trajectory lives in `.local/`
 - the CLI helps agents understand state and next actions
 - skills teach agents how to run the workflow without a pile of fragile shell
@@ -93,6 +94,21 @@ brew install catu-ai/tap/easyharness
 harness --version
 ```
 
+First-run repository bootstrap after installing the binary:
+
+```bash
+cd /path/to/your-repo
+harness install --dry-run
+harness install
+```
+
+`harness install` writes the minimum harness-managed repository contract for a
+repo: a managed block inside `AGENTS.md` plus the repo-local skill pack under
+`.agents/skills/`. The command is safe to rerun after upgrades. Repeated runs
+either refresh the known managed assets in place or report a no-op when the
+repository is already current. User-owned `AGENTS.md` content outside the
+managed block is preserved.
+
 Upgrade a Homebrew install with:
 
 ```bash
@@ -125,6 +141,7 @@ checkout.
 
 - `harness plan template`
 - `harness plan lint`
+- `harness install`
 - `harness execute start`
 - `harness evidence submit`
 - `harness status`
@@ -169,13 +186,14 @@ record publish, CI, and sync facts for the archived candidate through
 `harness land --pr <url> [--commit <sha>]`, finish post-merge cleanup, then
 run `harness land complete` so status returns to `idle`.
 
-For narrow low-risk work, `harness` may instead use a lightweight local plan
-under `.local/harness/plans/<plan-stem>/...` with the same schema plus
-`workflow_profile: lightweight`. The lightweight path reuses the same
-canonical nodes, but its plan and archived snapshot stay local instead of
-moving through `docs/plans/`. Lightweight work still requires human steering,
-must stay explicitly in-bounds, and must leave a small repo-visible breadcrumb
-such as a PR body note explaining why the lightweight path was used. If any
+For narrow low-risk work, `harness` may instead use a tracked active plan under
+`docs/plans/active/` with the same schema plus `workflow_profile: lightweight`.
+The lightweight path reuses the same canonical nodes as standard work, but on
+archive it writes the archived snapshot to
+`.local/harness/plans/archived/<plan-stem>.md` instead of
+`docs/plans/archived/`. Lightweight work still requires human steering, must
+stay explicitly in-bounds, and must leave a small repo-visible breadcrumb such
+as a PR body note explaining why the lightweight path was used. If any
 lightweight candidate stops looking low-risk, it should escalate back to the
 standard tracked-plan path.
 
@@ -197,7 +215,9 @@ standard tracked-plan path instead.
 If an archived candidate becomes invalid before merge, reopen it with
 `harness reopen --mode finalize-fix` for narrow repair or
 `harness reopen --mode new-step` when the change deserves a new unfinished
-step.
+step. If a repository has not been bootstrapped yet, run `harness install`
+first so the managed `AGENTS.md` block and repo-local skills exist before the
+workflow starts.
 
 High-level guidance lives in [AGENTS.md](./AGENTS.md). The durable contracts
 for plans and CLI behavior live in [docs/specs/index.md](./docs/specs/index.md).
@@ -207,12 +227,13 @@ Execution detail for agents lives in `.agents/skills/`.
 
 - `cmd/harness/`: CLI entrypoint
 - `internal/`: CLI implementation
-- `docs/plans/`: tracked standard plans
+- `docs/plans/`: tracked active plans for both profiles plus archived standard plans
 - `docs/specs/`: durable repo contracts
 - `.agents/skills/`: repo-local workflow skills
-- `.local/harness/`: disposable runtime state, lightweight plans, current-plan
-  and last-landed markers, review artifacts, evidence artifacts, and
-  trajectory
+- `AGENTS.md`: repo-specific guidance plus the harness-managed install block
+- `.local/harness/`: disposable runtime state, current-plan/last-landed
+  markers, archived lightweight plan snapshots, review artifacts, evidence
+  artifacts, and trajectory
 
 ## Current Constraints
 

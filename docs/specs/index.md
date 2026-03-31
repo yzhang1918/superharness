@@ -9,7 +9,7 @@
 - [Plan Schema](./plan-schema.md): shared plan contract for tracked `standard`
   plans, local `lightweight` plans, and local state expectations.
 - [CLI Contract](./cli-contract.md): agent-facing command surface and JSON
-  contract.
+  contract, including repository bootstrap through `harness install`.
 
 ## Proposals
 

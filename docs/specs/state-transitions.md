@@ -20,7 +20,7 @@ the normative transition matrix.
 
 | From | To | Driver | Required inputs | Notes |
 | --- | --- | --- | --- | --- |
-| `idle` | `plan` | Derived from current plan presence | Execution-start is absent, and exactly one active plan exists across tracked and lightweight-local paths: either one active `standard` tracked plan under `docs/plans/active/`, or one active `lightweight` local plan under `.local/harness/plans/*/active/*.md` | `.local/harness/current-plan.json` may resume or confirm the sole active plan, but it must not bypass the one-active-plan invariant or be required when exactly one active lightweight local plan exists. |
+| `idle` | `plan` | Derived from current plan presence | Execution-start is absent, and exactly one active tracked plan exists under `docs/plans/active/` | `.local/harness/current-plan.json` may resume or confirm the sole active plan, but it must not bypass the one-active-plan invariant. Lightweight local archives under `.local/harness/plans/archived/` are not active-plan candidates. |
 | `plan` | `execution/step-<n>/implement` | `harness execute start` | Current plan is approved for execution and has at least one unfinished step | The CLI records the execution-start milestone; the first unfinished step becomes current. |
 
 ## Step Execution Loop
@@ -46,7 +46,7 @@ the normative transition matrix.
 
 | From | To | Driver | Required inputs | Notes |
 | --- | --- | --- | --- | --- |
-| `execution/finalize/archive` | `execution/finalize/publish` | `harness archive` | Finalize review is satisfied and archive closeout is ready | `archive` performs the tracked-file move for `standard` plans or the local archive handoff for `lightweight` plans, then records archive metadata. |
+| `execution/finalize/archive` | `execution/finalize/publish` | `harness archive` | Finalize review is satisfied and archive closeout is ready | `archive` moves the active tracked plan to `docs/plans/archived/` for `standard` plans or snapshots it to `.local/harness/plans/archived/<plan-stem>.md` for `lightweight` plans, then records archive metadata. |
 | `execution/finalize/publish` | `execution/finalize/await_merge` | Derived from latest publish, CI, and sync evidence | Publish evidence identifies the candidate, CI is good enough or explicit `not_applied`, sync is acceptable or explicit `not_applied`, and no unresolved fix condition remains | `await_merge` is a merge-ready state, not merely an archived state. |
 | `execution/finalize/publish` | `execution/finalize/fix` | `harness reopen --mode finalize-fix` | Archived candidate has been invalidated but does not justify a new step | Reopen is the command-owned reversal of archive-time assumptions for either profile. |
 | `execution/finalize/publish` | `execution/finalize/fix` | `harness reopen --mode new-step` | Archived candidate has been invalidated and the change deserves a new unfinished step | Status stays in finalize-scope repair until the first new unfinished step is actually added. |

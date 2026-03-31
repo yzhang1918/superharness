@@ -16,9 +16,15 @@ ceremony for work such as tiny README or docs fixes.
 
 The new path should stay inside the existing plan-driven model rather than
 creating a second workflow object. A lightweight change still starts from a
-plan, but that plan becomes command-owned local state instead of a tracked
-repository artifact. The workflow must leave a small repo-visible breadcrumb so
-reviewers can see that the lightweight path was used intentionally.
+tracked active plan under `docs/plans/active/`, while only the archived
+lightweight snapshot becomes command-owned local state under `.local/`. The
+workflow must leave a small repo-visible breadcrumb so reviewers can see that
+the lightweight path was used intentionally.
+
+Revision 3 supersedes the earlier "local active + local archived" layout from
+revisions 1 and 2. The accepted target is now tracked active plans for both
+profiles, with `lightweight` diverging only at archive storage and using a
+flat local archived path.
 
 ## Scope
 
@@ -29,8 +35,10 @@ reviewers can see that the lightweight path was used intentionally.
   object type.
 - Specify which low-risk changes may use the lightweight path and which changes
   must stay on the standard tracked-plan path.
-- Define where lightweight plans live, how they archive into `.local/`, and
-  what minimum durable record remains repo-visible for reviewers.
+- Define that active plans remain tracked under `docs/plans/active/` for both
+  profiles, while lightweight archived snapshots move into
+  `.local/harness/plans/archived/<plan-stem>.md`.
+- Define what minimum durable record remains repo-visible for reviewers.
 - Extend `harness plan template` with a lightweight authoring mode that seeds a
   shorter single-step plan and low-risk closeout guidance.
 - Update runtime behavior so status, archive, and related guidance understand
@@ -57,26 +65,30 @@ reviewers can see that the lightweight path was used intentionally.
 - [x] The docs clearly define lightweight-path eligibility, including examples
       of acceptable low-risk changes and explicit reasons to stay on the
       standard tracked-plan path.
-- [x] Lightweight plans are command-owned local artifacts rather than tracked
-      files under `docs/plans/`, and lightweight archive records remain in
-      `.local/harness/...` instead of moving into `docs/plans/archived/`.
+- [x] Lightweight active plans remain tracked under `docs/plans/active/`,
+      while lightweight archived snapshots move into
+      `.local/harness/plans/archived/<plan-stem>.md` instead of
+      `docs/plans/archived/`.
 - [x] `harness plan template` exposes a lightweight authoring mode that seeds a
-      shorter low-risk plan shape without requiring a second template schema.
+      shorter low-risk plan shape and `workflow_profile: lightweight` without
+      changing the standard tracked active-plan location.
 - [x] `harness status` and any relevant closeout commands provide explicit
       guidance that lightweight changes still need a repo-visible breadcrumb,
       such as a PR body note describing why the lightweight path was used.
 - [x] Agent-facing docs explain that lightweight changes still require human
-      steering through a plan, even though the plan and archive stay local.
+      steering through a tracked active plan, even though archived lightweight
+      snapshots stay local.
 - [x] Focused automated tests cover lightweight template generation plus at
-      least one end-to-end lightweight flow through status and archive-local
-      closeout behavior.
+      least one end-to-end lightweight flow through tracked active plan
+      resolution and local archive closeout behavior.
 
 ## Deferred Items
 
 - Decide later whether lightweight changes need a dedicated CLI command for
   writing or validating repo-visible breadcrumbs beyond status guidance.
 - Consider a future retrospective report or listing command for historical
-  lightweight local archives if `.local/` discoverability proves too weak.
+  lightweight archives if discoverability under `.local/harness/plans/archived/`
+  proves too weak.
 
 ## Work Breakdown
 
@@ -298,6 +310,90 @@ lightweight scenario disappeared. Added the missing scenario entry and reran
 `review-007-delta`, then rechecked the `tests` slot and passed clean with no
 remaining findings.
 
+### Step 4: Revise lightweight storage layout after review feedback
+
+- Done: [x]
+
+#### Objective
+
+Shift lightweight workflow storage so active plans stay tracked while only
+lightweight archived snapshots move into a flat local archive path.
+
+#### Details
+
+This revision replaces the earlier "local active + local archived" design from
+revisions 1 and 2. The repaired contract should:
+- keep `workflow_profile` optional, with omitted values continuing to mean
+  `standard`
+- keep active plans for both profiles under `docs/plans/active/`
+- move only lightweight archived snapshots to
+  `.local/harness/plans/archived/<plan-stem>.md`
+- remove the repeated `<plan-stem>/<active|archived>/<plan-stem>.md` local
+  layout in favor of the flatter archive path above
+- update current-plan detection, archive/reopen behavior, docs, tests, and any
+  bootstrap/install-managed assets so they all agree on the revised layout
+- preserve the origin/main install/bootstrap changes while making this repair
+
+#### Expected Files
+
+- `docs/specs/plan-schema.md`
+- `docs/specs/state-model.md`
+- `docs/specs/state-transitions.md`
+- `docs/specs/cli-contract.md`
+- `README.md`
+- `AGENTS.md`
+- `assets/bootstrap/`
+- `.agents/skills/`
+- `internal/plan/profile.go`
+- `internal/plan/current.go`
+- `internal/plan/lint.go`
+- `internal/plan/template.go`
+- `internal/lifecycle/service.go`
+- `internal/status/service.go`
+- `tests/e2e/`
+
+#### Validation
+
+- Run focused tests for plan, lifecycle, status, and CLI behavior.
+- Run the relevant E2E/lightweight workflow coverage.
+- Run broader validation as needed after merging origin/main changes.
+
+#### Execution Notes
+
+Repaired the lightweight storage contract after review feedback by keeping
+active plans for both profiles under `docs/plans/active/` and moving only
+lightweight archived snapshots to the flat local path
+`.local/harness/plans/archived/<plan-stem>.md`. Updated the profile/path logic
+in `internal/plan/profile.go`, tightened lint so omitted
+`workflow_profile` continues to mean `standard` and explicit `standard` is
+rejected, and aligned lifecycle/status tests plus the lightweight E2E around
+the revised storage layout. Also merged the latest `origin/main` bootstrap
+changes and updated the tracked specs, README/AGENTS guidance, repo-local
+skills, and packaged bootstrap assets so install-managed guidance matches the
+new contract. Validation for this repair used
+`go test ./internal/plan ./internal/lifecycle ./internal/status ./tests/e2e -count=1`
+followed by `go test ./... -count=1`. After `review-010-delta` found two
+follow-up gaps, tightened lifecycle/status publish guidance so lightweight
+archive handoff explicitly calls out the tracked plan change that still needs
+commit/push, and added focused reopen coverage proving a lightweight archived
+snapshot returns to `docs/plans/active/` on reopen. Revalidated those repairs
+with `go test ./internal/lifecycle ./internal/status ./tests/e2e -count=1`
+and a final `go test ./... -count=1`.
+
+#### Review Notes
+
+`review-010-delta` first checked `correctness`, `docs_consistency`, and
+`tests`. `docs_consistency` passed clean, but `correctness` found that the
+lightweight archive handoff still needed to say explicitly that the tracked
+plan change must be committed and pushed, and `tests` found that lightweight
+archive -> reopen behavior was still untested. Repaired both findings by
+tightening lifecycle/status publish guidance and adding focused lightweight
+reopen coverage in `internal/lifecycle/service_test.go`, then reran
+`go test ./internal/lifecycle ./internal/status ./tests/e2e -count=1` and
+`go test ./... -count=1`. The bounded follow-up round, `review-011-delta`,
+rechecked `correctness` and `tests` for those repairs and passed clean with no
+remaining findings.
+
 ## Validation Strategy
 
 - Lint the tracked implementation plan with `harness plan lint`.
@@ -324,50 +420,57 @@ remaining findings.
 
 ## Validation Summary
 
-Validated the tracked contract with `harness plan lint
+Validated revision 3 with `harness plan lint
 docs/plans/active/2026-03-30-lightweight-workflow-for-low-risk-changes.md`,
-focused package coverage with
-`go test ./internal/plan ./internal/status ./internal/lifecycle ./internal/cli -count=1`,
-targeted workflow coverage with `go test ./tests/e2e -count=1`, and the full
-repository suite with `go test ./... -count=1`. The final focused rerun after
-the Step 3 repair revalidated the lightweight scenario coverage catalog. After
-publish handoff revealed stale sync against `origin/main`, reopened in
-`finalize-fix`, merged `origin/main`, and reran `go test ./... -count=1` for
-revision 2 before the second finalize review.
+focused package coverage via
+`go test ./internal/plan ./internal/lifecycle ./internal/status ./tests/e2e -count=1`,
+targeted follow-up coverage via
+`go test ./internal/status ./tests/e2e -count=1`, and repeated full-suite
+validation via `go test ./... -count=1` after merging the latest `origin/main`
+bootstrap changes and after each review-driven repair. The final revision-3
+candidate passed the full repository test suite, including smoke coverage, on
+the repaired tracked-active/local-archive contract.
 
 ## Review Summary
 
-Step closeout review passed for Step 2 in `review-005-delta`. Step 3 first ran
-through `review-006-delta`, which found one important gap: the new lightweight
-E2E was missing from `currentScenarioCoverage`. After registering that
-scenario and rerunning the E2E suite, `review-007-delta` passed clean. The
-full archive-candidate review, `review-008-full`, then passed clean across the
-`correctness` and `risk_scan` dimensions with no remaining findings. After
-reopen to revision 2 for stale sync against `origin/main`, merged the updated
-mainline, reran full validation, and `review-009-full` again passed clean
-across `correctness` and `risk_scan`.
+Revision 3 used `review-010-delta` for Step 4 closeout. That first round found
+two important issues: lightweight archive handoff guidance needed to call out
+the tracked plan change that still requires commit/push, and lightweight
+archive -> reopen behavior needed focused coverage. After repairing both,
+`review-011-delta` rechecked the bounded fixes and passed clean. Finalize
+review then ran as `review-012-full`; it surfaced one remaining correctness
+issue around breadcrumb guidance outranking repair-first status actions when
+closeout debt exists, plus a docs-consistency complaint that the specs still
+felt ambiguous about local active lightweight plans. Tightened status
+prioritization and made the specs explicitly state that v0.2 has no local
+active lightweight plan path, then reran validation and `review-013-full`
+passed clean across `correctness` and `docs_consistency` with no remaining
+findings.
 
 ## Archive Summary
 
-- Archived At: 2026-03-31T00:55:41+08:00
-- Revision: 2
+- Archived At: 2026-03-31T10:21:14+08:00
+- Revision: 3
 - PR: https://github.com/catu-ai/easyharness/pull/79
-- Ready: The candidate has clean step reviews, a clean finalize review, all
-  acceptance criteria checked, and validation evidence recorded in the plan.
-- Merge Handoff: Revision 2 restored sync freshness by integrating
-  `origin/main`; after re-archive, update publish/CI/sync evidence for the
-  current revision and wait for merge approval once CI is green and sync is
-  fresh.
+- Ready: Revision 3 has clean step-closeout and finalize reviews, all
+  acceptance criteria checked, refreshed durable summaries, and passing full
+  validation on the repaired tracked-active/local-archive workflow contract.
+- Merge Handoff: Archive this revision, commit and push the tracked plan
+  change, leave the lightweight breadcrumb in the PR body, then refresh
+  publish/CI/sync evidence for revision 3 before waiting for merge approval.
 
 ## Outcome Summary
 
 ### Delivered
 
-Delivered an optional `workflow_profile` contract with default `standard`
-behavior, lightweight template generation via `harness plan template
---lightweight`, local lightweight plan/archive path handling, breadcrumb-aware
-status and lifecycle guidance, updated agent instructions, and end-to-end
-coverage for the lightweight workflow.
+Delivered the lightweight workflow as an optional `workflow_profile:
+lightweight` path that preserves default `standard` behavior when omitted,
+keeps active plans tracked under `docs/plans/active/`, and archives
+lightweight snapshots to `.local/harness/plans/archived/<plan-stem>.md`.
+Updated template, lint, current-plan resolution, lifecycle/status guidance,
+README/AGENTS/specs, repo-local skills, packaged bootstrap assets, and
+workflow tests so the repaired contract, breadcrumb requirement, and reopen
+behavior are consistent across code and docs.
 
 ### Not Delivered
 

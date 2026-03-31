@@ -14,7 +14,7 @@ const (
 
 func TestLightweightWorkflowWithBuiltBinary(t *testing.T) {
 	workspace := support.NewWorkspace(t)
-	planRelPath := ".local/harness/plans/2026-03-31-lightweight-workflow/active/2026-03-31-lightweight-workflow.md"
+	planRelPath := "docs/plans/active/2026-03-31-lightweight-workflow.md"
 	planPath := workspace.Path(planRelPath)
 
 	template := support.Run(
@@ -74,7 +74,7 @@ func TestLightweightWorkflowWithBuiltBinary(t *testing.T) {
 	if !archivePayload.OK || archivePayload.Command != "archive" {
 		t.Fatalf("unexpected archive payload: %#v", archivePayload)
 	}
-	archivedRelPath := ".local/harness/plans/2026-03-31-lightweight-workflow/archived/2026-03-31-lightweight-workflow.md"
+	archivedRelPath := ".local/harness/plans/archived/2026-03-31-lightweight-workflow.md"
 	if archivePayload.Artifacts.ToPlanPath != archivedRelPath {
 		t.Fatalf("expected archived lightweight path %q, got %#v", archivedRelPath, archivePayload)
 	}
@@ -115,16 +115,16 @@ func lightweightWorkflowPlanBody() string {
 	return strings.TrimSpace(`
 ## Goal
 
-Exercise the lightweight local-plan workflow through the built binary so a lone
-active lightweight plan is recoverable, archives locally, and still reminds the
-controller to leave a repo-visible breadcrumb before waiting for merge
-approval.
+Exercise the lightweight workflow through the built binary so a tracked active
+lightweight plan remains steerable, archives to the local lightweight archive
+path, and still reminds the controller to leave a repo-visible breadcrumb
+before waiting for merge approval.
 
 ## Scope
 
 ### In Scope
 
-- Create a lightweight local plan from harness plan template --lightweight.
+- Create a tracked lightweight plan from harness plan template --lightweight.
 - Execute and close out the one lightweight step.
 - Run finalize review, archive to the local archived path, and record publish,
   CI, and sync evidence until status reaches execution/finalize/await_merge.
@@ -135,8 +135,8 @@ approval.
 
 ## Acceptance Criteria
 
-- [ ] A lone active lightweight local plan resolves to plan before execution starts.
-- [ ] Archive moves the plan into .local/harness/plans/<plan-stem>/archived/ and status surfaces breadcrumb guidance.
+- [ ] A tracked active lightweight plan under docs/plans/active resolves to plan before execution starts.
+- [ ] Archive moves the plan into .local/harness/plans/archived/<plan-stem>.md and status surfaces breadcrumb guidance.
 - [ ] Publish, CI, and sync evidence still move the lightweight candidate to execution/finalize/await_merge.
 
 ## Deferred Items
@@ -155,8 +155,9 @@ Close out one bounded lightweight step before finalize review.
 
 #### Details
 
-This fixture uses a lightweight-local plan to prove the profile reuses the
-standard workflow shape while changing plan storage and archive behavior.
+This fixture uses a tracked active lightweight plan to prove the profile
+reuses the standard workflow shape while changing only archive storage and
+publish handoff behavior.
 
 #### Expected Files
 
@@ -185,7 +186,7 @@ PENDING_STEP_REVIEW
 
 ## Validation Summary
 
-Validated the lightweight local-plan flow through archive and merge-ready handoff.
+Validated the tracked-active lightweight flow through local archive and merge-ready handoff.
 
 ## Review Summary
 
@@ -201,7 +202,7 @@ No unresolved review findings remain in the lightweight candidate used for the E
 
 ### Delivered
 
-Delivered the lightweight local-plan E2E scenario.
+Delivered the tracked-active lightweight E2E scenario.
 
 ### Not Delivered
 

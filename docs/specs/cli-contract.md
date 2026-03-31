@@ -18,6 +18,7 @@ The current command surface is:
 
 - `harness plan template`
 - `harness plan lint`
+- `harness install`
 - `harness execute start`
 - `harness evidence submit`
 - `harness status`
@@ -61,6 +62,10 @@ default to markdown or plain text instead of the JSON envelope.
 
 `harness --version` is also a plain-text exception because it is a binary
 identity/debug probe rather than a workflow-state command.
+
+`harness install` is a JSON-first bootstrap command, but it may omit workflow
+`state` because it manages repo-owned bootstrap assets rather than the tracked
+plan lifecycle.
 
 ### Help Must Be Actionable
 
@@ -139,8 +144,9 @@ state for read-only stateful commands.
 `artifacts` is optional and command-specific. Omit it when there are no stable
 artifact paths or IDs worth returning.
 
-`plan_path` may point to either a tracked standard plan under `docs/plans/` or
-a local lightweight plan under `.local/harness/plans/<plan-stem>/...`.
+`plan_path` may point to a tracked active plan under `docs/plans/active/`, a
+tracked standard archive under `docs/plans/archived/`, or a lightweight local
+archive under `.local/harness/plans/archived/<plan-stem>.md`.
 
 `next_actions` should be short, concrete, non-empty, and ordered from the most
 likely next step to less common alternatives.
@@ -208,6 +214,38 @@ before the candidate is treated as ready to wait for merge approval.
 
 ## Command Contracts
 
+### `harness install`
+
+Purpose:
+
+- install or refresh the harness-managed bootstrap assets for the current
+  repository
+
+Contract:
+
+- default to direct-write behavior for the current repository
+- support `--dry-run` to preview the intended file actions without writing
+- support one command-level scope selector with values `agents`, `skills`, and
+  `all`, defaulting to `all`
+- manage `AGENTS.md` through one stable managed block delimited by explicit
+  markers instead of rewriting the whole file
+- insert the managed block when `AGENTS.md` exists without it, replace exactly
+  one valid existing managed block on rerun, and fail with a clear error when
+  marker layout is duplicated or otherwise ambiguous
+- treat the installed skill pack under `.agents/skills/` as CLI-managed files:
+  create or refresh known packaged files without deleting unrelated user-added
+  files in that tree
+- package the bootstrap assets with the harness release so the command works
+  without network access
+- return a JSON envelope that reports `mode`, `scope`, and per-file actions;
+  workflow `state` may be omitted because the command does not mutate tracked
+  plan lifecycle state
+
+Recommended next action:
+
+- run without `--dry-run` to apply the previewed bootstrap changes
+- open `AGENTS.md` and `.agents/skills/` to review the installed contract
+
 ### `harness plan template`
 
 Purpose:
@@ -228,10 +266,11 @@ Contract:
   schema/template version they started from
 - avoid introducing a second handwritten template source of truth inside code
 - in lightweight mode, seed `workflow_profile: lightweight`, a shorter
-  single-step low-risk authoring shape, and local-path guidance consistent with
-  the plan schema
+  single-step low-risk authoring shape, and guidance that the active plan
+  still lives under `docs/plans/active/` while the archive goes to the local
+  lightweight archive path
 - in standard mode, preserve current behavior when `workflow_profile` is
-  omitted or explicitly `standard`
+  omitted
 
 The template asset belongs to the harness version, not to the user's tracked
 plan history. Upgrading the harness may upgrade the generated template for new
@@ -269,8 +308,8 @@ Contract:
   invalid plan data
 - report issues in a compact machine-readable form
 - distinguish active-plan errors from archived-plan errors
-- validate path/profile compatibility for standard tracked plans versus
-  lightweight local plans
+- validate path/profile compatibility for tracked active plans, tracked
+  standard archives, and lightweight local archived plans
 - validate supported `template_version` values without invalidating older
   historical plans created by earlier harness versions
 - reject malformed plan filenames and malformed `### Step N: ...` headings
@@ -292,7 +331,8 @@ understand what is happening now and what to do next.
 
 Contract:
 
-- detect the current plan artifact, whether tracked or lightweight-local
+- detect the current plan artifact, whether it is a tracked active plan, a
+  tracked standard archive, or a lightweight local archive
 - resolve the canonical `state.current_node` from the current plan,
   execute-start milestones, review artifacts, append-only evidence, reopen
   milestones, archive state, and land milestones
@@ -574,8 +614,8 @@ Contract:
   `Ready`, and `Merge Handoff` lines
 - move the plan from its active path to its archived path:
   - `docs/plans/active/` -> `docs/plans/archived/` for `standard`
-  - `.local/harness/plans/<plan-stem>/active/` ->
-    `.local/harness/plans/<plan-stem>/archived/` for `lightweight`
+  - `docs/plans/active/` ->
+    `.local/harness/plans/archived/<plan-stem>.md` for `lightweight`
 - update `.local/harness/current-plan.json` and any existing plan-local
   `state.json` pointers to the archived path
 - keep publish, CI, and sync follow-up out of the archive gate; those belong to
@@ -586,11 +626,12 @@ Contract:
 
 Important note:
 
-- `harness archive` changes tracked files locally only for `standard`
-- the controller agent should commit and push the archive move for `standard`
-  before treating the candidate as truly waiting for merge approval
-- the controller agent should update the agreed repo-visible breadcrumb for
-  `lightweight` before treating the candidate as truly waiting for merge
+- `harness archive` changes tracked files locally for both profiles because the
+  active tracked plan is removed from `docs/plans/active/`
+- the controller agent should commit and push the archive change before
+  treating the candidate as truly waiting for merge approval
+- the controller agent should also update the agreed repo-visible breadcrumb
+  for `lightweight` before treating the candidate as truly waiting for merge
   approval
 - after archive, record publish, CI, and sync observations through
   `harness evidence submit` instead of treating missing evidence as success

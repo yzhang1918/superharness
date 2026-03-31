@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/catu-ai/easyharness/internal/evidence"
+	"github.com/catu-ai/easyharness/internal/install"
 	"github.com/catu-ai/easyharness/internal/lifecycle"
 	"github.com/catu-ai/easyharness/internal/plan"
 	"github.com/catu-ai/easyharness/internal/review"
@@ -64,6 +65,8 @@ func (a *App) Run(args []string) int {
 		return a.runReopen(args[1:])
 	case "status":
 		return a.runStatus(args[1:])
+	case "install":
+		return a.runInstall(args[1:])
 	case "-h", "--help", "help":
 		a.printRootUsage()
 		return 0
@@ -270,6 +273,40 @@ func (a *App) runLandEntry(args []string) int {
 	return a.writeJSONResult(result)
 }
 
+func (a *App) runInstall(args []string) int {
+	fs := flag.NewFlagSet("harness install", flag.ContinueOnError)
+	fs.SetOutput(a.Stderr)
+	scope := fs.String("scope", install.ScopeAll, "Install scope: agents, skills, or all.")
+	dryRun := fs.Bool("dry-run", false, "Show the planned repository changes without writing files.")
+	fs.Usage = func() {
+		fmt.Fprintln(a.Stderr, "Usage: harness install [--scope <agents|skills|all>] [--dry-run]")
+		fmt.Fprintln(a.Stderr)
+		fmt.Fprintln(a.Stderr, "Install or refresh the harness-managed repository bootstrap for the current repo.")
+		fmt.Fprintln(a.Stderr)
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fs.Usage()
+		return 2
+	}
+	workdir, err := a.Getwd()
+	if err != nil {
+		fmt.Fprintf(a.Stderr, "resolve working directory: %v\n", err)
+		return 1
+	}
+	result := install.Service{Workdir: workdir}.Install(install.Options{
+		Scope:  *scope,
+		DryRun: *dryRun,
+	})
+	return a.writeJSONResult(result)
+}
+
 func (a *App) runPlanTemplate(args []string) int {
 	fs := flag.NewFlagSet("harness plan template", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
@@ -277,7 +314,7 @@ func (a *App) runPlanTemplate(args []string) int {
 	var refs stringListFlag
 	title := fs.String("title", "", "Seed the H1 title.")
 	output := fs.String("output", "", "Write the rendered template to this file instead of stdout.")
-	lightweight := fs.Bool("lightweight", false, "Render the lightweight local-plan variant and seed workflow_profile: lightweight.")
+	lightweight := fs.Bool("lightweight", false, "Render the lightweight variant and seed workflow_profile: lightweight.")
 	dateValue := fs.String("date", "", "Seed timestamps using this YYYY-MM-DD date with the current local time-of-day.")
 	timestampValue := fs.String("timestamp", "", "Seed timestamps using this RFC3339 timestamp.")
 	sourceType := fs.String("source-type", "direct_request", "Seed the frontmatter source_type field.")
@@ -657,6 +694,7 @@ func (a *App) printRootUsage() {
 	fmt.Fprintln(a.Stderr, "  archive         Freeze the current active plan")
 	fmt.Fprintln(a.Stderr, "  reopen          Restore the current archived plan")
 	fmt.Fprintln(a.Stderr, "  status          Summarize the current plan and local execution state")
+	fmt.Fprintln(a.Stderr, "  install         Install or refresh the harness-managed repository bootstrap")
 }
 
 func (a *App) printPlanUsage() {
@@ -754,6 +792,10 @@ func (a *App) writeJSONResult(value any) int {
 			return 0
 		}
 	case lifecycle.Result:
+		if result.OK {
+			return 0
+		}
+	case install.Result:
 		if result.OK {
 			return 0
 		}

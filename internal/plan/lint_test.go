@@ -197,23 +197,42 @@ func TestLintFileRejectsInvalidFilename(t *testing.T) {
 	assertHasError(t, result, "path")
 }
 
-func TestLintFileAcceptsLightweightLocalPlan(t *testing.T) {
+func TestLintFileAcceptsTrackedActiveLightweightPlan(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, ".local/harness/plans/2026-03-17-lightweight-plan/active/2026-03-17-lightweight-plan.md")
-	content := mustRenderTemplate(t, "Lightweight Local Plan")
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-lightweight-plan.md")
+	content := mustRenderTemplate(t, "Lightweight Tracked Plan")
 	content = strings.Replace(content, "source_refs: []", "source_refs: []\nworkflow_profile: lightweight", 1)
 	writeFile(t, path, content)
 
 	result := plan.LintFile(path)
 	if !result.OK {
-		t.Fatalf("expected local lightweight lint success, got %#v", result)
+		t.Fatalf("expected tracked lightweight lint success, got %#v", result)
 	}
 }
 
-func TestLintFileRejectsLightweightProfileOnTrackedPlan(t *testing.T) {
+func TestLintFileAcceptsArchivedLightweightLocalPlan(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "docs/plans/active/2026-03-17-tracked-plan.md")
-	content := mustRenderTemplate(t, "Tracked Plan")
+	path := filepath.Join(root, ".local/harness/plans/archived/2026-03-17-lightweight-plan.md")
+	content := mustRenderTemplate(t, "Archived Lightweight Plan")
+	content = strings.Replace(content, "source_refs: []", "source_refs: []\nworkflow_profile: lightweight", 1)
+	content = strings.Replace(content, "- Done: [ ]", "- Done: [x]", 3)
+	content = strings.ReplaceAll(content, "- [ ]", "- [x]")
+	content = strings.ReplaceAll(content, "PENDING_STEP_EXECUTION", "Completed lightweight closeout.")
+	content = strings.ReplaceAll(content, "PENDING_STEP_REVIEW", "NO_STEP_REVIEW_NEEDED: archived fixture.")
+	content = strings.ReplaceAll(content, "PENDING_UNTIL_ARCHIVE", "Archived fixture summary.")
+	content = strings.Replace(content, "## Archive Summary\n\nArchived fixture summary.", "## Archive Summary\n\n- Archived At: 2026-03-17T12:00:00Z\n- Revision: 1\n- PR: NONE\n- Ready: Archived lightweight fixture is complete.\n- Merge Handoff: None for this lint fixture.", 1)
+	writeFile(t, path, content)
+
+	result := plan.LintFile(path)
+	if !result.OK {
+		t.Fatalf("expected archived lightweight lint success, got %#v", result)
+	}
+}
+
+func TestLintFileRejectsLightweightActivePlanUnderLocalPath(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".local/harness/plans/2026-03-17-lightweight-plan/active/2026-03-17-lightweight-plan.md")
+	content := mustRenderTemplate(t, "Bad Local Active Plan")
 	content = strings.Replace(content, "source_refs: []", "source_refs: []\nworkflow_profile: lightweight", 1)
 	writeFile(t, path, content)
 
@@ -221,7 +240,7 @@ func TestLintFileRejectsLightweightProfileOnTrackedPlan(t *testing.T) {
 	if result.OK {
 		t.Fatalf("expected lint failure, got %#v", result)
 	}
-	assertHasError(t, result, "frontmatter.workflow_profile")
+	assertHasError(t, result, "path")
 }
 
 func TestLintFileRejectsUnsupportedWorkflowProfile(t *testing.T) {

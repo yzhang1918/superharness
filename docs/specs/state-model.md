@@ -59,11 +59,13 @@ together or a process exits during persistence.
 
 ### Durable Plan, Disposable Runtime
 
-Standard tracked plans remain the durable source of scope, step closeout, and
-archive summaries. Lightweight plans use the same schema, but their plan
-markdown and archived snapshots live in `.local/harness/` so the workflow can
-stay lightweight for narrow low-risk changes. Runtime trajectory, milestone
-timestamps, and external-fact capture also belong in `.local/harness/`.
+Tracked active plans remain the durable source of scope, step closeout, and
+archive summaries for both profiles. Lightweight work uses the same schema and
+the same tracked active-plan location, but its archived snapshot moves into
+`.local/harness/plans/archived/` so the workflow can stay lightweight for
+narrow low-risk changes. Runtime trajectory, milestone timestamps, and
+external-fact capture also belong in `.local/harness/`. There is no separate
+local active lightweight plan path in this model.
 
 ### Explicit Command Boundaries
 
@@ -101,9 +103,10 @@ root
 - step-local `Review Notes`
 - archive-time summaries and outcome notes
 
-For `standard`, this plan artifact is a tracked file under `docs/plans/`.
-For `lightweight`, it is a command-owned markdown file under
-`.local/harness/plans/<plan-stem>/...`.
+For active work in both profiles, this plan artifact is a tracked file under
+`docs/plans/active/`. Standard archives stay tracked under
+`docs/plans/archived/`. Lightweight archived snapshots move to
+`.local/harness/plans/archived/`.
 
 ### Command-Owned Runtime Artifacts Own
 
@@ -136,16 +139,15 @@ v0.2 assumes one active plan artifact per repository.
 
 Resolution rules:
 
-- if more than one active plan exists across tracked and lightweight-local
-  paths, state resolution is invalid and should fail rather than guess
+- if more than one active tracked plan exists under `docs/plans/active/`,
+  state resolution is invalid and should fail rather than guess
+- lightweight archived snapshots under `.local/harness/plans/archived/` do not
+  count as active-plan candidates
 - if `.local/harness/current-plan.json` points to the sole active plan path and
   that path still exists, that plan is current
 - otherwise, if exactly one active tracked plan exists under
   `docs/plans/active/`, that plan is current for `plan` and `execution/...`
   nodes
-- otherwise, if exactly one active lightweight local plan exists under
-  `.local/harness/plans/*/active/*.md`, that plan is current for `plan` and
-  `execution/...` nodes
 - if no active plan exists, CLI-owned archived or landed context may still
   identify the current archived candidate or the most recent landed candidate
 
@@ -154,7 +156,7 @@ Resolution rules:
 `harness status` resolves `current_node` from:
 
 - the current plan content
-- the plan path and optional `workflow_profile`
+- the plan path and optional `workflow_profile: lightweight`
 - whether execution-start has been recorded
 - the first unfinished step from the current plan
 - review artifacts for the current step or the finalize gate
@@ -177,8 +179,8 @@ The exact transition matrix is normative in
 [State Transitions](./state-transitions.md).
 
 The lightweight profile does not add a second node tree. It reuses the same
-canonical nodes while changing where the plan and archived plan snapshot live
-and what closeout guidance `harness status` should emphasize.
+canonical nodes while changing where the archived snapshot lives and what
+closeout guidance `harness status` should emphasize.
 
 ## Node Semantics
 
@@ -188,9 +190,8 @@ No current work is in flight. This is the normal post-land resting state.
 
 ### `plan`
 
-A current active plan exists, but execution has not started. Plan edits,
-approval, and step refinement happen here whether the plan is tracked
-(`standard`) or local (`lightweight`).
+A current tracked active plan exists, but execution has not started. Plan
+edits, approval, and step refinement happen here for both profiles.
 
 ### `execution/step-<n>/implement`
 

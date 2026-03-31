@@ -519,14 +519,22 @@ func validatePathRules(ctx *lintContext) []LintIssue {
 
 	pathProfile := inferWorkflowProfileFromPath(ctx.path)
 	declaredProfile := strings.TrimSpace(ctx.frontmatter.WorkflowProfile)
+	if declaredProfile == WorkflowProfileStandard {
+		issues = append(issues, LintIssue{Path: "frontmatter.workflow_profile", Message: "omit workflow_profile for standard plans; only lightweight plans should declare it"})
+	}
 	switch pathProfile {
 	case WorkflowProfileStandard:
 		if declaredProfile == WorkflowProfileLightweight {
-			issues = append(issues, LintIssue{Path: "frontmatter.workflow_profile", Message: "tracked docs/plans paths must omit workflow_profile or use standard"})
+			issues = append(issues, LintIssue{Path: "frontmatter.workflow_profile", Message: "tracked docs/plans/archived paths must omit workflow_profile"})
 		}
 	case WorkflowProfileLightweight:
 		if declaredProfile != WorkflowProfileLightweight {
-			issues = append(issues, LintIssue{Path: "frontmatter.workflow_profile", Message: "local .local/harness/plans paths require workflow_profile: lightweight"})
+			issues = append(issues, LintIssue{Path: "frontmatter.workflow_profile", Message: "local .local/harness/plans/archived paths require workflow_profile: lightweight"})
+		}
+	default:
+		clean := filepath.ToSlash(filepath.Clean(ctx.path))
+		if (strings.Contains(clean, "/docs/plans/active/") || strings.HasPrefix(clean, "docs/plans/active/")) && declaredProfile != "" && declaredProfile != WorkflowProfileLightweight {
+			issues = append(issues, LintIssue{Path: "frontmatter.workflow_profile", Message: "tracked active plans must omit workflow_profile unless they explicitly use lightweight"})
 		}
 	}
 	return issues

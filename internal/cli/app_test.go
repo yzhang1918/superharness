@@ -225,6 +225,98 @@ func TestRootHelpMentionsVersionFlag(t *testing.T) {
 	if !strings.Contains(stderr.String(), "--version       Print concise debug information for the running harness binary") {
 		t.Fatalf("expected root help to mention --version, got %q", stderr.String())
 	}
+	if !strings.Contains(stderr.String(), "install         Install or refresh the harness-managed repository bootstrap") {
+		t.Fatalf("expected root help to mention install, got %q", stderr.String())
+	}
+}
+
+func TestInstallCommandReturnsJSON(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+
+	exitCode := app.Run([]string{"install", "--dry-run"})
+	if exitCode != 0 {
+		t.Fatalf("install dry-run failed with %d: %s", exitCode, stderr.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON install output: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "install" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	if payload["mode"] != "dry_run" {
+		t.Fatalf("expected dry_run mode, got %#v", payload)
+	}
+}
+
+func TestInstallCommandWritesManagedAssets(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+
+	exitCode := app.Run([]string{"install", "--scope", "agents"})
+	if exitCode != 0 {
+		t.Fatalf("install command failed with %d: %s", exitCode, stderr.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON install output: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "install" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); err != nil {
+		t.Fatalf("expected AGENTS.md to be written: %v", err)
+	}
+}
+
+func TestInstallCommandRejectsInvalidScope(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+
+	exitCode := app.Run([]string{"install", "--scope", "bogus"})
+	if exitCode != 1 {
+		t.Fatalf("expected invalid scope exit code 1, got %d", exitCode)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON install output: %v\n%s", err, stdout.String())
+	}
+	if payload["command"] != "install" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	if ok, _ := payload["ok"].(bool); ok {
+		t.Fatalf("expected install failure, got %#v", payload)
+	}
+}
+
+func TestInstallHelpExitsZero(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+
+	exitCode := app.Run([]string{"install", "--help"})
+	if exitCode != 0 {
+		t.Fatalf("expected help exit code 0, got %d", exitCode)
+	}
+	if !strings.Contains(stderr.String(), "Usage: harness install") {
+		t.Fatalf("expected install help text, got %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout for install help, got %q", stdout.String())
+	}
 }
 
 func TestPlanLintHelpExitsZero(t *testing.T) {

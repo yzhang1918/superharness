@@ -23,7 +23,7 @@ type scenarioCoverage struct {
 }
 
 var canonicalTransitionFamilies = []transitionFamily{
-	{ID: "idle_to_plan", From: "idle", To: "plan", Driver: "Derived from current plan presence", RequiredInputs: "Execution-start is absent, and exactly one active plan exists across tracked and lightweight-local paths: either one active `standard` tracked plan under `docs/plans/active/`, or one active `lightweight` local plan under `.local/harness/plans/*/active/*.md`"},
+	{ID: "idle_to_plan", From: "idle", To: "plan", Driver: "Derived from current plan presence", RequiredInputs: "Execution-start is absent, and exactly one active tracked plan exists under `docs/plans/active/`"},
 	{ID: "plan_self", From: "plan", To: "plan", Driver: "state-preserving", RequiredInputs: "state-preserving update"},
 	{ID: "plan_to_step_implement", From: "plan", To: "execution/step-<n>/implement", Driver: "harness execute start", RequiredInputs: "Current plan is approved for execution and has at least one unfinished step"},
 	{ID: "step_implement_self", From: "execution/step-<n>/implement", To: "execution/step-<n>/implement", Driver: "state-preserving", RequiredInputs: "state-preserving update"},
