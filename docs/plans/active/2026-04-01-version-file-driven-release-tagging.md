@@ -278,8 +278,10 @@ Review history for this candidate:
 - `review-003-full` surfaced two finalize blockers: archive-facing plan
   placeholders that still needed durable summaries, and workflow wiring
   assertions that were present but not explicit enough about trigger scope and
-  checkout/order guarantees. Those fixes are now folded into the candidate and
-  require one final narrow finalize review pass before archive.
+  checkout/order guarantees.
+- `review-004-delta` passed after the finalize repair batch filled the
+  archive-facing summaries and strengthened the workflow smoke assertions to
+  pin trigger scope, checkout, and step ordering.
 
 ## Archive Summary
 
@@ -289,6 +291,8 @@ tag-driven `Release` workflow as the publish mechanism for GitHub Releases and
 Homebrew updates. The candidate adds the root `VERSION` file, two repo-owned
 tagging helpers, a dedicated tag-creation workflow, release docs for the new
 release-PR convention, and smoke coverage for the helper and workflow wiring.
+Finalize review is clean, the tracked plan lints, and the candidate is ready
+to archive and move into publish/merge handoff.
 
 ## Outcome Summary
 
