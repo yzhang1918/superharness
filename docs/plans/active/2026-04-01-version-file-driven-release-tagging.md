@@ -251,25 +251,64 @@ for this step was validation-only.
 
 ## Validation Summary
 
-PENDING_UNTIL_ARCHIVE
+Validated the release-entry change in layers:
+
+- `harness plan lint docs/plans/active/2026-04-01-version-file-driven-release-tagging.md`
+- focused smoke coverage for `read-release-version`, executable tag creation,
+  and workflow wiring
+- `go test ./tests/smoke -count=1`
+- `go test ./... -count=1`
+
+The smoke suite now covers unprefixed repository `VERSION` content, malformed
+and missing `VERSION` failures, valid-tag normalization, idempotent tag
+creation when the tag already matches the target commit, mismatched-tag
+failure, and the GitHub Actions workflow triggers and step ordering around the
+VERSION-driven tag path.
 
 ## Review Summary
 
-PENDING_UNTIL_ARCHIVE
+Review history for this candidate:
+
+- `review-001-full` requested changes in `correctness` and `tests`, catching
+  loose git-ref validation, unsafe existing-tag handling, incomplete negative
+  path coverage, and missing executable proof of the idempotent skip path.
+- `review-002-delta` passed after the repair batch introduced stricter
+  VERSION validation, the reusable `create-release-tag-from-version` helper,
+  and stronger smoke coverage.
+- `review-003-full` surfaced two finalize blockers: archive-facing plan
+  placeholders that still needed durable summaries, and workflow wiring
+  assertions that were present but not explicit enough about trigger scope and
+  checkout/order guarantees. Those fixes are now folded into the candidate and
+  require one final narrow finalize review pass before archive.
 
 ## Archive Summary
 
-PENDING_UNTIL_ARCHIVE
+The archive candidate converts release entry from a maintainer-pushed tag to a
+repo-tracked `VERSION` bump on `main`, while preserving the existing
+tag-driven `Release` workflow as the publish mechanism for GitHub Releases and
+Homebrew updates. The candidate adds the root `VERSION` file, two repo-owned
+tagging helpers, a dedicated tag-creation workflow, release docs for the new
+release-PR convention, and smoke coverage for the helper and workflow wiring.
 
 ## Outcome Summary
 
 ### Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Root `VERSION` file with unprefixed release-version semantics.
+- `scripts/read-release-version` for validated version/tag resolution.
+- `scripts/create-release-tag-from-version` for idempotent tag creation with
+  mismatched-tag failure.
+- `.github/workflows/tag-release-from-version.yml` to create the matching
+  `v*` tag when `VERSION` changes on `main`.
+- README and release-maintainer docs describing the dedicated release-PR flow.
+- Smoke coverage and full-suite validation for the new release entry path.
 
 ### Not Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Repository-enforced CI guardrails that block mixed `VERSION` and code
+  changes in a release PR.
+- A broader release cadence or beta/stable promotion policy.
+- Automatic changelog generation or post-release version bump automation.
 
 ### Follow-Up Issues
 

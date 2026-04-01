@@ -247,8 +247,22 @@ func TestVersionTagWorkflowUsesRepositoryVersionFile(t *testing.T) {
 	support.RequireContains(t, workflow, `paths:`)
 	support.RequireContains(t, workflow, `- "VERSION"`)
 	support.RequireContains(t, workflow, `contents: write`)
+	support.RequireContains(t, workflow, `uses: actions/checkout@v4`)
+	support.RequireContains(t, workflow, `fetch-depth: 0`)
+	support.RequireContains(t, workflow, `- name: Resolve release tag from VERSION`)
 	support.RequireContains(t, workflow, `tag="$(scripts/read-release-version --tag)"`)
+	support.RequireContains(t, workflow, `- name: Create release tag when missing`)
 	support.RequireContains(t, workflow, `scripts/create-release-tag-from-version --commit "${GITHUB_SHA}"`)
+
+	checkoutIndex := strings.Index(workflow, `uses: actions/checkout@v4`)
+	resolveIndex := strings.Index(workflow, `- name: Resolve release tag from VERSION`)
+	createIndex := strings.Index(workflow, `- name: Create release tag when missing`)
+	if checkoutIndex == -1 || resolveIndex == -1 || createIndex == -1 {
+		t.Fatalf("expected checkout, resolve, and create steps to exist in workflow")
+	}
+	if !(checkoutIndex < resolveIndex && resolveIndex < createIndex) {
+		t.Fatalf("expected workflow step order checkout -> resolve -> create, got checkout=%d resolve=%d create=%d", checkoutIndex, resolveIndex, createIndex)
+	}
 }
 
 func newTaggedReleaseRepo(t *testing.T) (string, string) {
