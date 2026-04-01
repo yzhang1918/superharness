@@ -75,6 +75,8 @@ jobs:
           cache: true
 
       - name: Run tests
+        env:
+          EASYHARNESS_HOMEBREW_TAP_TOKEN: ""
         working-directory: dist/release-source
         run: go test ./...
 
