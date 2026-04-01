@@ -237,6 +237,11 @@ empty arrays round-trip when present, blank location strings are rejected, and
 `locations: null` is rejected rather than being persisted as an invalid schema
 shape.
 
+Revision 2 reopened only for remote-sync repair after the archived candidate
+was found to be behind `origin/main`. That repair merged the latest `README.md`
+and `VERSION` changes from `origin/main` cleanly and revalidated the refreshed
+candidate with another `go test ./...` pass before rerunning finalize review.
+
 ## Review Summary
 
 Review history for this candidate:
@@ -251,21 +256,27 @@ Review history for this candidate:
   `locations: null` and added the missing raw-JSON regression.
 - `review-004-full` passed clean as the finalize gate with no correctness,
   tests, or docs-consistency findings.
+- `review-005-delta` on revision 2 found two reopen follow-up issues after the
+  remote-sync merge: the reopened active plan still stamped `Revision: 1` in
+  the archive summary, and the durable plan artifact was only present as an
+  untracked active file while the archived copy was deleted.
+- `review-006-delta` passed clean after the reopen closeout repair restamped
+  the active archive summary as revision 2 and restored the active plan to a
+  tracked git path before re-archiving.
 
 ## Archive Summary
 
-- Archived At: 2026-04-01T21:56:38+08:00
-- Revision: 1
-- PR: NONE. The candidate has not been pushed or opened as a PR yet.
-- Ready: The optional review-finding `locations` contract now persists the
-  three agreed string forms, preserves explicit empty arrays when present,
-  keeps omitted `locations` backward-compatible, rejects invalid blank or
-  `null` values, and passed both clean finalize review and full-suite
-  validation.
-- Merge Handoff: After archive, commit the tracked plan move plus these
-  closeout updates, push branch `codex/review-finding-locations`, open or
-  refresh the PR, and record publish/CI/sync evidence until `harness status`
-  reaches `execution/finalize/await_merge`.
+- Archived At: 2026-04-01T22:09:52+08:00
+- Revision: 2
+- PR: [#100](https://github.com/catu-ai/easyharness/pull/100)
+- Ready: Revision 2 cleanly merges the latest `origin/main` release metadata
+  changes, keeps the review-finding `locations` contract intact, passed
+  `review-006-delta` as the current finalize gate, and revalidated the updated
+  branch with `go test ./...`.
+- Merge Handoff: Re-archive revision 2, commit the tracked plan move plus the
+  remote-sync merge, push the refreshed `codex/review-finding-locations`
+  branch, refresh PR #100, and record publish/CI/sync evidence until
+  `harness status` reaches `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
