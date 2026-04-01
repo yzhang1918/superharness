@@ -196,13 +196,32 @@ func TestSubmitStoresSubmissionAndUpdatesLedger(t *testing.T) {
 		return time.Date(2026, 3, 18, 1, 5, 0, 0, time.UTC)
 	}
 	result := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSON(t, review.SubmissionInput{
-		Summary: "Looks good.",
+		Summary: "Found a targeted issue.",
+		Findings: []review.Finding{
+			{
+				Severity:  "important",
+				Title:     "Missing location preservation",
+				Details:   "The submission should preserve reviewer-provided locations.",
+				Locations: []string{"internal/review/service.go#L235", "schema/artifacts/review-submission.schema.json"},
+			},
+		},
 	}))
 	if !result.OK {
 		t.Fatalf("expected submit success, got %#v", result)
 	}
 	if _, err := os.Stat(result.Artifacts.SubmissionPath); err != nil {
 		t.Fatalf("submission missing: %v", err)
+	}
+	var submission review.Submission
+	data, err := os.ReadFile(result.Artifacts.SubmissionPath)
+	if err != nil {
+		t.Fatalf("read submission: %v", err)
+	}
+	if err := json.Unmarshal(data, &submission); err != nil {
+		t.Fatalf("unmarshal submission: %v", err)
+	}
+	if len(submission.Findings) != 1 || len(submission.Findings[0].Locations) != 2 {
+		t.Fatalf("expected persisted locations, got %#v", submission.Findings)
 	}
 	if len(result.NextAction) != 1 || result.NextAction[0].Description != "Report the submission receipt to the controller agent and end the reviewer thread. If the same slot later needs a narrow follow-up for the same tracked step or the same finalize review title in the same revision, the controller may reopen this reviewer through the runtime's native resume mechanism only after this submission is verified and only while the slot instructions still materially match." {
 		t.Fatalf("unexpected submit next action: %#v", result.NextAction)
@@ -236,6 +255,180 @@ func TestSubmitRejectsUnknownSlot(t *testing.T) {
 		t.Fatalf("expected submit failure, got %#v", result)
 	}
 	assertSubmitError(t, result, "slot")
+}
+
+func TestSubmitRejectsEmptyLocationString(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind: "delta",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+
+	result := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSON(t, review.SubmissionInput{
+		Summary: "Found one issue.",
+		Findings: []review.Finding{
+			{
+				Severity:  "important",
+				Title:     "Blank location",
+				Details:   "Locations should not include blank strings.",
+				Locations: []string{"   "},
+			},
+		},
+	}))
+	if result.OK {
+		t.Fatalf("expected submit failure, got %#v", result)
+	}
+	assertSubmitError(t, result, "submission.findings[0].locations[0]")
+}
+
+func TestSubmitRejectsNullLocations(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind: "delta",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+
+	result := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSON(t, map[string]any{
+		"summary": "Found one issue.",
+		"findings": []any{
+			map[string]any{
+				"severity":  "important",
+				"title":     "Null locations are invalid",
+				"details":   "The contract only allows omission or an array of strings.",
+				"locations": nil,
+			},
+		},
+	}))
+	if result.OK {
+		t.Fatalf("expected submit failure, got %#v", result)
+	}
+	assertSubmitError(t, result, "submission.findings[0].locations")
+}
+
+func TestSubmitPreservesExplicitEmptyLocationsArray(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind: "delta",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+
+	result := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSON(t, map[string]any{
+		"summary": "Found one issue.",
+		"findings": []any{
+			map[string]any{
+				"severity":  "important",
+				"title":     "Empty locations still matter",
+				"details":   "An explicit empty array should round-trip.",
+				"locations": []any{},
+			},
+		},
+	}))
+	if !result.OK {
+		t.Fatalf("expected submit success, got %#v", result)
+	}
+
+	data, err := os.ReadFile(result.Artifacts.SubmissionPath)
+	if err != nil {
+		t.Fatalf("read submission: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal raw submission: %v", err)
+	}
+	findings := raw["findings"].([]any)
+	finding := findings[0].(map[string]any)
+	locations, ok := finding["locations"].([]any)
+	if !ok || len(locations) != 0 {
+		t.Fatalf("expected explicit empty locations array, got %#v", finding["locations"])
+	}
+}
+
+func TestSubmitAcceptsFindingWithoutLocations(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind: "delta",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+
+	result := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSON(t, review.SubmissionInput{
+		Summary: "Found one issue.",
+		Findings: []review.Finding{
+			{
+				Severity: "important",
+				Title:    "Locations remain optional",
+				Details:  "The old payload shape still works.",
+			},
+		},
+	}))
+	if !result.OK {
+		t.Fatalf("expected submit success, got %#v", result)
+	}
+
+	data, err := os.ReadFile(result.Artifacts.SubmissionPath)
+	if err != nil {
+		t.Fatalf("read submission: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal raw submission: %v", err)
+	}
+	findings := raw["findings"].([]any)
+	finding := findings[0].(map[string]any)
+	if _, ok := finding["locations"]; ok {
+		t.Fatalf("expected omitted locations field, got %#v", finding)
+	}
 }
 
 func TestAggregateRejectsMissingSubmission(t *testing.T) {
@@ -532,9 +725,10 @@ func TestAggregateFullWithBlockingFindings(t *testing.T) {
 		Summary: "Found a blocker.",
 		Findings: []review.Finding{
 			{
-				Severity: "important",
-				Title:    "Missing validation",
-				Details:  "The archive path is missing one required validation.",
+				Severity:  "important",
+				Title:     "Missing validation",
+				Details:   "The archive path is missing one required validation.",
+				Locations: []string{"internal/lifecycle/service.go#L10-L18"},
 			},
 		},
 	}))
@@ -552,6 +746,9 @@ func TestAggregateFullWithBlockingFindings(t *testing.T) {
 	if len(result.Review.BlockingFindings) != 1 {
 		t.Fatalf("expected one blocking finding, got %#v", result.Review)
 	}
+	if got := result.Review.BlockingFindings[0].Locations; len(got) != 1 || got[0] != "internal/lifecycle/service.go#L10-L18" {
+		t.Fatalf("expected aggregate to preserve locations, got %#v", result.Review.BlockingFindings[0])
+	}
 	state, _, err := runstate.LoadState(root, "2026-03-18-review-contract")
 	if err != nil {
 		t.Fatalf("load state: %v", err)
@@ -561,6 +758,61 @@ func TestAggregateFullWithBlockingFindings(t *testing.T) {
 	}
 	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "Fix the blocking findings before archive") {
 		t.Fatalf("unexpected next actions: %#v", result.NextAction)
+	}
+}
+
+func TestAggregatePreservesExplicitEmptyLocationsArray(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingFinalizePlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind: "full",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+	submit := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSON(t, map[string]any{
+		"summary": "Found one issue.",
+		"findings": []any{
+			map[string]any{
+				"severity":  "important",
+				"title":     "Empty locations still matter",
+				"details":   "An explicit empty array should round-trip.",
+				"locations": []any{},
+			},
+		},
+	}))
+	if !submit.OK {
+		t.Fatalf("submit failed: %#v", submit)
+	}
+
+	result := svc.Aggregate(start.Artifacts.RoundID)
+	if !result.OK {
+		t.Fatalf("aggregate failed: %#v", result)
+	}
+
+	data, err := os.ReadFile(start.Artifacts.AggregatePath)
+	if err != nil {
+		t.Fatalf("read aggregate: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal raw aggregate: %v", err)
+	}
+	findings := raw["blocking_findings"].([]any)
+	finding := findings[0].(map[string]any)
+	locations, ok := finding["locations"].([]any)
+	if !ok || len(locations) != 0 {
+		t.Fatalf("expected explicit empty locations array in aggregate, got %#v", finding["locations"])
 	}
 }
 

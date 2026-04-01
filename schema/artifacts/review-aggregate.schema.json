@@ -98,6 +98,13 @@
         "details": {
           "type": "string",
           "description": "Details is the full review finding explanation."
+        },
+        "locations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Locations optionally lists lightweight repo-relative source anchors for the finding, such as \"path/to/file.go\", \"path/to/file.go#L123\", or \"path/to/file.go#L1-L3\"."
         }
       },
       "additionalProperties": false,

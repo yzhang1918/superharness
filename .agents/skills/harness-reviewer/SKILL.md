@@ -32,7 +32,12 @@ Use this payload shape:
     {
       "severity": "important",
       "title": "Short finding title",
-      "details": "Concrete explanation of the issue and why it matters."
+      "details": "Concrete explanation of the issue and why it matters.",
+      "locations": [
+        "path/to/file.go",
+        "path/to/file.go#L123",
+        "path/to/file.go#L1-L3"
+      ]
     }
   ]
 }
@@ -42,7 +47,13 @@ Rules:
 
 - `summary` is required
 - `findings` may be empty when the slot finds no issues
+- `locations` is optional on each finding
 - valid severities are `blocker`, `important`, and `minor`
+- when present, `locations` should use repo-relative paths and only these
+  lightweight forms:
+  - `path/to/file.go`
+  - `path/to/file.go#L123`
+  - `path/to/file.go#L1-L3`
 
 ## Severity Guidance
 

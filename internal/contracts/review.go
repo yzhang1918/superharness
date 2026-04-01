@@ -1,5 +1,7 @@
 package contracts
 
+import "encoding/json"
+
 // ReviewSpec is the JSON input consumed by `harness review start`.
 type ReviewSpec struct {
 	// Step is the tracked plan step number when the review is step-scoped.
@@ -159,6 +161,16 @@ type ReviewFinding struct {
 
 	// Details is the full review finding explanation.
 	Details string `json:"details"`
+
+	// Locations optionally lists lightweight repo-relative source anchors for
+	// the finding, such as "path/to/file.go", "path/to/file.go#L123", or
+	// "path/to/file.go#L1-L3".
+	Locations []string `json:"locations,omitempty"`
+
+	// HasLocations records whether the payload explicitly included the optional
+	// locations field so empty arrays can round-trip without being collapsed
+	// into omission.
+	HasLocations bool `json:"-"`
 }
 
 // ReviewAggregate is the command-owned aggregate artifact for a completed
@@ -210,6 +222,132 @@ type ReviewAggregateFinding struct {
 
 	// Details is the full review finding explanation.
 	Details string `json:"details"`
+
+	// Locations optionally lists lightweight repo-relative source anchors for
+	// the finding, such as "path/to/file.go", "path/to/file.go#L123", or
+	// "path/to/file.go#L1-L3".
+	Locations []string `json:"locations,omitempty"`
+
+	// HasLocations records whether the payload explicitly included the optional
+	// locations field so empty arrays can round-trip without being collapsed
+	// into omission.
+	HasLocations bool `json:"-"`
+}
+
+func (f ReviewFinding) MarshalJSON() ([]byte, error) {
+	type payload struct {
+		Severity  string   `json:"severity"`
+		Title     string   `json:"title"`
+		Details   string   `json:"details"`
+		Locations []string `json:"locations,omitempty"`
+	}
+	if f.HasLocations {
+		type payloadWithLocations struct {
+			Severity  string   `json:"severity"`
+			Title     string   `json:"title"`
+			Details   string   `json:"details"`
+			Locations []string `json:"locations"`
+		}
+		return json.Marshal(payloadWithLocations{
+			Severity:  f.Severity,
+			Title:     f.Title,
+			Details:   f.Details,
+			Locations: f.Locations,
+		})
+	}
+	return json.Marshal(payload{
+		Severity:  f.Severity,
+		Title:     f.Title,
+		Details:   f.Details,
+		Locations: f.Locations,
+	})
+}
+
+func (f *ReviewFinding) UnmarshalJSON(data []byte) error {
+	type payload struct {
+		Severity  string   `json:"severity"`
+		Title     string   `json:"title"`
+		Details   string   `json:"details"`
+		Locations []string `json:"locations"`
+	}
+	var decoded payload
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	f.Severity = decoded.Severity
+	f.Title = decoded.Title
+	f.Details = decoded.Details
+	f.Locations = decoded.Locations
+	_, f.HasLocations = raw["locations"]
+	return nil
+}
+
+func (f ReviewAggregateFinding) MarshalJSON() ([]byte, error) {
+	type payload struct {
+		Slot      string   `json:"slot"`
+		Dimension string   `json:"dimension"`
+		Severity  string   `json:"severity"`
+		Title     string   `json:"title"`
+		Details   string   `json:"details"`
+		Locations []string `json:"locations,omitempty"`
+	}
+	if f.HasLocations {
+		type payloadWithLocations struct {
+			Slot      string   `json:"slot"`
+			Dimension string   `json:"dimension"`
+			Severity  string   `json:"severity"`
+			Title     string   `json:"title"`
+			Details   string   `json:"details"`
+			Locations []string `json:"locations"`
+		}
+		return json.Marshal(payloadWithLocations{
+			Slot:      f.Slot,
+			Dimension: f.Dimension,
+			Severity:  f.Severity,
+			Title:     f.Title,
+			Details:   f.Details,
+			Locations: f.Locations,
+		})
+	}
+	return json.Marshal(payload{
+		Slot:      f.Slot,
+		Dimension: f.Dimension,
+		Severity:  f.Severity,
+		Title:     f.Title,
+		Details:   f.Details,
+		Locations: f.Locations,
+	})
+}
+
+func (f *ReviewAggregateFinding) UnmarshalJSON(data []byte) error {
+	type payload struct {
+		Slot      string   `json:"slot"`
+		Dimension string   `json:"dimension"`
+		Severity  string   `json:"severity"`
+		Title     string   `json:"title"`
+		Details   string   `json:"details"`
+		Locations []string `json:"locations"`
+	}
+	var decoded payload
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	f.Slot = decoded.Slot
+	f.Dimension = decoded.Dimension
+	f.Severity = decoded.Severity
+	f.Title = decoded.Title
+	f.Details = decoded.Details
+	f.Locations = decoded.Locations
+	_, f.HasLocations = raw["locations"]
+	return nil
 }
 
 // ReviewStartResult is the JSON result returned by `harness review start`.

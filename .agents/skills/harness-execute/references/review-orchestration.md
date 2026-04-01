@@ -153,6 +153,10 @@ Assigned dimension: <dimension-name>
 Instructions: <dimension-instructions>
 ```
 
+Reviewer submissions may include optional finding `locations` arrays using
+lightweight repo-relative anchors such as `path/to/file.go`,
+`path/to/file.go#L123`, or `path/to/file.go#L1-L3`.
+
 ## Fixed Reviewer Resume Prompt Template
 
 Use resume only for a narrow same-slot follow-up after the controller has

@@ -410,11 +410,13 @@ func (s Service) Aggregate(roundID string) AggregateResult {
 		}
 		for _, finding := range submission.Findings {
 			aggregateFinding := AggregateFinding{
-				Slot:      submission.Slot,
-				Dimension: submission.Dimension,
-				Severity:  finding.Severity,
-				Title:     finding.Title,
-				Details:   finding.Details,
+				Slot:         submission.Slot,
+				Dimension:    submission.Dimension,
+				Severity:     finding.Severity,
+				Title:        finding.Title,
+				Details:      finding.Details,
+				Locations:    cloneLocations(finding.Locations, finding.HasLocations),
+				HasLocations: finding.HasLocations,
 			}
 			if isBlockingSeverity(finding.Severity) {
 				blocking = append(blocking, aggregateFinding)
@@ -663,6 +665,21 @@ func validateSubmission(input SubmissionInput) []CommandError {
 		if strings.TrimSpace(finding.Details) == "" {
 			issues = append(issues, CommandError{Path: pathPrefix + ".details", Message: "must not be empty"})
 		}
+		if finding.HasLocations && finding.Locations == nil {
+			issues = append(issues, CommandError{
+				Path:    pathPrefix + ".locations",
+				Message: "must be an array of strings when present",
+			})
+			continue
+		}
+		for j, location := range finding.Locations {
+			if strings.TrimSpace(location) == "" {
+				issues = append(issues, CommandError{
+					Path:    fmt.Sprintf("%s.locations[%d]", pathPrefix, j),
+					Message: "must not be empty",
+				})
+			}
+		}
 	}
 	return issues
 }
@@ -672,6 +689,16 @@ func normalizeSlot(name string) string {
 	slot = slotNamePattern.ReplaceAllString(slot, "-")
 	slot = strings.Trim(slot, "-")
 	return slot
+}
+
+func cloneLocations(locations []string, present bool) []string {
+	if !present {
+		return nil
+	}
+	if len(locations) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), locations...)
 }
 
 func nextRoundID(workdir, planStem, kind string) (string, error) {
