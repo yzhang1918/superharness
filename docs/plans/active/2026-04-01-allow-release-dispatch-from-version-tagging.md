@@ -68,7 +68,7 @@ validate those fixes, and leave the rest of the release chain unchanged.
 
 ### Step 1: Grant workflow dispatch permission
 
-- Done: [ ]
+- Done: [x]
 
 #### Objective
 
@@ -117,11 +117,13 @@ and with
 
 #### Review Notes
 
-PENDING_STEP_REVIEW
+`review-001-delta` passed clean for `correctness` and `tests`. The permission
+repair stayed narrow to `actions: write`, and the release-smoke isolation fix
+now covers both the workflow test step and the targeted no-token smoke test.
 
 ### Step 2: Validate and hand off the workflow fix
 
-- Done: [ ]
+- Done: [x]
 
 #### Objective
 
@@ -145,11 +147,20 @@ manually dispatched as an operational repair before this durable fix lands.
 
 #### Execution Notes
 
-PENDING_STEP_EXECUTION
+Validated the workflow repair locally with the targeted smoke coverage and then
+used the patched branch workflow to manually dispatch
+`release.yml` for `v0.1.0-alpha.6` via run `23851570624`. That run completed
+successfully, published the prerelease at
+`https://github.com/catu-ai/easyharness/releases/tag/v0.1.0-alpha.6`, and
+passed the Homebrew verification job. This confirms both the dispatch
+permission repair and the release-test environment isolation against the real
+failure path.
 
 #### Review Notes
 
-PENDING_STEP_REVIEW
+NO_STEP_REVIEW_NEEDED: Step 2 only recorded external validation and handoff for
+the already-reviewed workflow/test fix. A full finalize review will still cover
+the final candidate before archive.
 
 ## Validation Strategy
 
