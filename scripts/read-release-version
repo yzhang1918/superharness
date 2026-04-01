@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/read-release-version [--version-file <path>] [--tag]
+
+Read the repository VERSION file and print either the raw version string or
+the matching v-prefixed git tag.
+
+Options:
+  --version-file <path>   Path to the VERSION file. Defaults to ./VERSION.
+  --tag                   Print the v-prefixed git tag instead of the raw version.
+  -h, --help              Show this help text.
+EOF
+}
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+version_file="$(pwd -P)/VERSION"
+output_kind="version"
+
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "${value}"
+}
+
+while (($#)); do
+  case "$1" in
+    --version-file)
+      shift
+      if (($# == 0)); then
+        echo "--version-file requires a value" >&2
+        exit 2
+      fi
+      version_file="$1"
+      ;;
+    --tag)
+      output_kind="tag"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if [[ ! -f "${version_file}" ]]; then
+  echo "VERSION file does not exist: ${version_file}" >&2
+  exit 1
+fi
+
+version_contents="$(cat "${version_file}")"
+version_contents="${version_contents//$'\r'/}"
+version="$(trim_whitespace "${version_contents}")"
+
+if [[ -z "${version}" ]]; then
+  echo "VERSION file must not be empty: ${version_file}" >&2
+  exit 1
+fi
+
+if [[ "${version}" == v* ]]; then
+  echo "VERSION must not include the leading v prefix: ${version}" >&2
+  exit 1
+fi
+
+if [[ ! "${version}" =~ ^[0-9][A-Za-z0-9._+-]*$ ]]; then
+  echo "VERSION must start with a digit and use only ASCII letters, digits, dot, underscore, plus, or hyphen: ${version}" >&2
+  exit 1
+fi
+
+tag="v${version}"
+if ! git check-ref-format "refs/tags/${tag}" >/dev/null 2>&1; then
+  echo "VERSION must map to a valid git tag ref: ${tag}" >&2
+  exit 1
+fi
+
+case "${output_kind}" in
+  version)
+    printf '%s\n' "${version}"
+    ;;
+  tag)
+    printf '%s\n' "${tag}"
+    ;;
+  *)
+    echo "unsupported output kind: ${output_kind}" >&2
+    exit 2
+    ;;
+esac

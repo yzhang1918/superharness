@@ -1,0 +1,42 @@
+name: Tag Release From VERSION
+
+on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - "VERSION"
+
+permissions:
+  contents: write
+
+jobs:
+  tag-release:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag from VERSION
+        id: release-version
+        shell: bash
+        run: |
+          tag="$(scripts/read-release-version --tag)"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create release tag when missing
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          scripts/create-release-tag-from-version --commit "${GITHUB_SHA}"
+
+      - name: Dispatch Release workflow for resolved tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh workflow run release.yml --ref "${GITHUB_REF_NAME}" -f version="${{ steps.release-version.outputs.tag }}"

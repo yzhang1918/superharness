@@ -197,6 +197,13 @@ The release binary reports the release version, build commit, and mode. The
 development installer remains available for contributors who are working from a
 checkout.
 
+Maintainers cut releases from a dedicated release PR that updates the root
+`VERSION` file, plus any related release docs. `VERSION` stores the unprefixed
+release version such as `0.1.0-alpha.5`; after that PR merges to `main`,
+automation creates the matching `v*` tag and dispatches the existing `Release`
+workflow, which then publishes the release assets and Homebrew formula updates
+for that tag.
+
 ## Current Command Surface
 
 `easyharness` currently ships these commands:

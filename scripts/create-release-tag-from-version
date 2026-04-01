@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/create-release-tag-from-version [--version-file <path>] [--commit <sha>] [--remote <name>] [--skip-fetch]
+
+Create and push the release tag that corresponds to the repository VERSION
+file. If the tag already exists at the target commit, the script exits 0 after
+reporting the skip. If the tag already exists at a different commit, it fails.
+
+Options:
+  --version-file <path>   Path to the VERSION file. Defaults to ./VERSION.
+  --commit <sha>          Commit to tag. Defaults to HEAD.
+  --remote <name>         Remote to push to. Defaults to origin.
+  --skip-fetch            Do not fetch tags from the remote before checking.
+  -h, --help              Show this help text.
+EOF
+}
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+version_file="$(pwd -P)/VERSION"
+commit=""
+remote="origin"
+fetch_tags="1"
+
+while (($#)); do
+  case "$1" in
+    --version-file)
+      shift
+      if (($# == 0)); then
+        echo "--version-file requires a value" >&2
+        exit 2
+      fi
+      version_file="$1"
+      ;;
+    --commit)
+      shift
+      if (($# == 0)); then
+        echo "--commit requires a value" >&2
+        exit 2
+      fi
+      commit="$1"
+      ;;
+    --remote)
+      shift
+      if (($# == 0)); then
+        echo "--remote requires a value" >&2
+        exit 2
+      fi
+      remote="$1"
+      ;;
+    --skip-fetch)
+      fetch_tags="0"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if [[ -z "${commit}" ]]; then
+  commit="$(git rev-parse HEAD)"
+fi
+
+tag="$("${repo_root}/scripts/read-release-version" --version-file "${version_file}" --tag)"
+
+if [[ "${fetch_tags}" == "1" ]]; then
+  git fetch --force --tags "${remote}"
+fi
+
+if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+  existing_commit="$(git rev-list -n 1 "refs/tags/${tag}")"
+  if [[ "${existing_commit}" != "${commit}" ]]; then
+    echo "Tag ${tag} already exists at ${existing_commit}, expected ${commit}" >&2
+    exit 1
+  fi
+
+  echo "Tag ${tag} already exists at ${existing_commit}; skipping."
+  exit 0
+fi
+
+git tag "${tag}" "${commit}"
+git push "${remote}" "refs/tags/${tag}"
+echo "Created and pushed tag ${tag} at ${commit}."

@@ -11,14 +11,17 @@ install as `catu-ai/tap/easyharness`.
 
 ## Release Checklist
 
-1. Decide the next version tag, such as `v0.1.0-alpha.1`.
-2. Make sure `main` is up to date and the release branch is clean.
-3. Run `go test ./...`.
-4. Run `scripts/build-release --version <tag>` locally if you want to verify the
-   packaging path before publishing.
-5. Create and push the matching git tag, for example
-   `git tag v0.1.0-alpha.1 && git push origin v0.1.0-alpha.1`.
-6. Confirm the release workflow uploaded the release archives and
+1. Decide the next release version, such as `0.1.0-alpha.6`, and update the
+   root `VERSION` file in a dedicated release PR.
+2. Make sure `main` is up to date and run `go test ./...` in the release PR
+   before merge.
+3. If you want an extra local packaging check before merge, run
+   `scripts/build-release --version "v$(cat VERSION)"`.
+4. Merge the release PR to `main`.
+5. Confirm the `Tag Release From VERSION` workflow created the matching git
+   tag, for example `v0.1.0-alpha.6`, and then dispatched the `Release`
+   workflow for that tag.
+6. Confirm the `Release` workflow uploaded the release archives and
    `SHA256SUMS` file.
 7. If the Homebrew tap token is configured, confirm the workflow updated
    `Formula/easyharness.rb` in `catu-ai/homebrew-tap`.
@@ -28,9 +31,17 @@ install as `catu-ai/tap/easyharness`.
    current release with `brew upgrade catu-ai/tap/easyharness`, and pass
    `brew test easyharness`.
 
-You can also use the workflow-dispatch path to republish assets for an
-existing `v*` tag without creating a second tag. The workflow rejects branch
-names or other non-tag refs.
+`VERSION` intentionally stores the bare release version without the leading
+`v`. The auto-tag workflow adds that prefix when it creates the git tag, so
+`VERSION=0.1.0-alpha.6` maps to the release tag `v0.1.0-alpha.6`.
+
+Release PR separation is a team convention rather than a repository-enforced
+rule. The expected path is that a release PR contains the `VERSION` bump and
+any release-doc updates, while ordinary feature PRs leave `VERSION` alone.
+
+You can still use the `Release` workflow-dispatch path to republish assets for
+an existing `v*` tag without creating a second tag. The workflow rejects
+branch names or other non-tag refs.
 
 Release archives intentionally derive packaged file mtimes from the tagged
 commit timestamp in UTC, subject to ZIP's 2-second timestamp precision. That
