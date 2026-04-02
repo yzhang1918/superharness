@@ -570,6 +570,11 @@ Contract:
 
 - accept the reviewer payload via `--input <path>` or stdin
 - validate that the submission matches an expected slot
+- allow each finding to omit `locations` or provide `locations: []string`
+  using lightweight repo-relative anchors in one of these forms:
+  - `path/to/file.go`
+  - `path/to/file.go#L123`
+  - `path/to/file.go#L1-L3`
 - store the structured reviewer artifact in the round's owned location
 - update the dispatch or audit ledger
 - return a submission receipt plus clear next actions
@@ -600,7 +605,8 @@ Contract:
 - collect reviewer artifacts
 - compute blocking and non-blocking findings
 - stop with an error when expected reviewer slots are missing or invalid
-- write an aggregate artifact that captures the review decision surface
+- write an aggregate artifact that captures the review decision surface and
+  preserves any finding `locations` verbatim
 - update local `state.json` with the aggregate result, including whether the
   round passed or requested changes
 - allow later commands to recover that decision from the round aggregate

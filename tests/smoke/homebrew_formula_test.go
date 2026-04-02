@@ -106,7 +106,8 @@ func TestUpdateHomebrewTapWarnsWithoutToken(t *testing.T) {
 		t,
 		repoRoot,
 		envWithOverrides(t, map[string]string{
-			"PATH": installerPath(t),
+			"PATH":                           installerPath(t),
+			"EASYHARNESS_HOMEBREW_TAP_TOKEN": "",
 		}),
 		"/bin/bash",
 		filepath.Join(repoRoot, "scripts", "update-homebrew-tap"),
@@ -194,6 +195,7 @@ func TestReleaseWorkflowWiresHomebrewTapPublishing(t *testing.T) {
 	support.RequireContains(t, workflow, `path: dist/release-source`)
 	support.RequireContains(t, workflow, `go-version-file: dist/release-source/go.mod`)
 	support.RequireContains(t, workflow, `working-directory: dist/release-source`)
+	support.RequireContains(t, workflow, `EASYHARNESS_HOMEBREW_TAP_TOKEN: ""`)
 	support.RequireContains(t, workflow, `if: ${{ env.EASYHARNESS_HOMEBREW_TAP_TOKEN != '' }}`)
 	support.RequireContains(t, workflow, `repository: catu-ai/homebrew-tap`)
 	support.RequireContains(t, workflow, `ref: ${{ env.EASYHARNESS_HOMEBREW_TAP_BRANCH }}`)

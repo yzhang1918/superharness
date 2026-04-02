@@ -199,7 +199,7 @@ checkout.
 
 Maintainers cut releases from a dedicated release PR that updates the root
 `VERSION` file, plus any related release docs. `VERSION` stores the unprefixed
-release version such as `0.1.0-alpha.5`; after that PR merges to `main`,
+release version such as `0.1.0-alpha.6`; after that PR merges to `main`,
 automation creates the matching `v*` tag and dispatches the existing `Release`
 workflow, which then publishes the release assets and Homebrew formula updates
 for that tag.

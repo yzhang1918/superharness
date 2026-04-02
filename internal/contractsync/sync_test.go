@@ -72,6 +72,22 @@ func TestReviewInputSchemasMatchValidatorBoundaries(t *testing.T) {
 	if !schemaAllowsNull(findingsSchema) {
 		t.Fatalf("expected review submission findings to allow null, got %#v", findingsSchema)
 	}
+	reviewFinding := submissionDefs["ReviewFinding"].(map[string]any)
+	assertLocationsSchema(t, reviewFinding)
+
+	var artifactSubmission map[string]any
+	if err := json.Unmarshal(files["schema/artifacts/review-submission.schema.json"], &artifactSubmission); err != nil {
+		t.Fatalf("unmarshal review submission artifact schema: %v", err)
+	}
+	artifactSubmissionFinding := artifactSubmission["$defs"].(map[string]any)["ReviewFinding"].(map[string]any)
+	assertLocationsSchema(t, artifactSubmissionFinding)
+
+	var aggregate map[string]any
+	if err := json.Unmarshal(files["schema/artifacts/review-aggregate.schema.json"], &aggregate); err != nil {
+		t.Fatalf("unmarshal review aggregate schema: %v", err)
+	}
+	aggregateFinding := aggregate["$defs"].(map[string]any)["ReviewAggregateFinding"].(map[string]any)
+	assertLocationsSchema(t, aggregateFinding)
 }
 
 func TestSchemaIndexNoLongerPointsAtGeneratedMarkdown(t *testing.T) {
@@ -187,4 +203,19 @@ func schemaAllowsNull(schema map[string]any) bool {
 		}
 	}
 	return false
+}
+
+func assertLocationsSchema(t *testing.T, findingSchema map[string]any) {
+	t.Helper()
+	locationsSchema := findingSchema["properties"].(map[string]any)["locations"].(map[string]any)
+	if schemaAllowsNull(locationsSchema) {
+		t.Fatalf("expected review finding locations to be optional rather than nullable, got %#v", locationsSchema)
+	}
+	if locationsSchema["type"] != "array" {
+		t.Fatalf("expected review finding locations to be an array, got %#v", locationsSchema)
+	}
+	locationItem := locationsSchema["items"].(map[string]any)
+	if locationItem["type"] != "string" {
+		t.Fatalf("expected review finding location items to be strings, got %#v", locationItem)
+	}
 }

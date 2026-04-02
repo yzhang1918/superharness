@@ -247,6 +247,7 @@ func TestVersionTagWorkflowUsesRepositoryVersionFile(t *testing.T) {
 	support.RequireContains(t, workflow, `paths:`)
 	support.RequireContains(t, workflow, `- "VERSION"`)
 	support.RequireContains(t, workflow, `contents: write`)
+	support.RequireContains(t, workflow, `actions: write`)
 	support.RequireContains(t, workflow, `uses: actions/checkout@v4`)
 	support.RequireContains(t, workflow, `fetch-depth: 0`)
 	support.RequireContains(t, workflow, `- name: Resolve release tag from VERSION`)

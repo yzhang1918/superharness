@@ -342,6 +342,9 @@ archive.
     presentation contract.
 
 ## Validation Summary
+
+UPDATE_REQUIRED_AFTER_REOPEN
+
 The original archive candidate was reopened in `finalize-fix` mode after
 human feedback narrowed one remaining Timeline semantic gap: the right-hand
 inspector still rendered artifact-ref tabs as ref metadata instead of file
@@ -381,6 +384,9 @@ activity at the top.
   `review-submit-submission.png`.
 
 ## Review Summary
+
+UPDATE_REQUIRED_AFTER_REOPEN
+
 The original archive candidate passed `review-011-full`, then reopened for one
 narrow finalize follow-up after direct human UX feedback on the Timeline
 inspector tabs.
@@ -407,6 +413,8 @@ inspector tabs.
 
 ## Archive Summary
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - Archived At: 2026-04-02T22:15:49+08:00
 - Revision: 3
 This section records the first archive handoff and the state of the reopened
@@ -429,6 +437,8 @@ presentation polish pass.
 
 ### Delivered
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - Added the command-owned `.local/harness/plans/<plan-stem>/events.jsonl`
   contract plus the `/api/timeline` read model and UI wiring.
 - Replaced the Timeline placeholder with a VS Code-like three-column workbench:
@@ -450,6 +460,8 @@ presentation polish pass.
 
 ### Not Delivered
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - The archive move itself, publish evidence refresh, CI/sync evidence refresh,
   and renewed merge-ready handoff for revision 3 are still pending the
   post-review archive/publish loop.
@@ -458,4 +470,7 @@ presentation polish pass.
 
 ### Follow-Up Issues
 
+UPDATE_REQUIRED_AFTER_REOPEN
+
 - #101: Track post-launch timeline follow-ups after event-index landing
+
