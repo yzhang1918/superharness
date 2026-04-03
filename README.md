@@ -237,9 +237,10 @@ it is not a JSON-first command surface.
 `harness ui` starts a local read-only workbench for the current repository.
 The currently delivered slices expose live `Status`, `Timeline`, and `Review`
 pages. `Timeline` is backed by the current plan's command-owned event index,
-and `Review` renders the active plan's read-only review rounds. `Diff` and
-`Files` still ship as explicit WIP placeholders until their deeper data
-surfaces are implemented.
+and `Review` renders the active plan's read-only review rounds. The UI keeps
+an IDE-like steering surface, but it intentionally does not duplicate a
+general-purpose file browser or diff viewer that is already better served by
+external IDEs.
 
 ## Workflow
 

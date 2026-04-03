@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 
 import "./styles.css";
 
-type Page = "status" | "timeline" | "review" | "diff" | "files";
+type Page = "status" | "timeline" | "review";
 type PageDef = { id: Page; label: string; href: string };
 type SectionLink = { id: string; label: string; meta?: string };
 
@@ -168,12 +168,10 @@ const pages: PageDef[] = [
   { id: "status", label: "Status", href: "/status" },
   { id: "timeline", label: "Timeline", href: "/timeline" },
   { id: "review", label: "Review", href: "/review" },
-  { id: "diff", label: "Diff", href: "/diff" },
-  { id: "files", label: "Files", href: "/files" },
 ];
 
 function isPage(value: string | null): value is Page {
-  return value === "status" || value === "timeline" || value === "review" || value === "diff" || value === "files";
+  return value === "status" || value === "timeline" || value === "review";
 }
 
 function pageFromPathname(pathname: string): Page | null {
@@ -213,20 +211,6 @@ function RailIcon(props: { page: Page }) {
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M4 3.5h8v9H4z" fill="none" stroke="currentColor" stroke-width="1.2" />
           <path d="M6 6.5h4M6 9.5h3" fill="none" stroke="currentColor" stroke-width="1.2" />
-        </svg>
-      );
-    case "diff":
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M5 3v10M11 3v10M3.5 5.5H6.5M9.5 10.5h3" fill="none" stroke="currentColor" stroke-width="1.2" />
-          <circle cx="5" cy="5.5" r="1.4" fill="currentColor" />
-          <circle cx="11" cy="10.5" r="1.4" fill="currentColor" />
-        </svg>
-      );
-    case "files":
-      return (
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M3.5 4.5h3l1 1h5v6.5h-9z" fill="none" stroke="currentColor" stroke-width="1.2" />
         </svg>
       );
   }
@@ -1018,9 +1002,7 @@ function App() {
                   artifacts={activeStatus.artifacts}
                   selectedSection={section}
                 />
-              ) : (
-                <PlaceholderPage title={pageDefinition(page).label} selectedSection={section} />
-              )}
+              ) : null}
             </section>
           </main>
         )}
@@ -1806,28 +1788,6 @@ function ReviewWorkspace(props: {
           )}
         </section>
       </section>
-    </section>
-  );
-}
-
-function PlaceholderPage(props: { title: string; selectedSection: string }) {
-  const heading = props.selectedSection === "status" ? "Status" : "Overview";
-  const copy =
-    props.selectedSection === "status"
-      ? "Route and shell are live. Data hookup remains deferred for this page."
-      : "This page is scaffolded but not yet wired to a full data view. The first release keeps the shell in place while the underlying contracts settle.";
-
-  return (
-    <section class="workspace">
-      <div class="workspace-inner">
-        <section id={props.selectedSection} class="pane pane-placeholder">
-          <div class="section-head">
-            <h2>{heading}</h2>
-            <span class="muted">WIP</span>
-          </div>
-          <div class="placeholder-copy">{copy}</div>
-        </section>
-      </div>
     </section>
   );
 }

@@ -195,9 +195,7 @@ VS Code.
 The left rail should use icons only. Recommended sections:
 
 - Overview
-- Changes
 - Reviews
-- Files
 - Timeline
 - Settings
 
@@ -219,17 +217,6 @@ It should show:
 This view should answer "What is happening, and what should the human decide
 now?" before the user opens any deeper pane.
 
-### Changes
-
-Changes should focus on tracked worktree state:
-
-- changed files list
-- `git status --short`
-- tracked diff
-- per-file diff tabs
-
-This is where a human verifies what the agent changed last.
-
 ### Reviews
 
 Reviews should make review state first-class.
@@ -245,17 +232,6 @@ It should show:
 
 This area is critical for issue #70 because review evidence is one of the main
 human steering inputs.
-
-### Files
-
-Files should be a proper tree explorer rooted in the current worktree, with
-harness-relevant files easy to reach:
-
-- tracked plan files
-- local runtime artifacts under `.local/harness`
-- generated evidence artifacts
-
-The explorer pane should show structure, not a flat file list.
 
 ### Timeline
 
@@ -401,9 +377,10 @@ Several interaction patterns are worth preserving:
 Ship:
 
 - top-level `harness ui`
-- Overview, Changes, Reviews, Files, Timeline, Settings
+- Overview, Reviews, Timeline, Settings
 - status drawer
-- tracked diff and artifact inspection
+- artifact inspection grounded in harness-owned data, not a general-purpose IDE
+  browser
 
 Defer:
 
