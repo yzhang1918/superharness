@@ -1,0 +1,371 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/catu-ai/easyharness/tree/main/schema/ui-resources/review.schema.json",
+  "$ref": "#/$defs/ReviewResult",
+  "$defs": {
+    "ErrorDetail": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path identifies the field, section, or artifact path associated with the error."
+        },
+        "message": {
+          "type": "string",
+          "description": "Message is the human-readable explanation of the problem."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path",
+        "message"
+      ],
+      "description": "ErrorDetail describes one machine-readable validation or execution problem in a command result."
+    },
+    "ReviewAggregateFinding": {
+      "properties": {
+        "slot": {
+          "type": "string",
+          "description": "Slot is the stable reviewer slot identifier."
+        },
+        "dimension": {
+          "type": "string",
+          "description": "Dimension is the human-readable review dimension label."
+        },
+        "severity": {
+          "type": "string",
+          "description": "Severity is the finding severity label."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title is the short human-readable title of the finding."
+        },
+        "details": {
+          "type": "string",
+          "description": "Details is the full review finding explanation."
+        },
+        "locations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Locations optionally lists lightweight repo-relative source anchors for the finding, such as \"path/to/file.go\", \"path/to/file.go#L123\", or \"path/to/file.go#L1-L3\"."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "slot",
+        "dimension",
+        "severity",
+        "title",
+        "details"
+      ],
+      "description": "ReviewAggregateFinding is one aggregate finding annotated with its slot and dimension context."
+    },
+    "ReviewArtifactView": {
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "Label is the stable display label for the artifact."
+        },
+        "path": {
+          "type": "string",
+          "description": "Path is the artifact path when one exists."
+        },
+        "status": {
+          "type": "string",
+          "description": "Status reports whether the artifact is available, missing, or invalid."
+        },
+        "summary": {
+          "type": "string",
+          "description": "Summary is the concise artifact-state explanation."
+        },
+        "content_type": {
+          "type": "string",
+          "description": "ContentType reports how Content should be rendered in the UI resource."
+        },
+        "content": {
+          "description": "Content is the resolved artifact file payload for UI tabs when readable."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "label"
+      ],
+      "description": "ReviewArtifactView is one raw supporting artifact view for a review round."
+    },
+    "ReviewArtifacts": {
+      "properties": {
+        "plan_path": {
+          "type": "string",
+          "description": "PlanPath is the current plan path associated with the review data."
+        },
+        "local_state_path": {
+          "type": "string",
+          "description": "LocalStatePath is the plan-local state cache path when one exists."
+        },
+        "reviews_dir": {
+          "type": "string",
+          "description": "ReviewsDir is the current-plan review rounds directory."
+        },
+        "active_round_id": {
+          "type": "string",
+          "description": "ActiveRoundID is the currently active review round when one exists in local state."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ReviewArtifacts points to the current plan review sources."
+    },
+    "ReviewFinding": {
+      "properties": {
+        "severity": {
+          "type": "string",
+          "description": "Severity is the finding severity label."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title is the short human-readable title of the finding."
+        },
+        "details": {
+          "type": "string",
+          "description": "Details is the full review finding explanation."
+        },
+        "locations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Locations optionally lists lightweight repo-relative source anchors for the finding, such as \"path/to/file.go\", \"path/to/file.go#L123\", or \"path/to/file.go#L1-L3\"."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "severity",
+        "title",
+        "details"
+      ],
+      "description": "ReviewFinding is one review finding in a submission or aggregate."
+    },
+    "ReviewResult": {
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "OK reports whether review loading succeeded."
+        },
+        "resource": {
+          "type": "string",
+          "description": "Resource is the stable UI resource identifier."
+        },
+        "summary": {
+          "type": "string",
+          "description": "Summary is the concise human-readable explanation of the loaded review rounds."
+        },
+        "artifacts": {
+          "$ref": "#/$defs/ReviewArtifacts",
+          "description": "Artifacts points to the current-plan review artifact paths used to build this response."
+        },
+        "rounds": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ReviewRoundView"
+              },
+              "type": "array",
+              "description": "Rounds lists the discovered review rounds for the current plan."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Rounds lists the discovered review rounds for the current plan."
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Warnings lists non-fatal degraded-state notes for the overall review resource."
+        },
+        "errors": {
+          "items": {
+            "$ref": "#/$defs/ErrorDetail"
+          },
+          "type": "array",
+          "description": "Errors lists hard failures that prevented review loading."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ok",
+        "resource",
+        "summary",
+        "rounds"
+      ],
+      "description": "ReviewResult is the read-only UI resource returned by `/api/review`."
+    },
+    "ReviewRoundView": {
+      "properties": {
+        "round_id": {
+          "type": "string",
+          "description": "RoundID is the stable identifier for the review round."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Kind is the review kind for the round."
+        },
+        "step": {
+          "type": "integer",
+          "description": "Step is the tracked plan step number when the round is step-scoped."
+        },
+        "revision": {
+          "type": "integer",
+          "description": "Revision is the plan-local revision associated with the round."
+        },
+        "review_title": {
+          "type": "string",
+          "description": "ReviewTitle is the human-readable title for the round when one exists."
+        },
+        "status": {
+          "type": "string",
+          "description": "Status is the stable UI status label for the round."
+        },
+        "status_summary": {
+          "type": "string",
+          "description": "StatusSummary is the concise explanation of the current round status."
+        },
+        "decision": {
+          "type": "string",
+          "description": "Decision is the aggregate decision when one is known."
+        },
+        "created_at": {
+          "type": "string",
+          "description": "CreatedAt is the round creation timestamp when known."
+        },
+        "updated_at": {
+          "type": "string",
+          "description": "UpdatedAt is the ledger update timestamp when known."
+        },
+        "aggregated_at": {
+          "type": "string",
+          "description": "AggregatedAt is the aggregate timestamp when known."
+        },
+        "is_active": {
+          "type": "boolean",
+          "description": "IsActive reports whether local state still points at this round as active."
+        },
+        "total_slots": {
+          "type": "integer",
+          "description": "TotalSlots is the number of reviewer slots represented by the round."
+        },
+        "submitted_slots": {
+          "type": "integer",
+          "description": "SubmittedSlots is the number of reviewer slots with a submission."
+        },
+        "pending_slots": {
+          "type": "integer",
+          "description": "PendingSlots is the number of reviewer slots still waiting on a submission."
+        },
+        "reviewers": {
+          "items": {
+            "$ref": "#/$defs/ReviewSlotView"
+          },
+          "type": "array",
+          "description": "Reviewers lists the reviewer-centric slot views for the round."
+        },
+        "blocking_findings": {
+          "items": {
+            "$ref": "#/$defs/ReviewAggregateFinding"
+          },
+          "type": "array",
+          "description": "BlockingFindings lists aggregate blocking findings when they exist."
+        },
+        "non_blocking_findings": {
+          "items": {
+            "$ref": "#/$defs/ReviewAggregateFinding"
+          },
+          "type": "array",
+          "description": "NonBlockingFindings lists aggregate non-blocking findings when they exist."
+        },
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/ReviewArtifactView"
+          },
+          "type": "array",
+          "description": "Artifacts lists supporting raw review artifacts for the round."
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Warnings lists non-fatal degraded-state notes for the round."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "round_id"
+      ],
+      "description": "ReviewRoundView is one read-only UI representation of a review round."
+    },
+    "ReviewSlotView": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name is the human-readable dimension label."
+        },
+        "slot": {
+          "type": "string",
+          "description": "Slot is the stable reviewer slot identifier."
+        },
+        "instructions": {
+          "type": "string",
+          "description": "Instructions is the reviewer prompt for this slot when the manifest is readable."
+        },
+        "status": {
+          "type": "string",
+          "description": "Status is the current submission status label for the slot."
+        },
+        "submission_path": {
+          "type": "string",
+          "description": "SubmissionPath is the path to the submission artifact for this slot."
+        },
+        "submitted_at": {
+          "type": "string",
+          "description": "SubmittedAt is the submission timestamp when one is known."
+        },
+        "summary": {
+          "type": "string",
+          "description": "Summary is the reviewer's concise overall assessment when one was submitted."
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/ReviewFinding"
+          },
+          "type": "array",
+          "description": "Findings lists the slot-level review findings when one was submitted."
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Warnings lists non-fatal degraded-state notes for this slot."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "slot"
+      ],
+      "description": "ReviewSlotView is one reviewer-centric view of a manifest slot plus any submission that was returned for that slot."
+    }
+  },
+  "title": "Review UI resource",
+  "description": "Read-only JSON resource returned by `/api/review` for `harness ui`."
+}

@@ -91,7 +91,14 @@ drives the local UI through the
 
 ```bash
 scripts/ui-playwright-smoke
+scripts/ui-playwright-review-smoke
 ```
+
+Use `scripts/ui-playwright-smoke` for the general shell, rail, and archived-plan
+browser path. Use `scripts/ui-playwright-review-smoke` whenever the `Review`
+page changes, or when you want the populated round-browser validation that
+exercises active-plan review data, degraded review artifacts, and review-only
+states such as empty active plans.
 
 For frontend development against the live backend, run the bundled backend dev
 command in one terminal so Vite's default `/api` proxy has a live target on
@@ -228,10 +235,11 @@ identifying the running binary. Unlike the stateful workflow commands above,
 it is not a JSON-first command surface.
 
 `harness ui` starts a local read-only workbench for the current repository.
-The first delivered slices expose a live `Status` page plus a read-only
-`Timeline` page backed by the current plan's command-owned event index.
-`Review`, `Diff`, and `Files` still ship as explicit WIP placeholders until
-their deeper data surfaces are implemented.
+The currently delivered slices expose live `Status`, `Timeline`, and `Review`
+pages. `Timeline` is backed by the current plan's command-owned event index,
+and `Review` renders the active plan's read-only review rounds. `Diff` and
+`Files` still ship as explicit WIP placeholders until their deeper data
+surfaces are implemented.
 
 ## Workflow
 

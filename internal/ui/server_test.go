@@ -156,6 +156,165 @@ func TestNewHandlerServesTimelineJSON(t *testing.T) {
 	}
 }
 
+func TestNewHandlerServesReviewJSON(t *testing.T) {
+	workdir := t.TempDir()
+	relPlanPath := "docs/plans/active/2026-04-02-ui-review-plan.md"
+	path := filepath.Join(workdir, filepath.FromSlash(relPlanPath))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir plan dir: %v", err)
+	}
+	rendered, err := plan.RenderTemplate(plan.TemplateOptions{Title: "UI Review Plan"})
+	if err != nil {
+		t.Fatalf("render plan: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	if _, err := runstate.SaveCurrentPlan(workdir, relPlanPath); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	if _, err := runstate.SaveState(workdir, "2026-04-02-ui-review-plan", &runstate.State{
+		PlanPath: relPlanPath,
+		PlanStem: "2026-04-02-ui-review-plan",
+		Revision: 2,
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-002-full",
+			Kind:       "full",
+			Revision:   2,
+			Aggregated: false,
+		},
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	reviewDir := filepath.Join(workdir, ".local", "harness", "plans", "2026-04-02-ui-review-plan", "reviews", "review-002-full")
+	if err := os.MkdirAll(filepath.Join(reviewDir, "submissions"), 0o755); err != nil {
+		t.Fatalf("mkdir review dir: %v", err)
+	}
+	manifestPath := filepath.Join(reviewDir, "manifest.json")
+	ledgerPath := filepath.Join(reviewDir, "ledger.json")
+	submissionPath := filepath.Join(reviewDir, "submissions", "ux.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"round_id":"review-002-full","kind":"full","revision":2,"review_title":"Finalize review","plan_path":"docs/plans/active/2026-04-02-ui-review-plan.md","plan_stem":"2026-04-02-ui-review-plan","created_at":"2026-04-02T12:00:00Z","ledger_path":"`+ledgerPath+`","aggregate_path":"`+filepath.Join(reviewDir, "aggregate.json")+`","submissions_dir":"`+filepath.Join(reviewDir, "submissions")+`","dimensions":[{"name":"UX","slot":"ux","instructions":"Check the interface hierarchy.","submission_path":"`+submissionPath+`"}]}`), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(ledgerPath, []byte(`{"round_id":"review-002-full","kind":"full","updated_at":"2026-04-02T12:10:00Z","slots":[{"name":"UX","slot":"ux","status":"submitted","submitted_at":"2026-04-02T12:08:00Z","submission_path":"`+submissionPath+`"}]}`), 0o644); err != nil {
+		t.Fatalf("write ledger: %v", err)
+	}
+	if err := os.WriteFile(submissionPath, []byte(`{"round_id":"review-002-full","slot":"ux","dimension":"UX","submitted_at":"2026-04-02T12:08:00Z","summary":"Hierarchy is clear.","findings":[]}`), 0o644); err != nil {
+		t.Fatalf("write submission: %v", err)
+	}
+
+	handler, err := NewHandler(workdir)
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/review", nil)
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+
+	var payload struct {
+		OK       bool   `json:"ok"`
+		Resource string `json:"resource"`
+		Rounds   []struct {
+			RoundID   string `json:"round_id"`
+			Status    string `json:"status"`
+			Reviewers []struct {
+				Instructions string `json:"instructions"`
+				Summary      string `json:"summary"`
+			} `json:"reviewers"`
+		} `json:"rounds"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v\n%s", err, recorder.Body.String())
+	}
+	if !payload.OK || payload.Resource != "review" {
+		t.Fatalf("unexpected review payload: %#v", payload)
+	}
+	if len(payload.Rounds) != 1 || payload.Rounds[0].RoundID != "review-002-full" {
+		t.Fatalf("unexpected rounds: %#v", payload.Rounds)
+	}
+	if payload.Rounds[0].Status != "waiting_for_aggregation" {
+		t.Fatalf("expected waiting_for_aggregation status, got %#v", payload.Rounds[0])
+	}
+	if len(payload.Rounds[0].Reviewers) != 1 || payload.Rounds[0].Reviewers[0].Instructions == "" || payload.Rounds[0].Reviewers[0].Summary == "" {
+		t.Fatalf("expected reviewer content, got %#v", payload.Rounds[0].Reviewers)
+	}
+}
+
+func TestNewHandlerServesReviewJSONFailureAs503(t *testing.T) {
+	workdir := t.TempDir()
+	relPlanPath := "docs/plans/active/2026-04-02-ui-review-error.md"
+	path := filepath.Join(workdir, filepath.FromSlash(relPlanPath))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir plan dir: %v", err)
+	}
+	rendered, err := plan.RenderTemplate(plan.TemplateOptions{Title: "UI Review Error"})
+	if err != nil {
+		t.Fatalf("render plan: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	if _, err := runstate.SaveCurrentPlan(workdir, relPlanPath); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	planStem := "2026-04-02-ui-review-error"
+	if _, err := runstate.SaveState(workdir, planStem, &runstate.State{
+		PlanPath: relPlanPath,
+		PlanStem: planStem,
+		Revision: 1,
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	reviewsPath := filepath.Join(workdir, ".local", "harness", "plans", planStem, "reviews")
+	if err := os.MkdirAll(filepath.Dir(reviewsPath), 0o755); err != nil {
+		t.Fatalf("mkdir reviews parent: %v", err)
+	}
+	if err := os.WriteFile(reviewsPath, []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatalf("write invalid reviews path: %v", err)
+	}
+
+	handler, err := NewHandler(workdir)
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/review", nil)
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d", recorder.Code)
+	}
+
+	var payload struct {
+		OK       bool   `json:"ok"`
+		Resource string `json:"resource"`
+		Summary  string `json:"summary"`
+		Errors   []struct {
+			Path    string `json:"path"`
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v\n%s", err, recorder.Body.String())
+	}
+	if payload.OK || payload.Resource != "review" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	if !strings.Contains(payload.Summary, "Unable to enumerate review rounds") {
+		t.Fatalf("unexpected summary: %#v", payload)
+	}
+	if len(payload.Errors) != 1 || payload.Errors[0].Path != "reviews" {
+		t.Fatalf("unexpected errors: %#v", payload.Errors)
+	}
+}
+
 func TestNewHandlerServesLargeTimelinePayloadWithoutTruncation(t *testing.T) {
 	workdir := t.TempDir()
 	relPlanPath := "docs/plans/active/2026-04-01-ui-timeline-large.md"

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catu-ai/easyharness/internal/reviewui"
 	"github.com/catu-ai/easyharness/internal/status"
 	"github.com/catu-ai/easyharness/internal/timeline"
 )
@@ -102,6 +103,13 @@ func NewHandler(workdir string) (http.Handler, error) {
 		}
 		writeTimelineJSON(w, timeline.Service{Workdir: workdir}.Read())
 	})
+	mux.HandleFunc("/api/review", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeReviewJSON(w, reviewui.Service{Workdir: workdir}.Read())
+	})
 	mux.Handle("/", spaHandler(staticFS, workdir))
 	return mux, nil
 }
@@ -170,6 +178,14 @@ func writeStatusJSON(w http.ResponseWriter, result status.Result) {
 }
 
 func writeTimelineJSON(w http.ResponseWriter, result timeline.Result) {
+	statusCode := http.StatusOK
+	if !result.OK {
+		statusCode = http.StatusServiceUnavailable
+	}
+	writeJSON(w, statusCode, result)
+}
+
+func writeReviewJSON(w http.ResponseWriter, result reviewui.Result) {
 	statusCode := http.StatusOK
 	if !result.OK {
 		statusCode = http.StatusServiceUnavailable

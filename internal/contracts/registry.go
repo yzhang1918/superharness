@@ -19,6 +19,15 @@ type SchemaEntry struct {
 func SchemaRegistry() []SchemaEntry {
 	return []SchemaEntry{
 		{
+			Key:         "ui_resources.review",
+			Group:       "ui_resources",
+			Path:        "schema/ui-resources/review.schema.json",
+			Title:       "Review UI resource",
+			Description: "Read-only JSON resource returned by `/api/review` for `harness ui`.",
+			Shape:       "output",
+			Type:        reflect.TypeFor[ReviewResult](),
+		},
+		{
 			Key:         "ui_resources.timeline",
 			Group:       "ui_resources",
 			Path:        "schema/ui-resources/timeline.schema.json",

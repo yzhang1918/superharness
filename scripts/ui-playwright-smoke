@@ -67,6 +67,18 @@ sys.exit(completed.returncode)
 PY
 }
 
+pwcli_run_code_checked() {
+  local session="$1"
+  local code="$2"
+  local output
+  output="$(pwcli "$session" run-code "$code")"
+  if printf '%s\n' "$output" | grep -Fq "### Error"; then
+    printf '%s\n' "$output" >&2
+    exit 1
+  fi
+  printf '%s\n' "$output"
+}
+
 pwcli_close() {
   local session="$1"
   local workdir
@@ -108,6 +120,11 @@ log_phase() {
   printf '[ui-smoke] %s\n' "$*" >&2
 }
 
+clear_pwcli_socket() {
+  local session="$1"
+  find "${TMPDIR:-/tmp}" -path "*/pw-*/cli/*-${session}.sock" -delete 2>/dev/null || true
+}
+
 session_workdir() {
   printf '%s/%s\n' "$playwright_root" "$1"
 }
@@ -134,7 +151,7 @@ seed_timeline_handoff_fixture() {
 
   rm -rf "$runtime_workdir/docs/plans/active"
   rm -rf "$runtime_workdir/.local/harness"
-  mkdir -p "$plan_dir/evidence/publish" "$plan_dir/evidence/ci" "$plan_dir/evidence/sync"
+  mkdir -p "$plan_dir/evidence/publish" "$plan_dir/evidence/ci" "$plan_dir/evidence/sync" "$plan_dir/reviews/review-001-full/submissions"
 
   cat >"$runtime_workdir/.local/harness/current-plan.json" <<EOF
 {
@@ -240,6 +257,70 @@ EOF
 {"event_id":"event-004","sequence":4,"recorded_at":"2026-04-01T22:42:00+08:00","kind":"evidence","command":"evidence submit","summary":"Recorded sync evidence for the current archived candidate.","plan_path":"$fixture_plan_rel","plan_stem":"$fixture_plan_stem","revision":1,"from_node":"execution/finalize/publish","to_node":"execution/finalize/await_merge","input":{"status":"fresh","base_ref":"main","head_ref":"codex/issue-93"},"output":{"command":"evidence submit","summary":"Recorded sync evidence for the current archived candidate.","artifacts":{"record_id":"sync-001","kind":"sync"}},"artifact_refs":[{"label":"sync_record","value":".local/harness/plans/$fixture_plan_stem/evidence/sync/sync-001.json","path":".local/harness/plans/$fixture_plan_stem/evidence/sync/sync-001.json"}]}
 {"event_id":"event-005","sequence":5,"recorded_at":"2026-04-01T22:45:00+08:00","kind":"lifecycle","command":"land","summary":"Recorded merge confirmation for the current archived candidate.","plan_path":"$fixture_plan_rel","plan_stem":"$fixture_plan_stem","revision":1,"from_node":"execution/finalize/await_merge","to_node":"land","artifact_refs":[{"label":"plan_path","value":"$fixture_plan_rel","path":"$fixture_plan_rel"},{"label":"publish_record","value":".local/harness/plans/$fixture_plan_stem/evidence/publish/publish-001.json","path":".local/harness/plans/$fixture_plan_stem/evidence/publish/publish-001.json"}],"output":{"command":"land","summary":"Recorded merge confirmation for the current archived candidate.","artifacts":{"plan_path":"$fixture_plan_rel","pr_url":"https://github.com/catu-ai/easyharness/pull/93","commit":"abc123def456","state":{"current_node":"land","plan_path":"$fixture_plan_rel","plan_stem":"$fixture_plan_stem","revision":1,"land":{"pr_url":"https://github.com/catu-ai/easyharness/pull/93","commit":"abc123def456","landed_at":"2026-04-01T22:45:00+08:00"}}}}}
 EOF
+
+  cat >"$plan_dir/reviews/review-001-full/manifest.json" <<EOF
+{
+  "round_id": "review-001-full",
+  "kind": "full",
+  "revision": 1,
+  "review_title": "Archived finalize review",
+  "plan_path": "$fixture_plan_rel",
+  "plan_stem": "$fixture_plan_stem",
+  "created_at": "2026-04-01T22:20:00+08:00",
+  "ledger_path": "$runtime_workdir/.local/harness/plans/$fixture_plan_stem/reviews/review-001-full/ledger.json",
+  "aggregate_path": "$runtime_workdir/.local/harness/plans/$fixture_plan_stem/reviews/review-001-full/aggregate.json",
+  "submissions_dir": "$runtime_workdir/.local/harness/plans/$fixture_plan_stem/reviews/review-001-full/submissions",
+  "dimensions": [
+    {
+      "name": "correctness",
+      "slot": "correctness",
+      "instructions": "Verify the archived review candidate is still readable.",
+      "submission_path": "$runtime_workdir/.local/harness/plans/$fixture_plan_stem/reviews/review-001-full/submissions/correctness.json"
+    }
+  ]
+}
+EOF
+
+  cat >"$plan_dir/reviews/review-001-full/ledger.json" <<EOF
+{
+  "round_id": "review-001-full",
+  "kind": "full",
+  "updated_at": "2026-04-01T22:24:00+08:00",
+  "slots": [
+    {
+      "name": "correctness",
+      "slot": "correctness",
+      "status": "submitted",
+      "submitted_at": "2026-04-01T22:23:00+08:00",
+      "submission_path": "$runtime_workdir/.local/harness/plans/$fixture_plan_stem/reviews/review-001-full/submissions/correctness.json"
+    }
+  ]
+}
+EOF
+
+  cat >"$plan_dir/reviews/review-001-full/aggregate.json" <<EOF
+{
+  "round_id": "review-001-full",
+  "kind": "full",
+  "revision": 1,
+  "review_title": "Archived finalize review",
+  "decision": "pass",
+  "aggregated_at": "2026-04-01T22:25:00+08:00",
+  "blocking_findings": [],
+  "non_blocking_findings": []
+}
+EOF
+
+  cat >"$plan_dir/reviews/review-001-full/submissions/correctness.json" <<EOF
+{
+  "round_id": "review-001-full",
+  "slot": "correctness",
+  "dimension": "Correctness",
+  "submitted_at": "2026-04-01T22:23:00+08:00",
+  "summary": "Archived review content is still available.",
+  "findings": []
+}
+EOF
 }
 
 navigate_browser_to() {
@@ -249,6 +330,7 @@ navigate_browser_to() {
   workdir="$(session_workdir "$session")"
   rm -rf "$workdir"
   mkdir -p "$workdir"
+  clear_pwcli_socket "$session"
   pwcli "$session" open "$target_url" >/dev/null
 }
 
@@ -387,6 +469,20 @@ resolve_snapshot_path() {
   printf '%s/%s\n' "$(session_workdir "$session")" "$snapshot"
 }
 
+screenshot_path_from_output() {
+  sed -n 's/^- \[Screenshot of viewport\](\(.*\))$/\1/p' | head -n 1
+}
+
+resolve_screenshot_path() {
+  local session="$1"
+  local screenshot="$2"
+  if [[ "$screenshot" == /* ]]; then
+    printf '%s\n' "$screenshot"
+    return
+  fi
+  printf '%s/%s\n' "$(session_workdir "$session")" "$screenshot"
+}
+
 capture_snapshot() {
   local route="$1"
   local label="$2"
@@ -493,6 +589,25 @@ capture_session_snapshot() {
   exit 1
 }
 
+capture_session_screenshot() {
+  local session="$1"
+  local label="$2"
+  local output screenshot target_file
+
+  target_file="${output_dir}/${label}.png"
+  output="$(pwcli "$session" screenshot)"
+  screenshot="$(resolve_screenshot_path "$session" "$(printf '%s\n' "$output" | screenshot_path_from_output || true)")"
+
+  if [[ -n "$screenshot" && -f "$screenshot" ]]; then
+    cp "$screenshot" "$target_file"
+    return
+  fi
+
+  echo "Missing Playwright screenshot for session ${session}" >&2
+  printf '%s\n' "$output" >&2
+  exit 1
+}
+
 navigate_via_rail() {
   local rail_session="$1"
   local from_label="$2"
@@ -564,9 +679,23 @@ timeline_inspector_session="$(session_name timeline-inspector)"
 navigate_browser_to "$timeline_inspector_session" "${base_url}/timeline"
 sleep 1
 capture_session_snapshot "$timeline_inspector_session" "timeline-inspector-initial"
+capture_session_screenshot "$timeline_inspector_session" "timeline-inspector-initial"
 assert_has_text "timeline-inspector-initial" "Output"
 assert_has_text "timeline-inspector-initial" "execution/finalize/await_merge → land"
 assert_has_text "timeline-inspector-initial" "Publish Record"
+pwcli_run_code_checked "$timeline_inspector_session" '
+async (page) => await page.evaluate(() => {
+  const tabs = document.querySelector(".timeline-inspector-tabs");
+  if (!tabs) {
+    throw new Error("missing timeline inspector tabs");
+  }
+  const rect = tabs.getBoundingClientRect();
+  if (rect.height < 24 || rect.width < 240) {
+    throw new Error(`timeline tabs look collapsed: ${rect.width}x${rect.height}`);
+  }
+  return true;
+})
+' >/dev/null
 output_ref="$(interactive_ref_from_snapshot "Output" "${output_dir}/timeline-inspector-initial.yml")"
 if [[ -z "$output_ref" ]]; then
   echo "Could not find Output tab in timeline inspector snapshot." >&2
@@ -594,10 +723,51 @@ pwcli_close "$timeline_inspector_session"
 
 navigate_via_rail "$rail_session" "status" "Timeline" "timeline-rail" "Timeline"
 navigate_via_rail "$rail_session" "timeline-rail" "Status" "status-rail" "Status"
+navigate_via_rail "$rail_session" "status-rail" "Review" "review-rail" "Review data is hidden once land cleanup begins."
+navigate_via_rail "$rail_session" "review-rail" "Status" "status-return" "Status"
 pwcli_close "$rail_session"
 capture_snapshot "/review" "review"
 assert_has_text "review" "Review"
-assert_has_text "review" "WIP"
+assert_has_text "review" "Review rounds"
+assert_has_text "review" "Review data is hidden once land cleanup begins."
+assert_lacks_text "review" "Archived finalize review"
+assert_lacks_text "review" "WIP"
+
+python3 - "$runtime_workdir/.local/harness/plans/$plan_stem/state.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as fh:
+    payload = json.load(fh)
+payload["current_node"] = "execution/finalize/await_merge"
+payload.pop("land", None)
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(payload, fh)
+PY
+
+capture_snapshot "/review" "review-archived-visible"
+assert_has_text "review-archived-visible" "Archived finalize review"
+assert_has_text "review-archived-visible" "Aggregate review passed cleanly."
+assert_lacks_text "review-archived-visible" "Review data is hidden once land cleanup begins."
+
+python3 - "$runtime_workdir/.local/harness/plans/$plan_stem/state.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as fh:
+    payload = json.load(fh)
+payload["current_node"] = "land"
+payload["land"] = {
+    "pr_url": "https://github.com/catu-ai/easyharness/pull/93",
+    "commit": "abc123def456",
+    "landed_at": "2026-04-01T22:45:00+08:00",
+}
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(payload, fh)
+PY
+
 capture_snapshot "/diff" "diff"
 assert_has_text "diff" "Diff"
 assert_has_text "diff" "WIP"

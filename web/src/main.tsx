@@ -83,6 +83,77 @@ type TimelineResult = {
   errors?: ErrorDetail[] | null;
 };
 
+type ReviewArtifact = {
+  label: string;
+  path?: string;
+  status?: string;
+  summary?: string;
+  content_type?: string;
+  content?: unknown;
+};
+
+type ReviewFinding = {
+  severity: string;
+  title: string;
+  details: string;
+  locations?: string[] | null;
+};
+
+type ReviewAggregateFinding = ReviewFinding & {
+  slot?: string;
+  dimension?: string;
+};
+
+type ReviewReviewer = {
+  name?: string;
+  slot: string;
+  instructions?: string;
+  status?: string;
+  submission_path?: string;
+  submitted_at?: string;
+  summary?: string;
+  findings?: ReviewFinding[] | null;
+  warnings?: string[] | null;
+};
+
+type ReviewRound = {
+  round_id: string;
+  kind?: string;
+  step?: number;
+  revision?: number;
+  review_title?: string;
+  status?: string;
+  status_summary?: string;
+  decision?: string;
+  created_at?: string;
+  updated_at?: string;
+  aggregated_at?: string;
+  is_active?: boolean;
+  total_slots?: number;
+  submitted_slots?: number;
+  pending_slots?: number;
+  reviewers?: ReviewReviewer[] | null;
+  blocking_findings?: ReviewAggregateFinding[] | null;
+  non_blocking_findings?: ReviewAggregateFinding[] | null;
+  artifacts?: ReviewArtifact[] | null;
+  warnings?: string[] | null;
+};
+
+type ReviewResult = {
+  ok: boolean;
+  resource: string;
+  summary: string;
+  artifacts?: {
+    plan_path?: string;
+    local_state_path?: string;
+    reviews_dir?: string;
+    active_round_id?: string;
+  } | null;
+  rounds?: ReviewRound[] | null;
+  warnings?: string[] | null;
+  errors?: ErrorDetail[] | null;
+};
+
 declare global {
   interface Window {
     __HARNESS_UI__?: {
@@ -364,6 +435,233 @@ function timelineTabText(value: unknown, mode: "json" | "text"): string {
   return jsonStringify(value);
 }
 
+function reviewRoundTitle(round: ReviewRound): string {
+  const title = round.review_title?.trim();
+  if (title) return title;
+  if (typeof round.step === "number") return `Step ${round.step} review`;
+  if (round.kind?.trim() === "full") return "Finalize review";
+  return round.round_id;
+}
+
+function reviewRoundSequenceLabel(round: ReviewRound): string {
+  const match = round.round_id.trim().match(/^review-(\d+)(?:-.+)?$/i);
+  if (!match) return round.round_id;
+  return `Round ${match[1]}`;
+}
+
+function reviewRoundListLabel(round: ReviewRound): string {
+  const parts = [reviewRoundSequenceLabel(round)];
+  if (round.kind?.trim()) parts.push(humanizeLabel(round.kind));
+  if (typeof round.step === "number") {
+    parts.push(`step ${round.step}`);
+  } else if (round.kind?.trim() === "full") {
+    parts.push("finalize");
+  }
+  if (typeof round.revision === "number" && round.revision > 0) parts.push(`rev ${round.revision}`);
+  return parts.join(" · ");
+}
+
+function reviewRoundCompactMeta(round: ReviewRound): string {
+  const parts = [reviewRoundSequenceLabel(round)];
+  if (round.kind?.trim()) parts.push(humanizeLabel(round.kind));
+  if (round.kind?.trim() === "full") {
+    parts.push("finalize");
+  }
+  if (typeof round.revision === "number" && round.revision > 0) parts.push(`rev ${round.revision}`);
+  return parts.join(" · ");
+}
+
+function reviewRoundCompactStatusLabel(round: ReviewRound): string {
+  switch (round.status) {
+    case "pass":
+      return "PASS";
+    case "changes_requested":
+      return "CHG";
+    case "waiting_for_submissions":
+      return "WAIT";
+    case "waiting_for_aggregation":
+      return "AGGR";
+    case "degraded":
+      return "DEG";
+    case "in_progress":
+      return "WIP";
+    case "complete":
+      return "DONE";
+    case "aggregated":
+      return "AGGR";
+    case "incomplete":
+      return "PART";
+    default:
+      return reviewRoundStatusLabel(round).toUpperCase();
+  }
+}
+
+function reviewRoundSubtitle(round: ReviewRound): string {
+  const parts: string[] = [];
+  if (typeof round.step === "number") {
+    parts.push(`Step ${round.step}`);
+  } else if (round.kind?.trim() === "full") {
+    parts.push("Finalize scope");
+  }
+  return parts.join(" · ") || round.round_id;
+}
+
+function reviewRoundAriaLabel(round: ReviewRound): string {
+  const parts = [
+    reviewRoundTitle(round),
+    reviewRoundStatusLabel(round),
+    reviewRoundCompactMeta(round),
+    reviewRoundSubtitle(round),
+  ].filter(Boolean);
+  const timestamp = round.created_at || round.updated_at || round.aggregated_at;
+  if (timestamp) {
+    parts.push(formatTimestamp(timestamp));
+  }
+  parts.push(`${reviewCountLabel(round.submitted_slots)}/${reviewCountLabel(round.total_slots)} submitted`);
+  return parts.join(" ");
+}
+
+function reviewRoundStatusLabel(round: ReviewRound): string {
+  const status = round.status?.trim();
+  if (!status) return "Unknown";
+  switch (status) {
+    case "pass":
+      return "Pass";
+    case "changes_requested":
+      return "Changes requested";
+    case "waiting_for_submissions":
+      return "Waiting for submissions";
+    case "waiting_for_aggregation":
+      return "Waiting for aggregation";
+    case "degraded":
+      return "Degraded";
+    case "in_progress":
+      return "In progress";
+    case "complete":
+      return "Complete";
+    case "aggregated":
+      return "Aggregated";
+    case "incomplete":
+      return "Incomplete";
+    default:
+      return humanizeLabel(status);
+  }
+}
+
+function reviewRoundStatusTone(round: ReviewRound): "good" | "danger" | "warning" | "muted" {
+  switch (round.status) {
+    case "pass":
+    case "complete":
+      return "good";
+    case "changes_requested":
+    case "degraded":
+      return "danger";
+    case "waiting_for_submissions":
+    case "waiting_for_aggregation":
+    case "incomplete":
+      return "warning";
+    default:
+      return "muted";
+  }
+}
+
+function reviewReviewerLabel(reviewer: ReviewReviewer): string {
+  return reviewer.name?.trim() || reviewer.slot;
+}
+
+function reviewReviewerStatusLabel(reviewer: ReviewReviewer): string {
+  const status = reviewer.status?.trim();
+  if (!status) return reviewer.summary?.trim() ? "Submitted" : "Pending";
+  return humanizeLabel(status);
+}
+
+function reviewReviewerStatusTone(reviewer: ReviewReviewer): "good" | "danger" | "warning" | "muted" {
+  const status = reviewer.status?.trim().toLowerCase();
+  const hasWarnings = Array.isArray(reviewer.warnings) && reviewer.warnings.length > 0;
+  if (!status) {
+    if (reviewer.summary?.trim()) return hasWarnings ? "warning" : "good";
+    return "warning";
+  }
+  if (status === "submitted") return hasWarnings ? "warning" : "good";
+  if (status === "pending") return "warning";
+  return hasWarnings ? "danger" : "warning";
+}
+
+function reviewFindingBadgeTone(severity: string): "danger" | "warning" {
+  return severity === "minor" ? "warning" : "danger";
+}
+
+function reviewFindingKey(finding: ReviewFinding, index: number): string {
+  const aggregateFinding = finding as ReviewAggregateFinding;
+  return [aggregateFinding.slot, aggregateFinding.dimension, finding.title, finding.details, String(index)].filter(Boolean).join("::");
+}
+
+function reviewAggregateFindingSource(finding: ReviewAggregateFinding): string | null {
+  const dimension = finding.dimension?.trim() ? humanizeLabel(finding.dimension) : "";
+  const slot = finding.slot?.trim() ? humanizeLabel(finding.slot) : "";
+  if (dimension && slot && dimension.toLowerCase() !== slot.toLowerCase()) {
+    return `${dimension} · slot ${slot}`;
+  }
+  if (dimension) return dimension;
+  if (slot) return `slot ${slot}`;
+  return null;
+}
+
+function ReviewFindingCard(props: { finding: ReviewFinding; provenance?: string | null }) {
+  const { finding, provenance } = props;
+  return (
+    <article class="review-finding">
+      <div class="review-finding-head">
+        <strong>{finding.title}</strong>
+        <span class={`status-badge is-${reviewFindingBadgeTone(finding.severity)}`}>{humanizeLabel(finding.severity)}</span>
+      </div>
+      {provenance ? <div class="review-finding-meta">from {provenance}</div> : null}
+      <p>{finding.details}</p>
+      {Array.isArray(finding.locations) && finding.locations.length > 0 ? <div class="review-finding-locations">{finding.locations.join("\n")}</div> : null}
+    </article>
+  );
+}
+
+function reviewArtifactLabel(artifact: ReviewArtifact): string {
+  return artifact.label?.trim() || "Artifact";
+}
+
+function reviewArtifactKey(artifact: ReviewArtifact, index: number): string {
+  const path = artifact.path?.trim();
+  if (path) return path;
+  return `${reviewArtifactLabel(artifact)}-${index}`;
+}
+
+function reviewArtifactText(artifact: ReviewArtifact | null): string {
+  if (!artifact) return "";
+  if (artifact.content_type === "text" && typeof artifact.content === "string") return artifact.content;
+  return jsonStringify(artifact.content ?? { status: artifact.status, summary: artifact.summary, path: artifact.path });
+}
+
+function reviewCountLabel(value: number | undefined): string {
+  if (typeof value !== "number") return "0";
+  return String(value);
+}
+
+function formatReviewError(result: ReviewResult | null, statusCode?: number): string {
+  const details = Array.isArray(result?.errors)
+    ? result.errors
+        ?.map((item) => {
+          const path = item.path?.trim();
+          const message = item.message?.trim();
+          if (path && message) return `${path}: ${message}`;
+          return message || path || "";
+        })
+        .filter(Boolean)
+    : [];
+  const summary = result?.summary?.trim();
+  if (summary && details.length > 0) return `${summary} ${details.join("; ")}`;
+  if (summary) return summary;
+  if (details.length > 0) return details.join("; ");
+  if (statusCode) return `GET /api/review failed with ${statusCode}`;
+  return "Unable to load review";
+}
+
 function formatStatusError(result: StatusResult | null, statusCode?: number): string {
   const details = Array.isArray(result?.errors)
     ? result?.errors
@@ -389,6 +687,9 @@ function sectionIDsForPage(page: Page): string[] {
   }
   if (page === "timeline") {
     return ["events"];
+  }
+  if (page === "review") {
+    return ["rounds"];
   }
   return ["overview", "status"];
 }
@@ -439,6 +740,9 @@ function App() {
   const [timeline, setTimeline] = useState<TimelineResult | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
+  const [review, setReview] = useState<ReviewResult | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
 
   useEffect(() => {
     const onLocationChange = () => {
@@ -549,6 +853,35 @@ function App() {
     return () => controller.abort();
   }, [page]);
 
+  useEffect(() => {
+    if (page !== "review") return;
+
+    const controller = new AbortController();
+    setReviewLoading(true);
+    setReviewError(null);
+
+    fetch("/api/review", { signal: controller.signal })
+      .then(async (response) => {
+        const payload = (await response.json()) as ReviewResult;
+        if (!response.ok || payload.ok === false) {
+          throw new Error(formatReviewError(payload, response.status));
+        }
+        return payload;
+      })
+      .then((nextReview) => {
+        setReview(nextReview);
+        setReviewLoading(false);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setReview(null);
+        setReviewError(error instanceof Error ? error.message : "Unable to load review");
+        setReviewLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [page]);
+
   const activeStatus = useMemo(() => {
     return {
       summary: status?.summary ?? "Waiting for status data.",
@@ -572,6 +905,14 @@ function App() {
     };
   }, [timeline]);
 
+  const activeReview = useMemo(() => {
+    return {
+      rounds: Array.isArray(review?.rounds) ? review.rounds ?? [] : [],
+      warnings: Array.isArray(review?.warnings) ? review.warnings ?? [] : [],
+      artifacts: pickEntries((review?.artifacts as Record<string, unknown>) ?? null),
+      summary: review?.summary ?? "Waiting for review data.",
+    };
+  }, [review]);
   const activeSectionLabel =
     sectionsForPage(page, activeStatus, activeTimeline).find((item) => item.id === section)?.label ?? pageDefinition(page).label;
 
@@ -619,6 +960,15 @@ function App() {
             loading={timelineLoading}
             error={timelineError}
             events={activeTimeline.events}
+          />
+        ) : page === "review" ? (
+          <ReviewWorkspace
+            loading={reviewLoading}
+            error={reviewError}
+            summary={activeReview.summary}
+            rounds={activeReview.rounds}
+            warnings={activeReview.warnings}
+            artifacts={activeReview.artifacts}
           />
         ) : (
           <main class="content">
@@ -975,6 +1325,485 @@ function TimelineWorkspace(props: {
               )}
             </div>
           </section>
+        </section>
+      </section>
+    </section>
+  );
+}
+
+function ReviewWorkspace(props: {
+  loading: boolean;
+  error: string | null;
+  summary: string;
+  rounds: ReviewRound[];
+  warnings: string[];
+  artifacts: Array<[string, unknown]>;
+}) {
+  const { loading, error, summary, rounds, warnings, artifacts } = props;
+  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
+  const [selectedDetailTab, setSelectedDetailTab] = useState<string>("summary");
+  const selectedRound = useMemo(() => {
+    if (rounds.length === 0) return null;
+    if (selectedRoundId) {
+      const found = rounds.find((round) => round.round_id === selectedRoundId);
+      if (found) return found;
+    }
+    return rounds[0];
+  }, [rounds, selectedRoundId]);
+  const [selectedArtifactKey, setSelectedArtifactKey] = useState<string | null>(null);
+  const [supportExpanded, setSupportExpanded] = useState(false);
+  const reviewers = Array.isArray(selectedRound?.reviewers) ? selectedRound.reviewers ?? [] : [];
+  const supportArtifacts = Array.isArray(selectedRound?.artifacts) ? selectedRound.artifacts ?? [] : [];
+  const selectedReviewer = useMemo(() => {
+    if (reviewers.length === 0 || selectedDetailTab === "summary") return null;
+    const found = reviewers.find((reviewer) => reviewer.slot === selectedDetailTab);
+    if (found) {
+      return found;
+    }
+    return null;
+  }, [reviewers, selectedDetailTab]);
+  const selectedArtifact = useMemo(() => {
+    if (supportArtifacts.length === 0) return null;
+    if (selectedArtifactKey) {
+      const found = supportArtifacts.find((artifact, index) => reviewArtifactKey(artifact, index) === selectedArtifactKey);
+      if (found) return found;
+    }
+    return supportArtifacts[0];
+  }, [supportArtifacts, selectedArtifactKey]);
+  const blockingFindings = Array.isArray(selectedRound?.blocking_findings) ? selectedRound.blocking_findings ?? [] : [];
+  const nonBlockingFindings = Array.isArray(selectedRound?.non_blocking_findings) ? selectedRound.non_blocking_findings ?? [] : [];
+  const selectedRoundWarnings = Array.isArray(selectedRound?.warnings) ? selectedRound.warnings ?? [] : [];
+
+  useEffect(() => {
+    if (rounds.length === 0) {
+      setSelectedRoundId(null);
+      return;
+    }
+    setSelectedRoundId((current) => {
+      if (current && rounds.some((round) => round.round_id === current)) {
+        return current;
+      }
+      return rounds[0]?.round_id ?? null;
+    });
+  }, [rounds]);
+
+  useEffect(() => {
+    setSelectedDetailTab("summary");
+  }, [selectedRound?.round_id]);
+
+  useEffect(() => {
+    setSelectedDetailTab((current) => {
+      if (current === "summary") {
+        return "summary";
+      }
+      if (reviewers.some((reviewer) => reviewer.slot === current)) {
+        return current;
+      }
+      return reviewers[0]?.slot ?? "summary";
+    });
+  }, [reviewers]);
+
+  useEffect(() => {
+    if (supportArtifacts.length === 0) {
+      setSelectedArtifactKey(null);
+      return;
+    }
+    setSelectedArtifactKey((current) => {
+      if (current && supportArtifacts.some((artifact, index) => reviewArtifactKey(artifact, index) === current)) {
+        return current;
+      }
+      return reviewArtifactKey(supportArtifacts[0], 0);
+    });
+  }, [supportArtifacts, selectedRound?.round_id]);
+
+  useEffect(() => {
+    setSupportExpanded(false);
+  }, [selectedRound?.round_id]);
+
+  return (
+    <section class="review-shell">
+      <aside class="review-nav" aria-label="Review rounds">
+        <div class="timeline-nav-header">
+          <span class="sidebar-label">Explorer</span>
+          <strong>Review rounds</strong>
+          <span class="timeline-nav-meta">{rounds.length}</span>
+        </div>
+        <div class="timeline-nav-list">
+          {rounds.length > 0 ? (
+            rounds.map((round) => {
+              const selected = round.round_id === selectedRound?.round_id;
+              return (
+                <button
+                  key={round.round_id}
+                  class={`review-round-item is-${reviewRoundStatusTone(round)}${selected ? " is-active" : ""}`}
+                  type="button"
+                  onClick={() => setSelectedRoundId(round.round_id)}
+                  aria-pressed={selected}
+                  aria-label={reviewRoundAriaLabel(round)}
+                >
+                  <div class="review-round-main">
+                    <div class="review-round-row">
+                      <div class="review-round-title">{reviewRoundTitle(round)}</div>
+                      <span class={`review-round-indicator is-${reviewRoundStatusTone(round)}`} aria-hidden="true" title={reviewRoundStatusLabel(round)} />
+                    </div>
+                    <div class={`review-round-id is-${reviewRoundStatusTone(round)}`}>
+                      <span class="review-round-id-text">{reviewRoundCompactMeta(round)}</span>
+                      <span class="review-round-status-text">{reviewRoundCompactStatusLabel(round)}</span>
+                    </div>
+                    <div class="review-round-subtitle">{reviewRoundSubtitle(round)}</div>
+                  </div>
+                  <div class="review-round-meta">
+                    <span>{round.created_at || round.updated_at || round.aggregated_at ? formatTimestamp(round.created_at ?? round.updated_at ?? round.aggregated_at ?? "") : "time unknown"}</span>
+                    <span>
+                      {reviewCountLabel(round.submitted_slots)}/{reviewCountLabel(round.total_slots)} submitted
+                    </span>
+                  </div>
+                </button>
+              );
+            })
+          ) : (
+            <div class="empty-row">{summary || "No review rounds recorded yet for the current plan."}</div>
+          )}
+        </div>
+      </aside>
+
+      <section class="editor timeline-editor">
+        <section class="page-header">
+          <div class="editor-tabs">
+            <div class="editor-tab is-active">Review</div>
+            <div class="editor-section-label">{selectedRound ? reviewRoundTitle(selectedRound) : "Rounds"}</div>
+          </div>
+          {loading ? <span class="muted">loading</span> : null}
+        </section>
+
+        <section class="workspace workspace-review">
+          {error ? <div class="notice notice-error">{error}</div> : null}
+          {warnings.map((warning) => (
+            <div key={warning} class="notice notice-warning">
+              {warning}
+            </div>
+          ))}
+
+          {selectedRound ? (
+            <div class="review-body">
+              <section class="review-section review-content-pane" aria-label="Review content">
+                <div class="timeline-inspector-tabs review-detail-tabs" role="tablist" aria-label="Review content tabs">
+                  <button
+                    type="button"
+                    class={`timeline-inspector-tab${selectedDetailTab === "summary" ? " is-active" : ""}`}
+                    onClick={() => setSelectedDetailTab("summary")}
+                    role="tab"
+                    aria-selected={selectedDetailTab === "summary"}
+                  >
+                    Summary
+                  </button>
+                  {reviewers.map((reviewer) => (
+                    <button
+                      key={reviewer.slot}
+                      type="button"
+                      class={`timeline-inspector-tab${selectedDetailTab === reviewer.slot ? " is-active" : ""}`}
+                      onClick={() => setSelectedDetailTab(reviewer.slot)}
+                      role="tab"
+                      aria-selected={selectedDetailTab === reviewer.slot}
+                    >
+                      {reviewReviewerLabel(reviewer)}
+                    </button>
+                  ))}
+                </div>
+
+                <div class="timeline-inspector-body review-detail-body">
+                  {selectedDetailTab === "summary" ? (
+                  <div class="review-tab-panel">
+                    {selectedRoundWarnings.length > 0 ? (
+                      <section class="review-subsection">
+                        <div class="section-head">
+                          <h3>Warnings</h3>
+                          <span class="muted">{selectedRoundWarnings.length}</span>
+                        </div>
+                        <div class="review-warning-list">
+                          {selectedRoundWarnings.map((warning) => (
+                            <div key={warning} class="review-warning-item">
+                              {warning}
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    ) : null}
+
+                    <section class="review-subsection">
+                      <div class="section-head">
+                        <h3>Overview</h3>
+                        <span class="muted">{selectedRound.round_id}</span>
+                      </div>
+                      <div class="review-summary-panel">
+                        <div class="review-summary-headline">
+                          <div>
+                            <div class="review-overview-title">{reviewRoundTitle(selectedRound)}</div>
+                            <div class="review-overview-subtitle">{reviewRoundListLabel(selectedRound)}</div>
+                          </div>
+                          <div class="review-badges">
+                            {selectedRound.is_active ? <span class="status-badge is-muted">Active</span> : null}
+                            {selectedRound.kind ? <span class="status-badge is-muted">{humanizeLabel(selectedRound.kind)}</span> : null}
+                            <span class={`status-badge is-${reviewRoundStatusTone(selectedRound)}`}>{reviewRoundStatusLabel(selectedRound)}</span>
+                          </div>
+                        </div>
+                        <p class="detail-copy">{selectedRound.status_summary || summary}</p>
+                        <section class="status-grid review-status-grid" aria-label="Review round summary">
+                          <div class="status-block">
+                            <span class="label">decision</span>
+                            <strong>{selectedRound.decision ? humanizeLabel(selectedRound.decision) : reviewRoundStatusLabel(selectedRound)}</strong>
+                          </div>
+                          <div class="status-block">
+                            <span class="label">progress</span>
+                            <strong>
+                              {reviewCountLabel(selectedRound.submitted_slots)}/{reviewCountLabel(selectedRound.total_slots)} submitted
+                            </strong>
+                          </div>
+                          <div class="status-block">
+                            <span class="label">revision</span>
+                            <strong>{selectedRound.revision ? `rev ${selectedRound.revision}` : "unknown"}</strong>
+                          </div>
+                          <div class="status-block">
+                            <span class="label">updated</span>
+                            <strong>{formatTimestamp(selectedRound.aggregated_at || selectedRound.updated_at || selectedRound.created_at || "unknown")}</strong>
+                          </div>
+                        </section>
+                        <dl class="kv-list">
+                          <div>
+                            <dt>Kind</dt>
+                            <dd>{selectedRound.kind ? humanizeLabel(selectedRound.kind) : "unknown"}</dd>
+                          </div>
+                          <div>
+                            <dt>Target</dt>
+                            <dd>{typeof selectedRound.step === "number" ? `Step ${selectedRound.step}` : selectedRound.review_title || "Finalize / unscoped"}</dd>
+                          </div>
+                          <div>
+                            <dt>Created</dt>
+                            <dd>{formatTimestamp(selectedRound.created_at || "unknown")}</dd>
+                          </div>
+                        </dl>
+                      </div>
+                    </section>
+
+                    <section class="review-subsection">
+                      <div class="section-head">
+                        <h3>Blocking findings</h3>
+                        <span class="muted">{blockingFindings.length}</span>
+                      </div>
+                      {blockingFindings.length > 0 ? (
+                        <div class="review-finding-list">
+                          {blockingFindings.map((finding, index) => (
+                            <ReviewFindingCard
+                              key={reviewFindingKey(finding, index)}
+                              finding={finding}
+                              provenance={reviewAggregateFindingSource(finding)}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div class="empty-row">No blocking findings recorded.</div>
+                      )}
+                    </section>
+
+                    <section class="review-subsection">
+                      <div class="section-head">
+                        <h3>Non-blocking findings</h3>
+                        <span class="muted">{nonBlockingFindings.length}</span>
+                      </div>
+                      {nonBlockingFindings.length > 0 ? (
+                        <div class="review-finding-list">
+                          {nonBlockingFindings.map((finding, index) => (
+                            <ReviewFindingCard
+                              key={reviewFindingKey(finding, index)}
+                              finding={finding}
+                              provenance={reviewAggregateFindingSource(finding)}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div class="empty-row">No non-blocking findings recorded.</div>
+                      )}
+                    </section>
+                  </div>
+                ) : selectedReviewer ? (
+                  <div class="reviewer-panel">
+                    <div class="reviewer-panel-head">
+                      <div>
+                        <div class="review-overview-title">{reviewReviewerLabel(selectedReviewer)}</div>
+                        <div class="review-overview-subtitle">{reviewReviewerStatusLabel(selectedReviewer)}</div>
+                      </div>
+                      <div class="review-badges">
+                        <span class={`status-badge is-${reviewReviewerStatusTone(selectedReviewer)}`}>
+                          {reviewReviewerStatusLabel(selectedReviewer)}
+                        </span>
+                        {selectedReviewer.submitted_at ? <span class="status-badge is-muted">{formatTimestamp(selectedReviewer.submitted_at)}</span> : null}
+                      </div>
+                    </div>
+
+                    <div class="review-context-strip" aria-label="Selected round context">
+                      <div class="review-context-item">
+                        <span class="label">round</span>
+                        <strong>{selectedRound.round_id}</strong>
+                      </div>
+                      <div class="review-context-item">
+                        <span class="label">decision</span>
+                        <strong>{selectedRound.decision ? humanizeLabel(selectedRound.decision) : reviewRoundStatusLabel(selectedRound)}</strong>
+                      </div>
+                      <div class="review-context-item">
+                        <span class="label">blocking</span>
+                        <strong>{blockingFindings.length}</strong>
+                      </div>
+                      <div class="review-context-item">
+                        <span class="label">warnings</span>
+                        <strong>{selectedRoundWarnings.length}</strong>
+                      </div>
+                    </div>
+
+                    <div class="review-tab-panel reviewer-tab-panel">
+                      <details class="review-fold review-fold-task" open>
+                        <summary class="review-fold-summary">
+                          <span>Assigned task</span>
+                          <span class="muted">{selectedReviewer.instructions?.trim() ? "available" : "missing"}</span>
+                        </summary>
+                        <div class="review-fold-body">
+                          {selectedReviewer.instructions?.trim() ? (
+                            <p class="detail-copy">{selectedReviewer.instructions}</p>
+                          ) : (
+                            <div class="empty-row">Instructions are unavailable for this reviewer slot.</div>
+                          )}
+                        </div>
+                      </details>
+
+                      <details class="review-fold review-fold-result" open>
+                        <summary class="review-fold-summary">
+                          <span>Returned result</span>
+                          <span class="muted">
+                            {selectedReviewer.summary?.trim()
+                              ? `${Array.isArray(selectedReviewer.findings) ? selectedReviewer.findings.length : 0} finding(s)`
+                              : reviewReviewerStatusLabel(selectedReviewer)}
+                          </span>
+                        </summary>
+                        <div class="review-fold-body">
+                          {selectedReviewer.summary?.trim() ? (
+                            <>
+                              <p class="detail-copy">{selectedReviewer.summary}</p>
+                              <div class="review-finding-list">
+                                {Array.isArray(selectedReviewer.findings) && selectedReviewer.findings.length > 0 ? (
+                                  selectedReviewer.findings.map((finding, index) => (
+                                    <ReviewFindingCard key={reviewFindingKey(finding, index)} finding={finding} />
+                                  ))
+                                ) : (
+                                  <div class="empty-row">No findings recorded for this reviewer.</div>
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                            <div class="empty-row">This reviewer has not submitted a result yet.</div>
+                          )}
+                        </div>
+                      </details>
+
+                      {Array.isArray(selectedReviewer.warnings) && selectedReviewer.warnings.length > 0 ? (
+                        <div class="review-warning-list">
+                          {selectedReviewer.warnings.map((warning) => (
+                            <div key={warning} class="review-warning-item">
+                              {warning}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  ) : (
+                    <div class="empty-row">No reviewer slots are available for this round.</div>
+                  )}
+
+                  {supportArtifacts.length > 0 || artifacts.length > 0 ? (
+                    <section class="review-support-wrap" aria-label="Supporting evidence">
+                      <button
+                        type="button"
+                        class={`review-support-toggle${supportExpanded ? " is-open" : ""}`}
+                        onClick={() => setSupportExpanded((current) => !current)}
+                        aria-expanded={supportExpanded}
+                      >
+                        <span>Supporting evidence</span>
+                        <span class="muted">{supportArtifacts.length + artifacts.length}</span>
+                      </button>
+                      <p class="supporting-copy">Use raw artifacts and round metadata only when you need to debug damaged or incomplete review state.</p>
+                      {supportExpanded ? (
+                        <div class="review-support-stack">
+                          <section class="review-section secondary-pane review-support-section" aria-label="Supporting artifacts">
+                            <div class="section-head">
+                              <h2>Artifact payloads</h2>
+                              <span class="muted">{supportArtifacts.length}</span>
+                            </div>
+                            {supportArtifacts.length > 0 ? (
+                              <>
+                                <div class="reviewer-tabs" role="tablist" aria-label="Supporting artifacts">
+                                  {supportArtifacts.map((artifact, index) => {
+                                    const artifactKey = reviewArtifactKey(artifact, index);
+                                    const label = reviewArtifactLabel(artifact);
+                                    return (
+                                      <button
+                                        key={artifactKey}
+                                        type="button"
+                                        class={`timeline-inspector-tab${selectedArtifactKey === artifactKey ? " is-active" : ""}`}
+                                        onClick={() => setSelectedArtifactKey(artifactKey)}
+                                        role="tab"
+                                        aria-selected={selectedArtifactKey === artifactKey}
+                                      >
+                                        {label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                {selectedArtifact ? (
+                                  <div class="review-artifact-panel">
+                                    <div class="review-artifact-meta">
+                                      <span class={`status-badge is-${selectedArtifact.status === "available" ? "good" : selectedArtifact.status === "invalid" ? "danger" : "warning"}`}>
+                                        {humanizeLabel(selectedArtifact.status || "unknown")}
+                                      </span>
+                                      {selectedArtifact.path ? <span class="muted">{selectedArtifact.path}</span> : null}
+                                    </div>
+                                    {selectedArtifact.summary ? <p class="review-artifact-summary">{selectedArtifact.summary}</p> : null}
+                                    <pre class="timeline-json">{reviewArtifactText(selectedArtifact)}</pre>
+                                  </div>
+                                ) : null}
+                              </>
+                            ) : (
+                              <div class="empty-row">No supporting artifacts available for this round.</div>
+                            )}
+                          </section>
+
+                          {artifacts.length > 0 ? (
+                            <section class="review-section secondary-pane review-support-section">
+                              <div class="section-head">
+                                <h2>Round metadata</h2>
+                                <span class="muted">{artifacts.length}</span>
+                              </div>
+                              <dl class="kv-list">
+                                {artifacts.map(([key, value]) => (
+                                  <div key={key}>
+                                    <dt>{key}</dt>
+                                    <dd>{formatValue(value)}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </section>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
+                </div>
+              </section>
+            </div>
+          ) : (
+            <div class="workspace-inner">
+              <div class="empty-row">{summary || "No review rounds recorded yet for the current plan."}</div>
+            </div>
+          )}
         </section>
       </section>
     </section>
