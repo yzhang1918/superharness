@@ -641,7 +641,7 @@ func loadLatestStepCloseoutScan(workdir, planStem string, doc *plan.Document, re
 		}
 
 		if manifest.Revision <= 0 {
-			warnings = append(warnings, fmt.Sprintf("Historical review round %s is missing inferred review structure; inspect or rerun the closeout conservatively.", roundID))
+			warnings = append(warnings, fmt.Sprintf("Historical review round %s is invalid and cannot be mapped to a tracked step; it is being ignored and you do not need to do anything.", roundID))
 			candidate := latestUnknownHistoricalReviewRound{
 				RoundID:  roundID,
 				Sequence: sequence,
@@ -655,7 +655,7 @@ func loadLatestStepCloseoutScan(workdir, planStem string, doc *plan.Document, re
 			continue
 		}
 		if *manifest.Step <= 0 || *manifest.Step > len(doc.Steps) {
-			warnings = append(warnings, fmt.Sprintf("Historical review round %s points at invalid step %d; inspect or rerun the closeout conservatively.", roundID, *manifest.Step))
+			warnings = append(warnings, fmt.Sprintf("Historical review round %s is invalid and cannot be mapped to a tracked step; it is being ignored and you do not need to do anything.", roundID))
 			candidate := latestUnknownHistoricalReviewRound{
 				RoundID:  roundID,
 				Sequence: sequence,
@@ -840,6 +840,10 @@ func pendingReopenedNewStep(node string, facts *Facts) bool {
 }
 
 func (r *missingStepCloseoutReminder) hasDebt() bool {
+	return r != nil && len(r.MissingTitles) > 0
+}
+
+func (r *missingStepCloseoutReminder) hasWarning() bool {
 	return r != nil && (len(r.MissingTitles) > 0 || strings.TrimSpace(r.UnscopedRoundID) != "")
 }
 
@@ -1002,13 +1006,13 @@ func buildNextActions(node string, facts *Facts, reviewCtx *reviewContext, block
 }
 
 func buildMissingStepCloseoutWarnings(node string, reminder *missingStepCloseoutReminder) []string {
-	if reminder == nil || !reminder.hasDebt() {
+	if reminder == nil || !reminder.hasWarning() {
 		return nil
 	}
 
 	unscopedWarning := ""
 	if strings.TrimSpace(reminder.UnscopedRoundID) != "" {
-		unscopedWarning = fmt.Sprintf("Historical review round %s could not be mapped back to a tracked step; earlier clean step-closeout evidence may be stale, so inspect or rerun the relevant closeout conservatively before relying on progression.", reminder.UnscopedRoundID)
+		unscopedWarning = fmt.Sprintf("Historical review round %s is invalid and cannot be mapped to a tracked step; it is being ignored and you do not need to do anything.", reminder.UnscopedRoundID)
 	}
 
 	if len(reminder.MissingTitles) == 0 {
