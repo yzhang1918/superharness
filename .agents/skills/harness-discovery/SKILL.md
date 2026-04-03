@@ -18,45 +18,51 @@ and end with a clear next workflow step.
 - current `harness status` output when the repository already has an active
   plan and local state
 
+## Explorer Subagent Decision
+
+Use explorer subagents on demand, not by default.
+
+- Keep user-supplied core context and other shared repository context with the
+  controller whenever later questions may depend on the details.
+- Stay local when the controller can answer the next question from the shared
+  context it already needs to hold.
+- Use one explorer subagent when one bounded repository question or hypothesis
+  needs checking.
+- Use multiple explorer subagents in parallel only when multiple bounded
+  hypotheses or questions are genuinely independent.
+- Do not split one shared context bundle across multiple explorer subagents
+  just to get summaries back.
+- Explorer subagents should return factual findings for the bounded question
+  only. They do not choose the next user question, recommend the workflow
+  direction, or replace controller judgment.
+
 ## Execution Contract
 
 1. If the task is still fuzzy, ask one concise clarification question before
    doing broader discovery.
 2. Read the most relevant repository context needed to ask sharper questions.
-   Keep user-supplied core context and other shared repository context with
-   the controller whenever later questions may depend on the details.
-3. Use repository exploration on demand, not by default.
-   - stay local when the controller can answer the next question from the
-     shared context it already needs to hold
-   - use one explorer subagent when one bounded repository question or
-     hypothesis needs checking
-   - use multiple explorer subagents in parallel only when multiple bounded
-     hypotheses or questions are genuinely independent
-4. Do not split one shared context bundle across multiple explorer subagents
-   just to get summaries back.
-5. Explorer subagents should return factual findings for the bounded question
-   only. They do not choose the next user question, recommend the workflow
-   direction, or replace controller judgment.
-6. Discovery may alternate between human answers and further bounded
+3. Use bounded repository exploration according to `Explorer Subagent
+   Decision` above whenever local reading alone is not enough.
+4. Discovery may alternate between human answers and further bounded
    exploration. Re-evaluate whether more exploration is needed after each
    clarification turn.
-7. Ask exactly one high-leverage question per turn.
-8. Use Socratic questioning to clarify:
+5. Ask exactly one high-leverage question per turn.
+6. Use Socratic questioning to clarify:
    - purpose
    - constraints
    - non-goals
    - success criteria
    - workflow direction
-9. When a decision benefits from framing, present 2-4 realistic options.
-10. For each option, give:
+7. When a decision benefits from framing, present 2-4 realistic options.
+8. For each option, give:
    - a short label
    - one clear upside
    - one clear downside
    - when it fits
-11. Recommend a direction when the tradeoffs are asymmetric.
-12. Converge on a concrete approach, draft acceptance criteria, and state the
+9. Recommend a direction when the tradeoffs are asymmetric.
+10. Converge on a concrete approach, draft acceptance criteria, and state the
    next workflow step explicitly.
-13. Hand off to `harness-plan` only after the human confirms the direction.
+11. Hand off to `harness-plan` only after the human confirms the direction.
 
 ## Option Framing Pattern
 

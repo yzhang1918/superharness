@@ -263,6 +263,9 @@ will receive branch-level review.
   bootstrap sources and remain consistent with the existing review reference
 - direct reread after revision 2 to confirm the shared subagent section now
   uses `stay local` wording instead of the earlier `0 subagents` phrasing
+- direct reread after revision 3 to confirm review orchestration explicitly
+  inherits the shared Codex lifecycle rules and discovery now isolates
+  explorer-subagent choice into its own reusable decision section
 
 ## Review Summary
 
@@ -270,20 +273,24 @@ will receive branch-level review.
   `docs_consistency` and `agent_ux` dimensions
 - `review-002-delta`: reopen follow-up review passed with no findings after the
   wording fix replaced the rigid `0 subagents` phrasing with `stay local`
+- `review-003-delta`: reopen follow-up review passed with no findings after
+  making the review side explicitly inherit the shared subagent rules and
+  moving discovery explorer policy into a standalone decision section
 
 ## Archive Summary
 
-- Archived At: 2026-04-03T23:24:43+08:00
-- Revision: 2
+- Archived At: 2026-04-03T23:41:12+08:00
+- Revision: 3
 - PR: https://github.com/catu-ai/easyharness/pull/106
 - Ready: The candidate satisfies the acceptance criteria, the managed
   `AGENTS.md` contract now defines shared subagent use plus the Codex
-  close-after-use default, the bootstrap and synced discovery skills agree on
-  bounded on-demand explorer use, the wording now says `stay local` where the
-  earlier draft said `0 subagents`, and `review-002-delta` passed clean.
-- Merge Handoff: Re-archive the candidate, commit the revision-2 wording fix on
-  `codex/discovery-explorer-subagents`, push the branch to update PR #106, and
-  refresh publish/CI/sync evidence until `harness status` returns to
+  close-after-use default, review orchestration now explicitly inherits those
+  shared rules, discovery now exposes explorer use as a standalone decision
+  module, and `review-003-delta` passed clean.
+- Merge Handoff: Re-archive the candidate, commit the revision-3 modularity and
+  shared-review-rule fixes on `codex/discovery-explorer-subagents`, push the
+  branch to update PR #106, and refresh publish/CI/sync evidence until
+  `harness status` returns to
   `execution/finalize/await_merge`.
 
 ## Outcome Summary
@@ -301,13 +308,19 @@ will receive branch-level review.
   new wording stays aligned with the existing review orchestration reference.
 - Refined the shared subagent section wording so the local case now reads
   `stay local` instead of the more mechanical `0 subagents` phrasing.
+- Made `Harness Review Execution` explicitly point back to the shared
+  subagent-use rules, and updated the review-orchestration reference so its
+  Codex section is clearly an extension of that shared baseline.
+- Refactored discovery so explorer-subagent policy lives in a dedicated
+  `Explorer Subagent Decision` section instead of being embedded inline in the
+  execution flow.
 
 ### Not Delivered
 
 - No new CLI or harness-state support was added for discovery orchestration.
 - No generalized lifecycle contract was added for non-Codex agent runtimes.
-- No review-reference refactor landed beyond verifying the new shared wording
-  did not conflict with the existing review lifecycle details.
+- The review reference still keeps reviewer-specific lifecycle details locally
+  instead of extracting them into a separate shared reference file.
 
 ### Follow-Up Issues
 

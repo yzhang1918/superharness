@@ -77,7 +77,9 @@ narrow follow-up makes continuity materially more valuable than a fresh agent.
 When work enters review orchestration, spawned reviewer subagents are the
 default path. The controller agent stays in `harness-execute`, reviewer work
 belongs to spawned `harness-reviewer` subagents, and the repo-local review
-skills must be followed strictly.
+skills must be followed strictly. The shared rules in `Harness Subagent Use`
+still apply here; review-specific docs add reviewer-slot orchestration,
+aggregation, and same-slot resume rules on top of that shared baseline.
 
 Routine review progression is controller-owned once a tracked plan is approved.
 The controller should not stop to ask the human whether ordinary step-closeout
