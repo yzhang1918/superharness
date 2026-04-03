@@ -99,12 +99,35 @@ Use `harness reopen --mode finalize-fix|new-step` when an archived candidate
 is no longer merge-ready because of new feedback, remote changes, or other
 invalidation.
 
+## Harness Subagent Use
+
+The controller owns shared repository context and the final workflow judgment.
+Spawn subagents only for bounded subproblems; do not split one shared context
+bundle across multiple subagents just to get summaries back.
+
+Discovery and execution may stay local, use one subagent, or use multiple
+subagents in parallel according to the current question shape:
+
+- stay local when the controller can answer the next question from the shared
+  context it already needs to hold
+- use `1` when one bounded question or hypothesis needs independent repo
+  checking
+- use multiple subagents in parallel only when multiple hypotheses or
+  questions are genuinely independent
+
+In Codex, spawned subagents are not fire-and-forget memory. Once a bounded
+subagent task is complete and the controller has received the result, close
+that subagent promptly by default. Reuse `resume_agent` only when a later
+narrow follow-up makes continuity materially more valuable than a fresh agent.
+
 ## Harness Review Execution
 
 When work enters review orchestration, spawned reviewer subagents are the
 default path. The controller agent stays in `harness-execute`, reviewer work
 belongs to spawned `harness-reviewer` subagents, and the repo-local review
-skills must be followed strictly.
+skills must be followed strictly. The shared rules in `Harness Subagent Use`
+still apply here; review-specific docs add reviewer-slot orchestration,
+aggregation, and same-slot resume rules on top of that shared baseline.
 
 Routine review progression is controller-owned once a tracked plan is approved.
 The controller should not stop to ask the human whether ordinary step-closeout

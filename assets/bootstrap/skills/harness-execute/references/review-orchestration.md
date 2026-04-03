@@ -190,6 +190,10 @@ Change summary since your last submission: <bounded-change-summary>
 
 ## Codex-Specific Subagent Rules
 
+Codex reviewer subagents inherit the shared lifecycle rules from `Harness
+Subagent Use` in the managed `AGENTS.md` contract. This section adds the
+reviewer-specific orchestration constraints on top of that shared baseline.
+
 Codex reviewer subagents are asynchronous.
 
 - `spawn_agent` returns immediately.
