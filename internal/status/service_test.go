@@ -433,7 +433,7 @@ func TestStatusWarnsWhenLatestHistoricalStepCloseoutManifestIsUnreadable(t *test
 	if result.State.CurrentNode != "execution/step-2/implement" {
 		t.Fatalf("expected step 2 node to stay stable, got %#v", result.State)
 	}
-	if len(result.Warnings) < 2 || !strings.Contains(result.Warnings[0], "Unable to read historical review manifest") || !strings.Contains(result.Warnings[1], "could not be mapped back to a tracked step") {
+	if len(result.Warnings) < 2 || !strings.Contains(result.Warnings[0], "Unable to read historical review manifest") || !strings.Contains(result.Warnings[1], "is invalid and cannot be mapped to a tracked step") {
 		t.Fatalf("expected unreadable latest manifest to preserve a warning, got %#v", result.Warnings)
 	}
 }
@@ -480,15 +480,15 @@ func TestStatusWarnsWhenLatestUnreadableHistoricalCloseoutCannotBeMapped(t *test
 		if strings.Contains(warning, stepOneTitle) {
 			t.Fatalf("did not expect an unmappable unreadable round to unsatisfy Step 1, got %#v", result.Warnings)
 		}
-		if strings.Contains(warning, "could not be mapped back to a tracked step") && strings.Contains(warning, "review-002-delta") {
+		if strings.Contains(warning, "is invalid and cannot be mapped to a tracked step") && strings.Contains(warning, "review-002-delta") {
 			foundUnscopedWarning = true
 		}
 	}
 	if !foundUnscopedWarning {
 		t.Fatalf("expected a conservative unmapped-round warning, got %#v", result.Warnings)
 	}
-	if len(result.NextAction) == 0 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, "review-002-delta") {
-		t.Fatalf("expected a conservative next action for the unmapped round, got %#v", result.NextAction)
+	if len(result.NextAction) == 0 || result.NextAction[0].Command != nil || strings.Contains(result.NextAction[0].Description, "review-002-delta") {
+		t.Fatalf("expected ordinary next action guidance without unmapped-round repair work, got %#v", result.NextAction)
 	}
 }
 
@@ -533,25 +533,29 @@ func TestStatusFinalizeArchiveSuppressesArchiveActionForUnscopedUnreadableHistor
 	if result.State.CurrentNode != "execution/finalize/archive" {
 		t.Fatalf("expected archive node to stay stable, got %#v", result.State)
 	}
-	if !strings.Contains(result.Summary, "review-002-delta") || !strings.Contains(result.Summary, "before archive") {
-		t.Fatalf("expected archive summary to stay conservative for unmapped history, got %q", result.Summary)
+	if strings.Contains(result.Summary, "review-002-delta") {
+		t.Fatalf("did not expect archive summary to mention ignored unmapped history, got %q", result.Summary)
 	}
 	foundUnscopedWarning := false
 	for _, warning := range result.Warnings {
-		if strings.Contains(warning, "could not be mapped back to a tracked step") && strings.Contains(warning, "review-002-delta") {
+		if strings.Contains(warning, "is invalid and cannot be mapped to a tracked step") && strings.Contains(warning, "review-002-delta") {
 			foundUnscopedWarning = true
 		}
 	}
 	if !foundUnscopedWarning {
 		t.Fatalf("expected conservative unmapped-round warning, got %#v", result.Warnings)
 	}
-	if len(result.NextAction) == 0 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, "review-002-delta") {
-		t.Fatalf("expected conservative archive repair guidance first, got %#v", result.NextAction)
-	}
+	foundArchiveAction := false
 	for _, action := range result.NextAction {
 		if action.Command != nil && *action.Command == "harness archive" {
-			t.Fatalf("did not expect archive action while unmapped unreadable history remains, got %#v", result.NextAction)
+			foundArchiveAction = true
 		}
+		if strings.Contains(action.Description, "review-002-delta") {
+			t.Fatalf("did not expect archive next actions to mention ignored unmapped history, got %#v", result.NextAction)
+		}
+	}
+	if !foundArchiveAction {
+		t.Fatalf("expected ordinary archive action to remain available, got %#v", result.NextAction)
 	}
 }
 
@@ -985,7 +989,7 @@ func TestStatusUnreadableFinalizeManifestDoesNotMasqueradeAsStepDebt(t *testing.
 		t.Fatalf("expected only aggregate guidance for unreadable finalize manifest, got %#v", result.NextAction)
 	}
 	for _, warning := range result.Warnings {
-		if strings.Contains(warning, "could not be mapped back to a tracked step") {
+		if strings.Contains(warning, "is invalid and cannot be mapped to a tracked step") {
 			t.Fatalf("did not expect unreadable finalize manifest to create unscoped step debt, got %#v", result.Warnings)
 		}
 	}
@@ -1035,14 +1039,16 @@ func TestStatusFinalizeReviewUsesAggregateFirstGuidanceForUnscopedUnreadableHist
 	if result.State.CurrentNode != "execution/finalize/review" {
 		t.Fatalf("expected finalize review node to stay stable, got %#v", result.State)
 	}
-	if !strings.Contains(result.Summary, "Finalize review is in flight") || !strings.Contains(result.Summary, "review-002-delta") {
-		t.Fatalf("expected finalize review summary to mention the unreadable historical round, got %q", result.Summary)
+	if !strings.Contains(result.Summary, "Plan is in finalize review and waiting for the active review round to be aggregated.") || strings.Contains(result.Summary, "review-002-delta") {
+		t.Fatalf("expected finalize review summary to ignore unreadable historical round, got %q", result.Summary)
 	}
-	if len(result.NextAction) < 2 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, "aggregate the active review round first") || !strings.Contains(result.NextAction[0].Description, "review-002-delta") {
-		t.Fatalf("expected aggregate-first repair guidance for unscoped unreadable history, got %#v", result.NextAction)
+	if len(result.NextAction) < 1 || result.NextAction[0].Command == nil || !strings.Contains(*result.NextAction[0].Command, "harness review aggregate --round review-003-full") {
+		t.Fatalf("expected ordinary aggregate action to remain first, got %#v", result.NextAction)
 	}
-	if result.NextAction[1].Command == nil || !strings.Contains(*result.NextAction[1].Command, "harness review aggregate --round review-003-full") {
-		t.Fatalf("expected aggregate action to remain available, got %#v", result.NextAction)
+	for _, action := range result.NextAction {
+		if strings.Contains(action.Description, "review-002-delta") {
+			t.Fatalf("did not expect finalize review guidance to mention ignored unmapped history, got %#v", result.NextAction)
+		}
 	}
 }
 
@@ -1080,20 +1086,11 @@ func TestStatusFinalizeReviewSummaryForUnscopedUnreadableHistoryWithoutActiveRou
 	if result.State.CurrentNode != "execution/finalize/review" {
 		t.Fatalf("expected finalize review node to stay stable, got %#v", result.State)
 	}
-	if !strings.Contains(result.Summary, "before relying on finalize progression") || !strings.Contains(result.Summary, "review-002-delta") {
-		t.Fatalf("expected finalize-review summary to mention the unreadable historical round, got %q", result.Summary)
+	if strings.Contains(result.Summary, "review-002-delta") {
+		t.Fatalf("expected finalize-review summary to ignore the unreadable historical round, got %q", result.Summary)
 	}
-	if len(result.NextAction) < 2 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, "review-002-delta") {
-		t.Fatalf("expected non-in-flight finalize review guidance to mention the unreadable historical round, got %#v", result.NextAction)
-	}
-	if !strings.Contains(result.NextAction[0].Description, "inspect or repair the local review artifacts") {
-		t.Fatalf("expected non-in-flight finalize review guidance to use repair wording, got %#v", result.NextAction)
-	}
-	if strings.Contains(result.NextAction[0].Description, "aggregate the active review round first") {
-		t.Fatalf("did not expect aggregate-first wording without an active review round, got %#v", result.NextAction)
-	}
-	if result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness review start --spec <path>" {
-		t.Fatalf("expected finalize review start guidance to remain available, got %#v", result.NextAction)
+	if len(result.NextAction) == 0 || result.NextAction[0].Command == nil || *result.NextAction[0].Command != "harness review start --spec <path>" {
+		t.Fatalf("expected ordinary finalize review start guidance to remain available, got %#v", result.NextAction)
 	}
 }
 
@@ -1138,14 +1135,16 @@ func TestStatusFinalizeFixSummaryForUnscopedUnreadableHistory(t *testing.T) {
 	if result.State.CurrentNode != "execution/finalize/fix" {
 		t.Fatalf("expected finalize fix node to stay stable, got %#v", result.State)
 	}
-	if !strings.Contains(result.Summary, "before treating finalize repair as complete") || !strings.Contains(result.Summary, "review-002-delta") {
-		t.Fatalf("expected finalize-fix summary to mention the unreadable historical round, got %q", result.Summary)
+	if strings.Contains(result.Summary, "review-002-delta") {
+		t.Fatalf("expected finalize-fix summary to ignore the unreadable historical round, got %q", result.Summary)
 	}
-	if len(result.NextAction) < 3 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, "review-002-delta") {
-		t.Fatalf("expected finalize-fix repair guidance to mention the unreadable historical round, got %#v", result.NextAction)
+	for _, action := range result.NextAction {
+		if strings.Contains(action.Description, "review-002-delta") {
+			t.Fatalf("did not expect finalize-fix guidance to mention ignored unmapped history, got %#v", result.NextAction)
+		}
 	}
 	foundFinalizeRestart := false
-	for _, action := range result.NextAction[1:] {
+	for _, action := range result.NextAction {
 		if action.Command != nil && *action.Command == "harness review start --spec <path>" {
 			foundFinalizeRestart = true
 			break
@@ -1568,29 +1567,28 @@ func TestStatusArchivedNodesRequireReopenForUnscopedUnreadableHistory(t *testing
 			if result.State.CurrentNode != tc.expectedNode {
 				t.Fatalf("expected archived node %q, got %#v", tc.expectedNode, result.State)
 			}
-			if !strings.Contains(result.Summary, "review-002-delta") || !strings.Contains(result.Summary, "reopen the candidate") {
-				t.Fatalf("expected archived summary to require reopen for unmapped history, got %q", result.Summary)
+			if strings.Contains(result.Summary, "review-002-delta") {
+				t.Fatalf("expected archived summary to ignore unmapped history, got %q", result.Summary)
 			}
 			foundUnscopedWarning := false
 			for _, warning := range result.Warnings {
 				if strings.Contains(warning, stepOneTitle) || strings.Contains(warning, stepTwoTitle) {
 					t.Fatalf("did not expect unmapped unreadable history to invent step-specific debt, got %#v", result.Warnings)
 				}
-				if strings.Contains(warning, "could not be mapped back to a tracked step") && strings.Contains(warning, "review-002-delta") {
+				if strings.Contains(warning, "is invalid and cannot be mapped to a tracked step") && strings.Contains(warning, "review-002-delta") {
 					foundUnscopedWarning = true
 				}
 			}
 			if !foundUnscopedWarning {
 				t.Fatalf("expected conservative unmapped-round warning, got %#v", result.Warnings)
 			}
-			if len(result.NextAction) < 2 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, "review-002-delta") {
-				t.Fatalf("expected archived repair guidance first, got %#v", result.NextAction)
-			}
-			if result.NextAction[1].Command == nil || *result.NextAction[1].Command != "harness reopen --mode finalize-fix" {
-				t.Fatalf("expected archived unscoped history to require reopen before repair, got %#v", result.NextAction)
+			for _, action := range result.NextAction {
+				if strings.Contains(action.Description, "review-002-delta") {
+					t.Fatalf("did not expect archived next actions to mention ignored unmapped history, got %#v", result.NextAction)
+				}
 			}
 			foundOrdinaryGuidance := false
-			for _, action := range result.NextAction[2:] {
+			for _, action := range result.NextAction {
 				if strings.Contains(action.Description, tc.expectedOrdinaryCue) {
 					foundOrdinaryGuidance = true
 					break
