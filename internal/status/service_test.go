@@ -492,6 +492,99 @@ func TestStatusWarnsWhenLatestUnreadableHistoricalCloseoutCannotBeMapped(t *test
 	}
 }
 
+func TestStatusWarnsWhenHistoricalCloseoutMissingRevisionIsIgnored(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeFirstStep(content)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-001-delta", map[string]any{
+		"review_title": stepOneTitle,
+		"step":         1,
+		"revision":     1,
+	})
+	writeReviewAggregate(t, root, "2026-03-18-status-plan", "review-001-delta", map[string]any{
+		"decision": "pass",
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-002-delta", map[string]any{
+		"review_title": "mystery historical target",
+		"step":         1,
+		"revision":     0,
+	})
+	writeReviewAggregate(t, root, "2026-03-18-status-plan", "review-002-delta", map[string]any{
+		"review_title": "mystery historical target",
+		"decision":     "changes_requested",
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-2/implement" {
+		t.Fatalf("expected step 2 node to stay stable, got %#v", result.State)
+	}
+	foundIgnoredWarning := false
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "is invalid and cannot be mapped to a tracked step") && strings.Contains(warning, "review-002-delta") {
+			foundIgnoredWarning = true
+		}
+	}
+	if !foundIgnoredWarning {
+		t.Fatalf("expected ignored malformed-round warning, got %#v", result.Warnings)
+	}
+	for _, action := range result.NextAction {
+		if strings.Contains(action.Description, "review-002-delta") {
+			t.Fatalf("did not expect missing-revision history to add repair guidance, got %#v", result.NextAction)
+		}
+	}
+}
+
+func TestStatusWarnsWhenHistoricalCloseoutStepIsOutOfRangeIsIgnored(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeFirstStep(content)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-001-delta", map[string]any{
+		"review_title": stepOneTitle,
+		"step":         1,
+		"revision":     1,
+	})
+	writeReviewAggregate(t, root, "2026-03-18-status-plan", "review-001-delta", map[string]any{
+		"decision": "pass",
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-002-delta", map[string]any{
+		"review_title": "mystery historical target",
+		"step":         99,
+		"revision":     1,
+	})
+	writeReviewAggregate(t, root, "2026-03-18-status-plan", "review-002-delta", map[string]any{
+		"review_title": "mystery historical target",
+		"revision":     1,
+		"decision":     "changes_requested",
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-2/implement" {
+		t.Fatalf("expected step 2 node to stay stable, got %#v", result.State)
+	}
+	foundIgnoredWarning := false
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "is invalid and cannot be mapped to a tracked step") && strings.Contains(warning, "review-002-delta") {
+			foundIgnoredWarning = true
+		}
+	}
+	if !foundIgnoredWarning {
+		t.Fatalf("expected ignored malformed-round warning, got %#v", result.Warnings)
+	}
+	for _, action := range result.NextAction {
+		if strings.Contains(action.Description, "review-002-delta") {
+			t.Fatalf("did not expect out-of-range-step history to add repair guidance, got %#v", result.NextAction)
+		}
+	}
+}
+
 func TestStatusFinalizeArchiveSuppressesArchiveActionForUnscopedUnreadableHistory(t *testing.T) {
 	root := t.TempDir()
 	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {

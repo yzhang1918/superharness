@@ -641,7 +641,7 @@ func loadLatestStepCloseoutScan(workdir, planStem string, doc *plan.Document, re
 		}
 
 		if manifest.Revision <= 0 {
-			warnings = append(warnings, fmt.Sprintf("Historical review round %s is missing inferred review structure; inspect or rerun the closeout conservatively.", roundID))
+			warnings = append(warnings, fmt.Sprintf("Historical review round %s is invalid and cannot be mapped to a tracked step; it is being ignored and you do not need to do anything.", roundID))
 			candidate := latestUnknownHistoricalReviewRound{
 				RoundID:  roundID,
 				Sequence: sequence,
@@ -655,7 +655,7 @@ func loadLatestStepCloseoutScan(workdir, planStem string, doc *plan.Document, re
 			continue
 		}
 		if *manifest.Step <= 0 || *manifest.Step > len(doc.Steps) {
-			warnings = append(warnings, fmt.Sprintf("Historical review round %s points at invalid step %d; inspect or rerun the closeout conservatively.", roundID, *manifest.Step))
+			warnings = append(warnings, fmt.Sprintf("Historical review round %s is invalid and cannot be mapped to a tracked step; it is being ignored and you do not need to do anything.", roundID))
 			candidate := latestUnknownHistoricalReviewRound{
 				RoundID:  roundID,
 				Sequence: sequence,
