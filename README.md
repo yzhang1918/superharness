@@ -21,6 +21,10 @@ The repository is still in dogfood mode. The current cutover focuses on the
 v0.2 command surface, command-owned evidence artifacts, and the canonical
 `current_node` runtime model.
 
+`easyharness` is also in a rapid development phase, so external users should
+expect breaking changes between releases. Compatibility guarantees and
+migration support are not the current priority.
+
 Field-level contract artifacts now live in:
 
 - `schema/index.json` for the checked-in JSON Schema registry

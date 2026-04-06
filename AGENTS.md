@@ -9,6 +9,25 @@ Build `easyharness` as a thin, git-native, agent-first harness system that is
 easier to understand and maintain than a scripts-heavy workflow. The project
 name is `easyharness`; the CLI executable remains `harness`.
 
+## Fast-Development Bias
+
+`easyharness` is currently in a rapid development phase. When agents make
+plans or implement changes, do not preserve compatibility for older command
+shapes, file layouts, or intermediate contracts unless a human explicitly asks
+for that work.
+
+- prefer the clean target design over compatibility shims
+- do not add migration paths, fallback reads, dual-write logic, or deprecation
+  layers by default
+- allow breaking changes when they simplify the system and remove obsolete
+  behavior
+- do not leave avoidable technical debt behind in the name of incremental
+  compatibility
+
+If a change would normally invite a compatibility bridge, stop and choose the
+cleaner end-state unless the requested scope explicitly includes compatibility
+or migration work.
+
 ## Development Prerequisite
 
 Before using repo-local skills that call `harness`, make sure the command is
