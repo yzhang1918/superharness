@@ -334,18 +334,32 @@ navigate_browser_to() {
   pwcli "$session" open "$target_url" >/dev/null
 }
 
+stop_pid() {
+  local pid="$1"
+  if [[ -z "$pid" ]]; then
+    return
+  fi
+  kill "$pid" >/dev/null 2>&1 || true
+  for _ in $(seq 1 20); do
+    if ! kill -0 "$pid" >/dev/null 2>&1; then
+      wait "$pid" >/dev/null 2>&1 || true
+      return
+    fi
+    sleep 0.1
+  done
+  kill -9 "$pid" >/dev/null 2>&1 || true
+  wait "$pid" >/dev/null 2>&1 || true
+}
+
 cleanup() {
   if [[ -n "${lock_holder_pid}" ]]; then
-    kill "${lock_holder_pid}" >/dev/null 2>&1 || true
-    wait "${lock_holder_pid}" >/dev/null 2>&1 || true
+    stop_pid "${lock_holder_pid}"
   fi
   if [[ -n "${server_pid}" ]]; then
-    kill "${server_pid}" >/dev/null 2>&1 || true
-    wait "${server_pid}" >/dev/null 2>&1 || true
+    stop_pid "${server_pid}"
   fi
   if [[ -n "${vite_pid}" ]]; then
-    kill "${vite_pid}" >/dev/null 2>&1 || true
-    wait "${vite_pid}" >/dev/null 2>&1 || true
+    stop_pid "${vite_pid}"
   fi
   pwcli_close "$rail_session" >/dev/null 2>&1 || true
   rm -rf "$tmp_dir"
@@ -659,11 +673,17 @@ elif ! printf '%s\n' "$output" | write_inline_snapshot_from_output "${output_dir
   printf '%s\n' "$output" >&2
   exit 1
 fi
+capture_session_screenshot "$rail_session" "status"
 
 assert_has_text "status" "Status"
 assert_has_text "status" "$status_summary"
 assert_has_text "status" "$status_node"
 assert_has_text "status" "Next actions"
+assert_has_text "status" "Node"
+assert_has_text "status" "Warnings"
+assert_has_text "status" "Actions"
+assert_lacks_text "status" "READ-ONLY"
+assert_lacks_text "status" "LOCAL"
 capture_snapshot "/timeline" "timeline"
 assert_has_text "timeline" "Timeline"
 assert_has_text "timeline" "Explorer"
@@ -685,7 +705,7 @@ assert_has_text "timeline-inspector-initial" "execution/finalize/await_merge →
 assert_has_text "timeline-inspector-initial" "Publish Record"
 pwcli_run_code_checked "$timeline_inspector_session" '
 async (page) => await page.evaluate(() => {
-  const tabs = document.querySelector(".timeline-inspector-tabs");
+  const tabs = document.querySelector(".inspector-tabs");
   if (!tabs) {
     throw new Error("missing timeline inspector tabs");
   }
@@ -728,7 +748,7 @@ navigate_via_rail "$rail_session" "review-rail" "Status" "status-return" "Status
 pwcli_close "$rail_session"
 capture_snapshot "/review" "review"
 assert_has_text "review" "Review"
-assert_has_text "review" "Review rounds"
+assert_has_text "review" "Explorer"
 assert_has_text "review" "Review data is hidden once land cleanup begins."
 assert_lacks_text "review" "Archived finalize review"
 assert_lacks_text "review" "WIP"
@@ -768,12 +788,6 @@ with open(path, "w", encoding="utf-8") as fh:
     json.dump(payload, fh)
 PY
 
-capture_snapshot "/diff" "diff"
-assert_has_text "diff" "Diff"
-assert_has_text "diff" "WIP"
-capture_snapshot "/files" "files"
-assert_has_text "files" "Files"
-assert_has_text "files" "WIP"
 assert_has_text "status" "$(basename "$runtime_workdir")"
 assert_has_text "status" "$runtime_workdir"
 
