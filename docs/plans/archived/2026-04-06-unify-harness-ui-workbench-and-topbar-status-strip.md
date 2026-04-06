@@ -58,29 +58,29 @@ remain read-only and stay within the existing steering-surface boundary.
 
 ## Acceptance Criteria
 
-- [ ] The topbar keeps the existing brand/workspace-path structure but replaces
+- [x] The topbar keeps the existing brand/workspace-path structure but replaces
       `READ-ONLY` / `LOCAL` with a compact global workflow summary.
-- [ ] The topbar summary exposes current node plus warning/action counts, and
+- [x] The topbar summary exposes current node plus warning/action counts, and
       blocker count when applicable, using dense VS Code-like compact items
       rather than verbose text.
-- [ ] Clicking a topbar summary item navigates to the corresponding `Status`
+- [x] Clicking a topbar summary item navigates to the corresponding `Status`
       section instead of trying to render detailed state inline.
-- [ ] `Status`, `Timeline`, and `Review` all use the same page-level mental
+- [x] `Status`, `Timeline`, and `Review` all use the same page-level mental
       model: page switcher, Explorer column, Inspector pane.
-- [ ] `Status` no longer behaves like the last dashboard-style exception and
+- [x] `Status` no longer behaves like the last dashboard-style exception and
       instead uses Explorer selection plus a single focused Inspector surface.
-- [ ] Explorer typography, row density, selection treatment, metadata styling,
+- [x] Explorer typography, row density, selection treatment, metadata styling,
       and pane headers are visibly consistent across all three pages.
-- [ ] Inspector headers, tabs, empty states, loading states, and error states
+- [x] Inspector headers, tabs, empty states, loading states, and error states
       use shared abstractions or patterns rather than page-specific re-creation
       where the role is the same.
-- [ ] The frontend code clearly centralizes the shared workbench structure so a
+- [x] The frontend code clearly centralizes the shared workbench structure so a
       future agent does not need to modify three separate page skeletons to
       evolve Explorer/Inspector behavior.
-- [ ] The UI remains read-only and does not widen the current steering-surface
+- [x] The UI remains read-only and does not widen the current steering-surface
       boundary.
-- [ ] Embedded UI assets are rebuilt and shipped from the refactored frontend.
-- [ ] Validation includes both automated browser checks and an interactive
+- [x] Embedded UI assets are rebuilt and shipped from the refactored frontend.
+- [x] Validation includes both automated browser checks and an interactive
       Playwright session with screenshots that are reviewed for visual density,
       hierarchy, and coherence before closeout.
 
@@ -345,7 +345,10 @@ instead of flashing the default width before the persisted value loads.
 
 #### Review Notes
 
-PENDING_STEP_REVIEW
+`review-001-full` requested changes for missing responsive/splitter automated
+coverage and delayed persisted-width restoration. `review-002-delta` passed
+after the workbench restored saved widths on first render and the smoke
+scripts added explicit mobile-layout plus real splitter drag/keyboard checks.
 
 ## Validation Strategy
 
@@ -375,26 +378,69 @@ PENDING_STEP_REVIEW
 
 ## Validation Summary
 
-PENDING_UNTIL_ARCHIVE
+Validated the shared workbench refactor with `pnpm --dir web check`,
+`pnpm --dir web build`, `scripts/ui-playwright-smoke`,
+`scripts/ui-playwright-review-smoke`, and
+`scripts/ui-playwright-topbar-smoke`. The retained Playwright evidence covers
+desktop `Status` / `Timeline` / `Review`, mobile `Status`, topbar navigation,
+splitter drag and keyboard resize, and the storage-denied splitter fallback
+path under `output/playwright/harness-ui-smoke-*`,
+`output/playwright/ruis-*`, and `output/playwright/topbar-smoke/`.
 
 ## Review Summary
 
-PENDING_UNTIL_ARCHIVE
+Step closeout converged through `review-001-full` (changes requested for
+missing responsive/splitter validation and delayed persisted-width restore),
+followed by `review-002-delta` (pass). Finalize review converged through
+`review-003-full` and `review-005-full`, which surfaced storage-fallback and
+evidence-path gaps, then `review-004-delta`, `review-006-delta`, and the clean
+full rerun `review-007-full`. The final candidate has a clean full finalize
+review with no blocking or non-blocking findings.
 
 ## Archive Summary
 
-PENDING_UNTIL_ARCHIVE
+- Archived At: 2026-04-07T00:26:32+08:00
+- Revision: 1
+The candidate finishes the remaining issue-94 polish slice by unifying
+`Status`, `Timeline`, and `Review` around one shared Explorer/Inspector
+workbench model, replacing the old topbar chrome with a compact workflow
+summary, tightening responsive behavior, and validating splitter persistence
+plus storage-fallback behavior. Finalize review is now clean and the remaining
+work is archive/publish handoff rather than further implementation.
+
+- PR: NONE. The candidate has not been pushed or opened as a PR yet.
+- Ready: Acceptance criteria are satisfied, step and finalize reviews are
+  clean, and the retained validation evidence matches the shipped UI changes.
+- Merge Handoff: Run `harness archive`, commit the tracked archive move plus
+  summary updates, push branch `codex/unify-ui-workbench-topbar-status`, open
+  or refresh the PR, and record publish/CI/sync evidence until
+  `harness status` reaches `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
 ### Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Shared `web/src/workbench.tsx` / `web/src/pages.tsx` structure that makes
+  all three UI pages follow one Explorer/Inspector model.
+- Topbar workflow summary that replaces `READ-ONLY` / `LOCAL` with navigable
+  current-node, warning, blocker, and action signals.
+- Rebuilt `Status` as a focused Explorer/Inspector page instead of a dashboard
+  exception.
+- Consistent Explorer density, inspector headers, tabs, review-row treatment,
+  responsive collapse, and splitter behavior across `Status`, `Timeline`, and
+  `Review`.
+- Playwright coverage for topbar navigation, responsive/mobile `Status`,
+  splitter drag/keyboard resize, and storage-denied persistence fallback.
 
 ### Not Delivered
 
-PENDING_UNTIL_ARCHIVE
+- New backend resources or data contracts beyond the existing read-only APIs.
+- Any write action, command trigger, diff browser, or file browser surface.
+- Broader theme experiments or additional topbar affordances beyond the
+  accepted workflow summary.
 
 ### Follow-Up Issues
 
-NONE
+- No new follow-up issue was created in this slice. The deferred items above
+  remain intentionally out of scope and can be reconsidered in future UI work
+  after this polish candidate lands.
