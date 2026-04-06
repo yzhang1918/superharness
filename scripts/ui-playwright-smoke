@@ -788,6 +788,48 @@ async (page) => {
   return { before, after, stored };
 }
 ' >/dev/null
+timeline_storage_denied_session="$(session_name timeline-storage-denied)"
+navigate_browser_to "$timeline_storage_denied_session" "${base_url}/timeline"
+sleep 1
+pwcli_run_code_checked "$timeline_storage_denied_session" '
+async (page) => {
+  await page.addInitScript(() => {
+    const proto = Storage.prototype;
+    proto.getItem = function() {
+      throw new DOMException("Storage denied", "SecurityError");
+    };
+    proto.setItem = function() {
+      throw new DOMException("Storage denied", "SecurityError");
+    };
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  const frame = page.locator(".workbench-page");
+  const divider = page.getByRole("separator", { name: /Timeline width/i });
+  const before = await frame.evaluate((node) => getComputedStyle(node).gridTemplateColumns);
+  const box = await divider.boundingBox();
+  if (!box) {
+    throw new Error("missing timeline splitter in storage-denied path");
+  }
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 56, box.y + box.height / 2, { steps: 6 });
+  await page.mouse.up();
+  const after = await frame.evaluate((node) => getComputedStyle(node).gridTemplateColumns);
+  const label = await page.locator(".editor-tab").textContent();
+  if (label?.trim() !== "Timeline") {
+    throw new Error(`unexpected page label after storage-denied reload: ${label}`);
+  }
+  if (before === after) {
+    throw new Error(`timeline splitter did not move under storage-denied fallback: ${before}`);
+  }
+  return { before, after };
+}
+' >/dev/null
+capture_session_snapshot "$timeline_storage_denied_session" "timeline-storage-denied"
+capture_session_screenshot "$timeline_storage_denied_session" "timeline-storage-denied"
+assert_has_text "timeline-storage-denied" "Timeline"
+assert_has_text "timeline-storage-denied" "Explorer"
+pwcli_close "$timeline_storage_denied_session"
 output_ref="$(interactive_ref_from_snapshot "Output" "${output_dir}/timeline-inspector-initial.yml")"
 if [[ -z "$output_ref" ]]; then
   echo "Could not find Output tab in timeline inspector snapshot." >&2

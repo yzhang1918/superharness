@@ -199,8 +199,8 @@ Explorer/Inspector page with focused section selection and a summary-first
 inspector instead of the previous mixed dashboard layout.
 
 Interactive Playwright screenshots now show the accepted topbar treatment in
-the shared shell, including `output/playwright/manual-status-polish/` for the
-current-worktree `Status` view.
+the shared shell, including the retained `output/playwright/harness-ui-smoke-*`
+artifacts for the current-worktree `Status` view.
 
 #### Review Notes
 
