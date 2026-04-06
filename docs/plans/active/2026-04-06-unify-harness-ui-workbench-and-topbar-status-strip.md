@@ -323,12 +323,11 @@ uses a shared draggable splitter with pointer + keyboard support.
 Interactive Playwright runs produced fresh snapshots and screenshots for
 `Status`, `Timeline`, and `Review`, including:
 
-- `output/playwright/manual-status-polish/status-current.png`
-- `.playwright-cli/status-mobile-verified.png`
-- `.playwright-cli/review-desktop-verified.png`
-- `output/playwright/harness-ui-smoke-*/timeline-inspector-initial.png`
-- `output/playwright/ruis-*/review-initial.png`
-- `output/playwright/ruis-*/review-ux.png`
+- `output/playwright/harness-ui-smoke-56859-1775491216711746000-4732/status.png`
+- `output/playwright/harness-ui-smoke-56859-1775491216711746000-4732/status-mobile.png`
+- `output/playwright/harness-ui-smoke-56859-1775491216711746000-4732/timeline-inspector-initial.png`
+- `output/playwright/ruis-62529-32381/review-initial.png`
+- `output/playwright/ruis-62529-32381/review-ux.png`
 - `output/playwright/topbar-smoke/topbar-smoke-status.png`
 
 Reviewed those screenshots manually for topbar density, Explorer consistency,

@@ -118,24 +118,35 @@ export function WorkbenchFrame(props: {
   const minExplorerWidth = 220;
   const maxExplorerWidth = 420;
   const clampExplorerWidth = (nextWidth: number) => Math.min(maxExplorerWidth, Math.max(minExplorerWidth, nextWidth));
-  const [explorerWidth, setExplorerWidth] = useState(() => {
+  const readStoredExplorerWidth = () => {
     if (typeof window === "undefined") {
       return defaultExplorerWidth;
     }
-    const stored = window.localStorage.getItem(widthStorageKey);
-    if (!stored) {
+    try {
+      const stored = window.localStorage.getItem(widthStorageKey);
+      if (!stored) {
+        return defaultExplorerWidth;
+      }
+      const parsed = Number.parseInt(stored, 10);
+      if (Number.isNaN(parsed)) {
+        return defaultExplorerWidth;
+      }
+      return clampExplorerWidth(parsed);
+    } catch {
       return defaultExplorerWidth;
     }
-    const parsed = Number.parseInt(stored, 10);
-    if (Number.isNaN(parsed)) {
-      return defaultExplorerWidth;
-    }
-    return clampExplorerWidth(parsed);
+  };
+  const [explorerWidth, setExplorerWidth] = useState(() => {
+    return readStoredExplorerWidth();
   });
   const [dragState, setDragState] = useState<{ pointerId: number; startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
-    window.localStorage.setItem(widthStorageKey, String(explorerWidth));
+    try {
+      window.localStorage.setItem(widthStorageKey, String(explorerWidth));
+    } catch {
+      // Storage-denied environments should still render and resize normally.
+    }
   }, [explorerWidth, widthStorageKey]);
 
   useEffect(() => {
