@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/catu-ai/easyharness/internal/contracts"
+	"github.com/catu-ai/easyharness/internal/inputschema"
 	"github.com/catu-ai/easyharness/internal/plan"
 	"github.com/catu-ai/easyharness/internal/runstate"
 )
@@ -48,8 +49,8 @@ func (s Service) Submit(kind string, inputBytes []byte) Result {
 	switch kind {
 	case "ci":
 		var input CIInput
-		if err := decodeInput(inputBytes, &input); err != nil {
-			return invalidInputResult("ci", err)
+		if issues := inputschema.DecodeAndValidate("inputs.evidence.ci", "input", inputBytes, &input); len(issues) > 0 {
+			return invalidInputIssuesResult("ci", issues)
 		}
 		if issues := validateCIInput(input); len(issues) > 0 {
 			return invalidInputIssuesResult("ci", issues)
@@ -87,8 +88,8 @@ func (s Service) Submit(kind string, inputBytes []byte) Result {
 		})
 	case "publish":
 		var input PublishInput
-		if err := decodeInput(inputBytes, &input); err != nil {
-			return invalidInputResult("publish", err)
+		if issues := inputschema.DecodeAndValidate("inputs.evidence.publish", "input", inputBytes, &input); len(issues) > 0 {
+			return invalidInputIssuesResult("publish", issues)
 		}
 		if issues := validatePublishInput(input); len(issues) > 0 {
 			return invalidInputIssuesResult("publish", issues)
@@ -132,8 +133,8 @@ func (s Service) Submit(kind string, inputBytes []byte) Result {
 		})
 	case "sync":
 		var input SyncInput
-		if err := decodeInput(inputBytes, &input); err != nil {
-			return invalidInputResult("sync", err)
+		if issues := inputschema.DecodeAndValidate("inputs.evidence.sync", "input", inputBytes, &input); len(issues) > 0 {
+			return invalidInputIssuesResult("sync", issues)
 		}
 		if issues := validateSyncInput(input); len(issues) > 0 {
 			return invalidInputIssuesResult("sync", issues)
@@ -256,13 +257,6 @@ func loadRecord[T any](workdir, relPath string) (*T, error) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return &record, nil
-}
-
-func decodeInput[T any](inputBytes []byte, out *T) error {
-	if err := json.Unmarshal(inputBytes, out); err != nil {
-		return fmt.Errorf("parse input JSON: %w", err)
-	}
-	return nil
 }
 
 func validateCIInput(input CIInput) []CommandError {

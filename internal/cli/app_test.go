@@ -527,6 +527,40 @@ func TestEvidenceSubmitCommandReturnsJSON(t *testing.T) {
 	}
 }
 
+func TestEvidenceSubmitCommandReturnsSchemaValidationErrors(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+
+	writeArchivedPlanForCLI(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	app.Stdin = bytes.NewBufferString(`{"status":"success","unexpected":true}`)
+	exitCode := app.Run([]string{"evidence", "submit", "--kind", "ci"})
+	if exitCode != 1 {
+		t.Fatalf("expected schema validation failure, got %d: %s", exitCode, stderr.String())
+	}
+
+	var payload struct {
+		OK      bool   `json:"ok"`
+		Command string `json:"command"`
+		Errors  []struct {
+			Path string `json:"path"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON evidence submit output: %v\n%s", err, stdout.String())
+	}
+	if payload.OK || payload.Command != "evidence submit" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	assertCLIErrorPath(t, payload.Errors, "input.unexpected")
+}
+
 func TestReviewStartCommandAppendsTimelineEvent(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
@@ -579,6 +613,56 @@ func TestReviewStartCommandAppendsTimelineEvent(t *testing.T) {
 	}
 }
 
+func TestReviewStartCommandReturnsSchemaValidationErrors(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 15, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+
+	outputPath := filepath.Join(root, "docs/plans/active/2026-03-18-test-plan.md")
+	if exitCode := app.Run([]string{
+		"plan", "template",
+		"--title", "CLI Review Plan",
+		"--output", outputPath,
+	}); exitCode != 0 {
+		t.Fatalf("template command failed with %d: %s", exitCode, stderr.String())
+	}
+	if exitCode := app.Run([]string{"execute", "start"}); exitCode != 0 {
+		t.Fatalf("execute start failed with %d: %s", exitCode, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	app.Stdin = bytes.NewBufferString(`{
+		"kind":"delta",
+		"dimensions":[{"name":"correctness","instructions":"Check the status and contracts."}],
+		"unexpected":true
+	}`)
+	exitCode := app.Run([]string{"review", "start"})
+	if exitCode != 1 {
+		t.Fatalf("expected schema validation failure, got %d: %s", exitCode, stderr.String())
+	}
+
+	var payload struct {
+		OK      bool   `json:"ok"`
+		Command string `json:"command"`
+		Errors  []struct {
+			Path string `json:"path"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON review start output: %v\n%s", err, stdout.String())
+	}
+	if payload.OK || payload.Command != "review start" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	assertCLIErrorPath(t, payload.Errors, "spec.unexpected")
+}
+
 func TestReviewSubmitCommandAppendsTimelineEvent(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
@@ -612,6 +696,55 @@ func TestReviewSubmitCommandAppendsTimelineEvent(t *testing.T) {
 	}
 
 	assertLastTimelineEventCommand(t, root, "review submit")
+}
+
+func TestReviewSubmitCommandReturnsSchemaValidationErrors(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 15, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+
+	outputPath := filepath.Join(root, "docs/plans/active/2026-03-18-test-plan.md")
+	if exitCode := app.Run([]string{"plan", "template", "--title", "CLI Review Submit Plan", "--output", outputPath}); exitCode != 0 {
+		t.Fatalf("template command failed with %d: %s", exitCode, stderr.String())
+	}
+	if exitCode := app.Run([]string{"execute", "start"}); exitCode != 0 {
+		t.Fatalf("execute start failed with %d: %s", exitCode, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	app.Stdin = bytes.NewBufferString(`{"kind":"delta","dimensions":[{"name":"correctness","instructions":"Check the status and contracts."}]}`)
+	if exitCode := app.Run([]string{"review", "start"}); exitCode != 0 {
+		t.Fatalf("review start failed with %d: %s", exitCode, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	app.Stdin = bytes.NewBufferString(`{"findings":[]}`)
+	exitCode := app.Run([]string{"review", "submit", "--round", "review-001-delta", "--slot", "correctness"})
+	if exitCode != 1 {
+		t.Fatalf("expected schema validation failure, got %d: %s", exitCode, stderr.String())
+	}
+
+	var payload struct {
+		OK      bool   `json:"ok"`
+		Command string `json:"command"`
+		Errors  []struct {
+			Path string `json:"path"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("expected JSON review submit output: %v\n%s", err, stdout.String())
+	}
+	if payload.OK || payload.Command != "review submit" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	assertCLIErrorPath(t, payload.Errors, "submission.summary")
 }
 
 func TestReviewAggregateCommandAppendsTimelineEvent(t *testing.T) {
@@ -1264,6 +1397,18 @@ func seedPassingFinalizeReviewForCLI(t *testing.T, root, planStem, relPlanPath, 
 	if err := os.WriteFile(filepath.Join(reviewDir, "aggregate.json"), []byte(aggregate), 0o644); err != nil {
 		t.Fatalf("write aggregate: %v", err)
 	}
+}
+
+func assertCLIErrorPath(t *testing.T, errors []struct {
+	Path string `json:"path"`
+}, path string) {
+	t.Helper()
+	for _, issue := range errors {
+		if issue.Path == path {
+			return
+		}
+	}
+	t.Fatalf("expected CLI error path %q, got %#v", path, errors)
 }
 
 func writeArchivedPlanForCLI(t *testing.T, root, relPath string) string {

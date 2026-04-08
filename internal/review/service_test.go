@@ -172,6 +172,67 @@ func TestStartRejectsInvalidSpec(t *testing.T) {
 	assertStartError(t, result, "spec.dimensions")
 }
 
+func TestStartRejectsUnknownSchemaProperty(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	result := review.Service{Workdir: root}.Start([]byte(`{
+		"kind": "delta",
+		"dimensions": [
+			{"name": "correctness", "instructions": "Check behavior."}
+		],
+		"unexpected": true
+	}`))
+	if result.OK {
+		t.Fatalf("expected schema validation failure, got %#v", result)
+	}
+	assertStartError(t, result, "spec.unexpected")
+}
+
+func TestStartRejectsUnknownTopLevelSpecField(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{Workdir: root}
+	result := svc.Start([]byte(`{
+		"kind":"delta",
+		"dimensions":[{"name":"correctness","instructions":"Check correctness."}],
+		"unexpected":true
+	}`))
+	if result.OK {
+		t.Fatalf("expected failure, got %#v", result)
+	}
+	assertStartError(t, result, "spec.unexpected")
+}
+
+func TestStartRejectsWrongTypeBeforeSemanticValidation(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{Workdir: root}
+	result := svc.Start([]byte(`{
+		"kind":1,
+		"dimensions":[{"name":"correctness","instructions":"Check correctness."}]
+	}`))
+	if result.OK {
+		t.Fatalf("expected failure, got %#v", result)
+	}
+	assertStartError(t, result, "spec.kind")
+}
+
+func TestStartRejectsMissingRequiredKind(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	result := review.Service{Workdir: root}.Start([]byte(`{
+		"dimensions":[{"name":"correctness","instructions":"Check correctness."}]
+	}`))
+	if result.OK {
+		t.Fatalf("expected failure, got %#v", result)
+	}
+	assertStartError(t, result, "spec.kind")
+}
+
 func TestSubmitStoresSubmissionAndUpdatesLedger(t *testing.T) {
 	root := t.TempDir()
 	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
@@ -226,6 +287,36 @@ func TestSubmitStoresSubmissionAndUpdatesLedger(t *testing.T) {
 	if len(result.NextAction) != 1 || result.NextAction[0].Description != "Report the submission receipt to the controller agent and end the reviewer thread. If the same slot later needs a narrow follow-up for the same tracked step or the same finalize review title in the same revision, the controller may reopen this reviewer through the runtime's native resume mechanism only after this submission is verified and only while the slot instructions still materially match." {
 		t.Fatalf("unexpected submit next action: %#v", result.NextAction)
 	}
+}
+
+func TestSubmitRejectsUnknownSchemaProperty(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind: "delta",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+
+	result := svc.Submit(start.Artifacts.RoundID, "correctness", []byte(`{
+		"summary": "Looks good.",
+		"unexpected": true
+	}`))
+	if result.OK {
+		t.Fatalf("expected schema validation failure, got %#v", result)
+	}
+	assertSubmitError(t, result, "submission.unexpected")
 }
 
 func TestSubmitRejectsUnknownSlot(t *testing.T) {
@@ -329,6 +420,93 @@ func TestSubmitRejectsNullLocations(t *testing.T) {
 		t.Fatalf("expected submit failure, got %#v", result)
 	}
 	assertSubmitError(t, result, "submission.findings[0].locations")
+}
+
+func TestSubmitRejectsUnknownTopLevelField(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind: "delta",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+
+	result := svc.Submit(start.Artifacts.RoundID, "correctness", []byte(`{
+		"summary":"Found one issue.",
+		"unexpected":true
+	}`))
+	if result.OK {
+		t.Fatalf("expected failure, got %#v", result)
+	}
+	assertSubmitError(t, result, "submission.unexpected")
+}
+
+func TestSubmitRejectsWrongFindingSeverityType(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind: "delta",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+
+	result := svc.Submit(start.Artifacts.RoundID, "correctness", []byte(`{
+		"summary":"Found one issue.",
+		"findings":[{"severity":1,"title":"Wrong type","details":"Severity must be a string."}]
+	}`))
+	if result.OK {
+		t.Fatalf("expected failure, got %#v", result)
+	}
+	assertSubmitError(t, result, "submission.findings[0].severity")
+}
+
+func TestSubmitRejectsMissingRequiredSummary(t *testing.T) {
+	root := t.TempDir()
+	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind: "delta",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+
+	result := svc.Submit(start.Artifacts.RoundID, "correctness", []byte(`{"findings":[]}`))
+	if result.OK {
+		t.Fatalf("expected failure, got %#v", result)
+	}
+	assertSubmitError(t, result, "submission.summary")
 }
 
 func TestSubmitPreservesExplicitEmptyLocationsArray(t *testing.T) {

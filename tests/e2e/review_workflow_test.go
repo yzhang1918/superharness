@@ -119,6 +119,33 @@ func TestReviewWorkflowWithBuiltBinary(t *testing.T) {
 		t.Fatalf("expected finalize-review next action guidance, got %#v", preReviewStatus)
 	}
 
+	invalidSpecPath := workspace.WriteJSON(t, "tmp/review-invalid-spec.json", map[string]any{
+		"dimensions": []map[string]any{
+			{
+				"name":         "correctness",
+				"instructions": "Check that schema validation runs from the built binary.",
+			},
+		},
+	})
+	invalidStart := support.Run(t, workspace.Root, "review", "start", "--spec", invalidSpecPath)
+	support.RequireExitCode(t, invalidStart, 1)
+	support.RequireNoStderr(t, invalidStart)
+	invalidStartPayload := support.RequireJSONResult[struct {
+		OK      bool           `json:"ok"`
+		Command string         `json:"command"`
+		Summary string         `json:"summary"`
+		Errors  []commandError `json:"errors"`
+	}](t, invalidStart)
+	if invalidStartPayload.OK || invalidStartPayload.Command != "review start" {
+		t.Fatalf("expected failed review-start payload for invalid schema input, got %#v", invalidStartPayload)
+	}
+	if invalidStartPayload.Summary != "Review spec is invalid." {
+		t.Fatalf("expected schema-invalid summary, got %#v", invalidStartPayload)
+	}
+	if len(invalidStartPayload.Errors) != 1 || invalidStartPayload.Errors[0].Path != "spec.kind" {
+		t.Fatalf("expected schema-invalid kind error from built binary, got %#v", invalidStartPayload.Errors)
+	}
+
 	specPath := workspace.WriteJSON(t, "tmp/review-spec.json", map[string]any{
 		"kind": "full",
 		"dimensions": []map[string]any{

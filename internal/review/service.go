@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/catu-ai/easyharness/internal/contracts"
+	"github.com/catu-ai/easyharness/internal/inputschema"
 	"github.com/catu-ai/easyharness/internal/plan"
 	"github.com/catu-ai/easyharness/internal/runstate"
 )
@@ -82,12 +83,12 @@ func (s Service) Start(specBytes []byte) StartResult {
 	}
 
 	var spec Spec
-	if err := json.Unmarshal(specBytes, &spec); err != nil {
+	if issues := inputschema.DecodeAndValidate("inputs.review.spec", "spec", specBytes, &spec); len(issues) > 0 {
 		return StartResult{
 			OK:      false,
 			Command: "review start",
 			Summary: "Review spec is invalid.",
-			Errors:  []CommandError{{Path: "spec", Message: fmt.Sprintf("parse review spec: %v", err)}},
+			Errors:  issues,
 		}
 	}
 	if issues := validateSpec(spec); len(issues) > 0 {
@@ -294,12 +295,12 @@ func (s Service) Submit(roundID, slot string, inputBytes []byte) SubmitResult {
 	}
 
 	var input SubmissionInput
-	if err := json.Unmarshal(inputBytes, &input); err != nil {
+	if issues := inputschema.DecodeAndValidate("inputs.review.submission", "submission", inputBytes, &input); len(issues) > 0 {
 		return SubmitResult{
 			OK:      false,
 			Command: "review submit",
 			Summary: "Reviewer submission is invalid.",
-			Errors:  []CommandError{{Path: "submission", Message: fmt.Sprintf("parse submission: %v", err)}},
+			Errors:  issues,
 		}
 	}
 	if issues := validateSubmission(input); len(issues) > 0 {
