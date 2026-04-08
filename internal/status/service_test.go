@@ -2368,6 +2368,144 @@ func TestStatusReentersReviewedStepAfterFailedExplicitEarlierStepRepair(t *testi
 	}
 }
 
+func TestStatusReturnsToLaterFrontierAfterCleanExplicitEarlierStepRepair(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		content = completeAllSteps(content, true)
+		return appendThirdStep(content)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+		"reopen": map[string]any{
+			"mode":            "new-step",
+			"reopened_at":     "2026-03-18T11:00:00+08:00",
+			"base_step_count": 2,
+		},
+	})
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 11, 20, 0, 0, time.FixedZone("CST", 8*60*60))
+		},
+	}
+	start := svc.Start(mustJSONBytes(t, review.Spec{
+		Step: reviewIntPtr(1),
+		Kind: "full",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Repair the earlier step closeout from the later frontier."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("expected explicit earlier-step review start, got %#v", start)
+	}
+
+	svc.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 11, 22, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+	submit := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSONBytes(t, review.SubmissionInput{
+		Summary:  "The earlier-step repair is now clean.",
+		Findings: nil,
+	}))
+	if !submit.OK {
+		t.Fatalf("expected review submission, got %#v", submit)
+	}
+
+	svc.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 11, 24, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+	aggregate := svc.Aggregate(start.Artifacts.RoundID)
+	if !aggregate.OK || aggregate.Review == nil || aggregate.Review.Decision != "pass" {
+		t.Fatalf("expected clean explicit earlier-step repair aggregate, got %#v", aggregate)
+	}
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/step-3/implement" {
+		t.Fatalf("expected clean explicit earlier-step repair to return to the later frontier, got %#v", result.State)
+	}
+	if result.Facts == nil || result.Facts.CurrentStep != "Step 3: Follow-up reopened work" || result.Facts.ReviewStatus != "pass" {
+		t.Fatalf("expected later-frontier facts after clean explicit repair, got %#v", result.Facts)
+	}
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, stepOneTitle) {
+			t.Fatalf("did not expect repaired step debt to remain after clean explicit repair, got %#v", result.Warnings)
+		}
+	}
+	if len(result.NextAction) == 0 || result.NextAction[0].Command != nil || !strings.Contains(result.NextAction[0].Description, "Continue the current step") {
+		t.Fatalf("expected ordinary later-frontier guidance after clean explicit repair, got %#v", result.NextAction)
+	}
+}
+
+func TestStatusReturnsToFinalizeReviewAfterCleanExplicitEarlierStepRepair(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllStepsWithoutCloseout(content, false)
+	})
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"execution_started_at": "2026-03-18T10:05:00+08:00",
+	})
+	writeReviewManifest(t, root, "2026-03-18-status-plan", "review-002-delta", map[string]any{
+		"review_title": stepTwoTitle,
+		"step":         2,
+		"revision":     1,
+	})
+	writeReviewAggregate(t, root, "2026-03-18-status-plan", "review-002-delta", map[string]any{
+		"decision": "pass",
+	})
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 11, 30, 0, 0, time.FixedZone("CST", 8*60*60))
+		},
+	}
+	start := svc.Start(mustJSONBytes(t, review.Spec{
+		Step: reviewIntPtr(1),
+		Kind: "full",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Repair the earlier step closeout from finalize review."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("expected explicit earlier-step review start from finalize review, got %#v", start)
+	}
+
+	svc.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 11, 32, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+	submit := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSONBytes(t, review.SubmissionInput{
+		Summary:  "The finalize-context earlier-step repair is clean.",
+		Findings: nil,
+	}))
+	if !submit.OK {
+		t.Fatalf("expected review submission, got %#v", submit)
+	}
+
+	svc.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 11, 34, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+	aggregate := svc.Aggregate(start.Artifacts.RoundID)
+	if !aggregate.OK || aggregate.Review == nil || aggregate.Review.Decision != "pass" {
+		t.Fatalf("expected clean explicit earlier-step repair aggregate from finalize review, got %#v", aggregate)
+	}
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/review" {
+		t.Fatalf("expected clean explicit earlier-step repair to return to finalize review, got %#v", result.State)
+	}
+	if result.Facts != nil && result.Facts.CurrentStep == stepOneTitle {
+		t.Fatalf("did not expect repaired step facts to stay pinned after clean finalize-context repair, got %#v", result.Facts)
+	}
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, stepOneTitle) {
+			t.Fatalf("did not expect repaired step debt to remain after clean finalize-context repair, got %#v", result.Warnings)
+		}
+	}
+	if len(result.NextAction) == 0 || result.NextAction[0].Command == nil || *result.NextAction[0].Command != "harness review start --spec <path>" {
+		t.Fatalf("expected ordinary finalize-review guidance after clean explicit repair, got %#v", result.NextAction)
+	}
+}
+
 func TestStatusConsumedReopenedNewStepDoesNotForceAnotherStepAfterLaterFinding(t *testing.T) {
 	root := t.TempDir()
 	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
