@@ -750,6 +750,98 @@ assert_has_text "timeline-inspector-initial" "Output"
 assert_has_text "timeline-inspector-initial" "execution/finalize/await_merge → land"
 assert_has_text "timeline-inspector-initial" "Publish Record"
 pwcli_run_code_checked "$timeline_inspector_session" '
+async (page) => {
+  await page.setViewportSize({ width: 1280, height: 520 });
+
+  const appShell = page.locator(".app-shell");
+  const explorerBody = page.locator(".workbench-explorer-body");
+  const inspectorBody = page.locator(".workbench-body");
+
+  const paneMetrics = async (locator) =>
+    locator.evaluate((node) => ({
+      clientHeight: node.clientHeight,
+      scrollHeight: node.scrollHeight,
+      scrollTop: node.scrollTop,
+    }));
+
+  const shellMetrics = await appShell.evaluate((node) => ({
+    appOverflow: getComputedStyle(node).overflow,
+    bodyOverflow: getComputedStyle(document.body).overflow,
+    documentScrollHeight: document.documentElement.scrollHeight,
+    viewportHeight: window.innerHeight,
+  }));
+
+  if (shellMetrics.documentScrollHeight > shellMetrics.viewportHeight + 2) {
+    throw new Error(
+      `timeline document still scrolls: ${shellMetrics.documentScrollHeight} > ${shellMetrics.viewportHeight}`,
+    );
+  }
+
+  const ensureExplorerOverflow = async () => {
+    const metrics = await paneMetrics(explorerBody);
+    if (metrics.scrollHeight > metrics.clientHeight + 8) {
+      return metrics;
+    }
+
+    await page.evaluate(() => {
+      const list = document.querySelector(".explorer-list");
+      if (!list) {
+        throw new Error("missing explorer list for scroll regression");
+      }
+      const spacer = document.createElement("div");
+      spacer.className = "scroll-regression-probe";
+      spacer.style.flex = "0 0 auto";
+      spacer.style.height = "1200px";
+      list.appendChild(spacer);
+    });
+
+    return paneMetrics(explorerBody);
+  };
+
+  const wheelPane = async (locator, label) => {
+    const before = await paneMetrics(locator);
+    if (before.scrollHeight <= before.clientHeight + 8) {
+      throw new Error(`${label} pane is not scrollable enough for the regression check`);
+    }
+
+    await locator.hover();
+    await page.waitForTimeout(100);
+    await page.mouse.wheel(0, 480);
+    await page.waitForTimeout(100);
+
+    const after = await paneMetrics(locator);
+    const windowY = await page.evaluate(() => window.scrollY);
+    if (after.scrollTop <= before.scrollTop) {
+      throw new Error(`${label} pane did not consume wheel scrolling`);
+    }
+    if (windowY !== 0) {
+      throw new Error(`${label} wheel scrolling moved the document: ${windowY}`);
+    }
+
+    return { before, after, windowY };
+  };
+
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+    document.querySelector(".workbench-explorer-body")?.scrollTo(0, 0);
+    document.querySelector(".workbench-body")?.scrollTo(0, 0);
+  });
+  const explorerMetrics = await ensureExplorerOverflow();
+  if (explorerMetrics.scrollHeight <= explorerMetrics.clientHeight + 8) {
+    throw new Error("explorer pane is still not scrollable after injecting regression probe content");
+  }
+  await wheelPane(explorerBody, "explorer");
+
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+    document.querySelector(".workbench-body")?.scrollTo(0, 0);
+  });
+  await wheelPane(inspectorBody, "inspector");
+
+  return { shellMetrics, explorerMetrics };
+}
+' >/dev/null
+pwcli_run_code_checked "$timeline_inspector_session" '
 async (page) => await page.evaluate(() => {
   const tabs = document.querySelector(".inspector-tabs");
   if (!tabs) {

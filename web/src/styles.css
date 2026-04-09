@@ -31,6 +31,7 @@
 html,
 body,
 #app {
+  height: 100%;
   min-height: 100%;
   margin: 0;
 }
@@ -234,17 +235,21 @@ code {
 
 .main-stage {
   min-width: 0;
+  min-height: 0;
 }
 
 .workbench-page {
   display: grid;
   grid-template-columns: 18rem 8px minmax(0, 1fr);
-  height: calc(100vh - 2.25rem);
+  height: 100%;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .workbench-explorer {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-soft);
@@ -284,8 +289,10 @@ code {
 }
 
 .workbench-explorer-body {
+  flex: 1;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .explorer-list {
@@ -378,6 +385,7 @@ code {
 
 .workbench-inspector {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -450,7 +458,26 @@ body.is-resizing-workbench .workbench-divider::before {
   min-height: 0;
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 0.85rem 0.95rem 1rem;
+}
+
+@media (min-width: 981px) {
+  body {
+    overflow: hidden;
+  }
+
+  .app-shell {
+    height: 100vh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .layout {
+    height: 100%;
+    min-height: 0;
+  }
 }
 
 .inspector-panel {
@@ -902,6 +929,16 @@ body.is-resizing-workbench .workbench-divider::before {
 }
 
 @media (max-width: 980px) {
+  body {
+    overflow: auto;
+  }
+
+  .app-shell {
+    height: auto;
+    display: block;
+    overflow: visible;
+  }
+
   .topbar {
     grid-template-columns: 1fr;
     grid-template-areas:
@@ -929,6 +966,7 @@ body.is-resizing-workbench .workbench-divider::before {
   .layout {
     display: flex;
     flex-direction: column;
+    height: auto;
     min-height: 0;
   }
 
@@ -945,6 +983,7 @@ body.is-resizing-workbench .workbench-divider::before {
   .workbench-page {
     grid-template-columns: 1fr !important;
     height: auto;
+    overflow: visible;
   }
 
   .workbench-explorer {
