@@ -629,6 +629,109 @@ capture_session_screenshot() {
   exit 1
 }
 
+assert_workbench_scroll_contract() {
+  local session="$1"
+  local route_label="$2"
+
+  pwcli_run_code_checked "$session" "
+async (page) => {
+  const routeLabel = '${route_label}';
+  await page.setViewportSize({ width: 1280, height: 520 });
+
+  const appShell = page.locator('.app-shell');
+  const explorerBody = page.locator('.workbench-explorer-body');
+  const inspectorBody = page.locator('.workbench-body');
+
+  const paneMetrics = async (locator) =>
+    locator.evaluate((node) => ({
+      clientHeight: node.clientHeight,
+      scrollHeight: node.scrollHeight,
+      scrollTop: node.scrollTop,
+    }));
+
+  const shellMetrics = await appShell.evaluate((node) => ({
+    appOverflow: getComputedStyle(node).overflow,
+    bodyOverflow: getComputedStyle(document.body).overflow,
+    documentScrollHeight: document.documentElement.scrollHeight,
+    viewportHeight: window.innerHeight,
+  }));
+
+  if (shellMetrics.documentScrollHeight > shellMetrics.viewportHeight + 2) {
+    throw new Error(
+      \`\${routeLabel} document still scrolls: \${shellMetrics.documentScrollHeight} > \${shellMetrics.viewportHeight}\`,
+    );
+  }
+
+  const ensurePaneOverflow = async (locator, kind) => {
+    const metrics = await paneMetrics(locator);
+    if (metrics.scrollHeight > metrics.clientHeight + 8) {
+      return metrics;
+    }
+
+    await page.evaluate((target) => {
+      if (target === 'explorer') {
+        const list = document.querySelector('.explorer-list');
+        if (!list) {
+          throw new Error('missing explorer list for scroll regression');
+        }
+        const spacer = document.createElement('div');
+        spacer.className = 'scroll-regression-probe explorer';
+        spacer.style.flex = '0 0 auto';
+        spacer.style.height = '1200px';
+        list.appendChild(spacer);
+        return;
+      }
+
+      const body = document.querySelector('.workbench-body');
+      if (!body) {
+        throw new Error('missing inspector body for scroll regression');
+      }
+      const probe = document.createElement('div');
+      probe.className = 'scroll-regression-probe inspector';
+      probe.style.height = '1200px';
+      body.appendChild(probe);
+    }, kind);
+
+    return paneMetrics(locator);
+  };
+
+  const wheelPane = async (locator, label, kind) => {
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+      document.querySelector('.workbench-explorer-body')?.scrollTo(0, 0);
+      document.querySelector('.workbench-body')?.scrollTo(0, 0);
+    });
+
+    const before = await ensurePaneOverflow(locator, kind);
+    if (before.scrollHeight <= before.clientHeight + 8) {
+      throw new Error(\`\${label} pane is not scrollable enough for the regression check\`);
+    }
+
+    await locator.hover();
+    await page.waitForTimeout(100);
+    await page.mouse.wheel(0, 480);
+    await page.waitForTimeout(100);
+
+    const after = await paneMetrics(locator);
+    const windowY = await page.evaluate(() => window.scrollY);
+    if (after.scrollTop <= before.scrollTop) {
+      throw new Error(\`\${label} pane did not consume wheel scrolling\`);
+    }
+    if (windowY !== 0) {
+      throw new Error(\`\${label} wheel scrolling moved the document: \${windowY}\`);
+    }
+
+    return { before, after, windowY };
+  };
+
+  await wheelPane(explorerBody, \`\${routeLabel} explorer\`, 'explorer');
+  await wheelPane(inspectorBody, \`\${routeLabel} inspector\`, 'inspector');
+
+  return { routeLabel, shellMetrics };
+}
+" >/dev/null
+}
+
 navigate_via_rail() {
   local rail_session="$1"
   local from_label="$2"
@@ -691,6 +794,7 @@ assert_has_text "status" "Warnings"
 assert_has_text "status" "Actions"
 assert_lacks_text "status" "READ-ONLY"
 assert_lacks_text "status" "LOCAL"
+assert_workbench_scroll_contract "$rail_session" "status"
 
 status_mobile_session="$(session_name status-mobile)"
 navigate_browser_to "$status_mobile_session" "${base_url}/status"
@@ -749,6 +853,7 @@ capture_session_screenshot "$timeline_inspector_session" "timeline-inspector-ini
 assert_has_text "timeline-inspector-initial" "Output"
 assert_has_text "timeline-inspector-initial" "execution/finalize/await_merge → land"
 assert_has_text "timeline-inspector-initial" "Publish Record"
+assert_workbench_scroll_contract "$timeline_inspector_session" "timeline"
 pwcli_run_code_checked "$timeline_inspector_session" '
 async (page) => await page.evaluate(() => {
   const tabs = document.querySelector(".inspector-tabs");
@@ -886,6 +991,7 @@ capture_session_snapshot "$rail_session" "status-topbar-warnings"
 assert_has_text "status-topbar-warnings" "Warnings"
 navigate_via_rail "$rail_session" "timeline-rail" "Status" "status-rail" "Status"
 navigate_via_rail "$rail_session" "status-rail" "Review" "review-rail" "Review data is hidden once land cleanup begins."
+assert_workbench_scroll_contract "$rail_session" "review"
 navigate_via_rail "$rail_session" "review-rail" "Status" "status-return" "Status"
 pwcli_close "$rail_session"
 capture_snapshot "/review" "review"
