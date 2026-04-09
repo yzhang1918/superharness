@@ -179,6 +179,13 @@ height matched the viewport on `Timeline`, `Status`, and `Review`, and wheel
 scrolling moved the Timeline Explorer and Inspector panes without moving the
 document.
 
+Finalize review then flagged that the new smoke assertion still only exercised
+Timeline even though the layout change is shared. The repair generalized the
+browser-level probe so `scripts/ui-playwright-smoke` now applies the same
+document-vs-pane wheel assertions to `Status`, `Timeline`, and `Review`,
+injecting temporary spacer content when a fixture route is otherwise too short
+to scroll on its own.
+
 #### Review Notes
 
 NO_STEP_REVIEW_NEEDED: This validation step exists to close the same UI slice as
