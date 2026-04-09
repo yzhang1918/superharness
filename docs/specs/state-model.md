@@ -46,8 +46,10 @@ plus the latest relevant artifacts.
 ### CLI-Owned Resolution
 
 Agents do not set `current_node` directly. The CLI resolves it from the
-current plan artifact plus command-owned artifacts and may cache the latest
-answer in a thin CLI-owned `state.json`.
+current plan artifact plus command-owned artifacts. The plan-local
+`state.json` remains a CLI-owned control artifact for runtime facts that must
+persist across commands, but it is not the storage location for a cached
+latest `current_node`.
 
 ### Safe Local Persistence
 
@@ -127,8 +129,9 @@ For active work in both profiles, this plan artifact is a tracked file under
 - archive milestones
 - reopen milestones, including the explicit reopen mode
 - land entry and land completion milestones
-- the thin `state.json` cache containing the latest resolved `current_node`
-  plus latest artifact pointers
+- the plan-local `state.json` control artifact containing only cross-command
+  runtime facts that are not otherwise reconstructed directly from plans or
+  append-only artifacts
 
 These CLI-owned JSON artifacts are disposable runtime state, but they still
 need crash-safe persistence so the controller can trust `harness status` after
@@ -173,6 +176,15 @@ Resolution rules:
 - append-only `ci`, `publish`, and `sync` evidence
 - archive, reopen, and land milestones
 - worktree-level last-landed context when no current work remains
+
+The plan-local `state.json` carries only the control-plane subset of those
+inputs that do not already live in a more specific artifact:
+
+- `execution_started_at`
+- `revision`
+- `active_review_round`
+- `reopen`
+- `land`
 
 ## High-Level Resolution Order
 

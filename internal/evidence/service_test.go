@@ -11,7 +11,7 @@ import (
 	"github.com/catu-ai/easyharness/internal/runstate"
 )
 
-func TestSubmitCIEvidenceWritesArtifactAndUpdatesStatePointer(t *testing.T) {
+func TestSubmitCIEvidenceWritesArtifactWithoutStateCache(t *testing.T) {
 	root := t.TempDir()
 	relPlanPath := writeArchivedPlan(t, root, "docs/plans/archived/2026-03-21-evidence-plan.md")
 	if _, err := runstate.SaveCurrentPlan(root, relPlanPath); err != nil {
@@ -35,14 +35,12 @@ func TestSubmitCIEvidenceWritesArtifactAndUpdatesStatePointer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.LatestEvidence == nil || state.LatestEvidence.CI == nil {
-		t.Fatalf("expected ci evidence pointer in state, got %#v", state)
+	if state != nil {
+		t.Fatalf("expected CI submit to avoid state cache writes, got %#v", state)
 	}
-	if state.LatestCI == nil || state.LatestCI.Status != "success" {
-		t.Fatalf("expected transitional CI cache, got %#v", state)
-	}
+	assertStateFileAbsent(t, root, "2026-03-21-evidence-plan")
 
-	record, err := evidence.LoadLatestCI(root, state)
+	record, err := evidence.LoadLatestCI(root, "2026-03-21-evidence-plan", 1)
 	if err != nil {
 		t.Fatalf("load latest CI record: %v", err)
 	}
@@ -130,7 +128,7 @@ func TestSubmitCIRejectsWrongStatusType(t *testing.T) {
 	assertEvidenceError(t, result, "input.status")
 }
 
-func TestSubmitPublishWritesArtifactAndUpdatesStatePointer(t *testing.T) {
+func TestSubmitPublishWritesArtifactWithoutStateCache(t *testing.T) {
 	root := t.TempDir()
 	relPlanPath := writeArchivedPlan(t, root, "docs/plans/archived/2026-03-21-evidence-plan.md")
 	if _, err := runstate.SaveCurrentPlan(root, relPlanPath); err != nil {
@@ -151,14 +149,12 @@ func TestSubmitPublishWritesArtifactAndUpdatesStatePointer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.LatestEvidence == nil || state.LatestEvidence.Publish == nil {
-		t.Fatalf("expected publish evidence pointer in state, got %#v", state)
+	if state != nil {
+		t.Fatalf("expected publish submit to avoid state cache writes, got %#v", state)
 	}
-	if state.LatestPublish == nil || state.LatestPublish.PRURL == "" {
-		t.Fatalf("expected transitional publish cache, got %#v", state)
-	}
+	assertStateFileAbsent(t, root, "2026-03-21-evidence-plan")
 
-	record, err := evidence.LoadLatestPublish(root, state)
+	record, err := evidence.LoadLatestPublish(root, "2026-03-21-evidence-plan", 1)
 	if err != nil {
 		t.Fatalf("load latest publish record: %v", err)
 	}
@@ -188,15 +184,16 @@ func TestSubmitSyncSupportsExplicitNotApplied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	record, err := evidence.LoadLatestSync(root, state)
+	if state != nil {
+		t.Fatalf("expected sync submit to avoid state cache writes, got %#v", state)
+	}
+	assertStateFileAbsent(t, root, "2026-03-21-evidence-plan")
+	record, err := evidence.LoadLatestSync(root, "2026-03-21-evidence-plan", 1)
 	if err != nil {
 		t.Fatalf("load latest sync record: %v", err)
 	}
 	if record == nil || record.Status != "not_applied" {
 		t.Fatalf("unexpected sync record: %#v", record)
-	}
-	if state.Sync != nil {
-		t.Fatalf("expected transitional sync cache to stay nil for not_applied, got %#v", state.Sync)
 	}
 }
 
@@ -217,7 +214,7 @@ func TestSubmitSyncRejectsWrongHeadRefType(t *testing.T) {
 	assertEvidenceError(t, result, "input.head_ref")
 }
 
-func TestSubmitSyncFreshWritesArtifactAndUpdatesStatePointer(t *testing.T) {
+func TestSubmitSyncFreshWritesArtifactWithoutStateCache(t *testing.T) {
 	root := t.TempDir()
 	relPlanPath := writeArchivedPlan(t, root, "docs/plans/archived/2026-03-21-evidence-plan.md")
 	if _, err := runstate.SaveCurrentPlan(root, relPlanPath); err != nil {
@@ -238,14 +235,12 @@ func TestSubmitSyncFreshWritesArtifactAndUpdatesStatePointer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.LatestEvidence == nil || state.LatestEvidence.Sync == nil {
-		t.Fatalf("expected sync evidence pointer in state, got %#v", state)
+	if state != nil {
+		t.Fatalf("expected sync submit to avoid state cache writes, got %#v", state)
 	}
-	if state.Sync == nil || state.Sync.Freshness != "fresh" || state.Sync.Conflicts {
-		t.Fatalf("expected transitional sync cache, got %#v", state.Sync)
-	}
+	assertStateFileAbsent(t, root, "2026-03-21-evidence-plan")
 
-	record, err := evidence.LoadLatestSync(root, state)
+	record, err := evidence.LoadLatestSync(root, "2026-03-21-evidence-plan", 1)
 	if err != nil {
 		t.Fatalf("load latest sync record: %v", err)
 	}
@@ -274,9 +269,6 @@ func TestSubmitEvidenceRejectsLandInProgress(t *testing.T) {
 		t.Fatalf("save current plan: %v", err)
 	}
 	if _, err := runstate.SaveState(root, "2026-03-21-evidence-plan", &runstate.State{
-		PlanPath:    relPlanPath,
-		PlanStem:    "2026-03-21-evidence-plan",
-		CurrentNode: "land",
 		Land: &runstate.LandState{
 			PRURL:    "https://github.com/catu-ai/easyharness/pull/99",
 			LandedAt: "2026-03-21T11:00:00Z",
@@ -316,6 +308,140 @@ func TestSubmitEvidenceRejectsWhenStateMutationLockIsHeld(t *testing.T) {
 	}
 }
 
+func TestLoadLatestCIPrefersNewestRecord(t *testing.T) {
+	root := t.TempDir()
+	relPlanPath := writeArchivedPlan(t, root, "docs/plans/archived/2026-03-21-evidence-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, relPlanPath); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	first := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)
+		},
+	}.Submit("ci", []byte(`{"status":"pending","provider":"buildkite","url":"https://ci.example/1"}`))
+	if !first.OK {
+		t.Fatalf("expected first CI submit success, got %#v", first)
+	}
+	second := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 21, 10, 3, 0, 0, time.UTC)
+		},
+	}.Submit("ci", []byte(`{"status":"success","provider":"buildkite","url":"https://ci.example/2"}`))
+	if !second.OK {
+		t.Fatalf("expected second CI submit success, got %#v", second)
+	}
+
+	record, err := evidence.LoadLatestCI(root, "2026-03-21-evidence-plan", 1)
+	if err != nil {
+		t.Fatalf("load latest CI record: %v", err)
+	}
+	if record == nil || record.RecordID != "ci-002" || record.Status != "success" || record.URL != "https://ci.example/2" {
+		t.Fatalf("expected newest CI record to win, got %#v", record)
+	}
+}
+
+func TestLoadLatestPublishPrefersNewestRecord(t *testing.T) {
+	root := t.TempDir()
+	relPlanPath := writeArchivedPlan(t, root, "docs/plans/archived/2026-03-21-evidence-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, relPlanPath); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	first := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)
+		},
+	}.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/easyharness/pull/99","branch":"codex/test","base":"main","commit":"abc123"}`))
+	if !first.OK {
+		t.Fatalf("expected first publish submit success, got %#v", first)
+	}
+	second := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 21, 10, 3, 0, 0, time.UTC)
+		},
+	}.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/easyharness/pull/100","branch":"codex/test-2","base":"main","commit":"def456"}`))
+	if !second.OK {
+		t.Fatalf("expected second publish submit success, got %#v", second)
+	}
+
+	record, err := evidence.LoadLatestPublish(root, "2026-03-21-evidence-plan", 1)
+	if err != nil {
+		t.Fatalf("load latest publish record: %v", err)
+	}
+	if record == nil || record.RecordID != "publish-002" || record.PRURL != "https://github.com/catu-ai/easyharness/pull/100" || record.Commit != "def456" {
+		t.Fatalf("expected newest publish record to win, got %#v", record)
+	}
+}
+
+func TestLoadLatestSyncPrefersNewestRecord(t *testing.T) {
+	root := t.TempDir()
+	relPlanPath := writeArchivedPlan(t, root, "docs/plans/archived/2026-03-21-evidence-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, relPlanPath); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	first := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)
+		},
+	}.Submit("sync", []byte(`{"status":"stale","base_ref":"main","head_ref":"codex/test"}`))
+	if !first.OK {
+		t.Fatalf("expected first sync submit success, got %#v", first)
+	}
+	second := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 21, 10, 3, 0, 0, time.UTC)
+		},
+	}.Submit("sync", []byte(`{"status":"fresh","base_ref":"main","head_ref":"codex/test-2"}`))
+	if !second.OK {
+		t.Fatalf("expected second sync submit success, got %#v", second)
+	}
+
+	record, err := evidence.LoadLatestSync(root, "2026-03-21-evidence-plan", 1)
+	if err != nil {
+		t.Fatalf("load latest sync record: %v", err)
+	}
+	if record == nil || record.RecordID != "sync-002" || record.Status != "fresh" || record.HeadRef != "codex/test-2" {
+		t.Fatalf("expected newest sync record to win, got %#v", record)
+	}
+}
+
+func TestLoadLatestRecordIgnoresOlderRevisionEvidence(t *testing.T) {
+	root := t.TempDir()
+	relPlanPath := writeArchivedPlan(t, root, "docs/plans/archived/2026-03-21-evidence-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, relPlanPath); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+
+	first := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 21, 10, 0, 0, 0, time.UTC)
+		},
+	}.Submit("ci", []byte(`{"status":"success","provider":"buildkite","url":"https://ci.example/1"}`))
+	if !first.OK {
+		t.Fatalf("expected first CI submit success, got %#v", first)
+	}
+	if _, err := runstate.SaveState(root, "2026-03-21-evidence-plan", &runstate.State{Revision: 2}); err != nil {
+		t.Fatalf("save reopened revision state: %v", err)
+	}
+
+	record, err := evidence.LoadLatestCI(root, "2026-03-21-evidence-plan", 2)
+	if err != nil {
+		t.Fatalf("load latest CI record: %v", err)
+	}
+	if record != nil {
+		t.Fatalf("expected older revision evidence to be ignored, got %#v", record)
+	}
+}
+
 func assertEvidenceError(t *testing.T, result evidence.Result, path string) {
 	t.Helper()
 	for _, issue := range result.Errors {
@@ -324,6 +450,14 @@ func assertEvidenceError(t *testing.T, result evidence.Result, path string) {
 		}
 	}
 	t.Fatalf("expected evidence error for %s, got %#v", path, result.Errors)
+}
+
+func assertStateFileAbsent(t *testing.T, root, planStem string) {
+	t.Helper()
+	path := filepath.Join(root, ".local", "harness", "plans", planStem, "state.json")
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected state.json to stay absent, got %v", err)
+	}
 }
 
 func writeArchivedPlan(t *testing.T, root, relPath string) string {

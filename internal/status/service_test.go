@@ -41,16 +41,16 @@ func TestStatusPlanNodeForActivePlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.CurrentNode != "plan" {
-		t.Fatalf("expected cached plan node, got %#v", state)
+	if state != nil {
+		t.Fatalf("expected status read to avoid caching plan node, got %#v", state)
 	}
 
 	doc, err := plan.LoadFile(filepath.Join(root, "docs/plans/active/2026-03-18-status-plan.md"))
 	if err != nil {
 		t.Fatalf("load plan: %v", err)
 	}
-	if got := doc.DerivedLifecycle(state); got != "awaiting_plan_approval" {
-		t.Fatalf("expected cached plan node to preserve awaiting_plan_approval, got %q", got)
+	if got := doc.DerivedLifecycle(nil); got != "awaiting_plan_approval" {
+		t.Fatalf("expected lifecycle to derive from the plan alone, got %q", got)
 	}
 }
 
@@ -82,9 +82,7 @@ func TestStatusLightweightPublishPromptsForBreadcrumb(t *testing.T) {
 	})
 	writeCurrentPlan(t, root, relPath)
 	writeState(t, root, "2026-03-18-status-lightweight", map[string]any{
-		"plan_path": relPath,
-		"plan_stem": "2026-03-18-status-lightweight",
-		"revision":  1,
+		"revision": 1,
 	})
 
 	result := status.Service{Workdir: root}.Read()
@@ -130,9 +128,10 @@ func TestStatusExecutionStepImplementNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.CurrentNode != "execution/step-1/implement" {
-		t.Fatalf("expected cached execution node, got %#v", state)
+	if state == nil || state.ExecutionStartedAt != "2026-03-18T10:05:00+08:00" {
+		t.Fatalf("expected execution-start state to remain available, got %#v", state)
 	}
+	assertStateJSONLacksKeys(t, root, "2026-03-18-status-plan", "current_node")
 }
 
 func TestStatusRejectsWhenStateMutationLockIsHeld(t *testing.T) {
@@ -1298,14 +1297,13 @@ func TestStatusFinalizeFixSummaryForUnscopedUnreadableHistory(t *testing.T) {
 	}
 }
 
-func TestStatusFailedStepReviewUsesCachedStepWhenManifestIsMissing(t *testing.T) {
+func TestStatusFailedStepReviewUsesActiveReviewRoundWhenManifestIsMissing(t *testing.T) {
 	root := t.TempDir()
 	writePlan(t, root, "docs/plans/active/2026-03-18-status-plan.md", func(content string) string {
 		return completeFirstStep(content)
 	})
 	writeState(t, root, "2026-03-18-status-plan", map[string]any{
 		"execution_started_at": "2026-03-18T10:05:00+08:00",
-		"current_node":         "execution/step-1/implement",
 		"active_review_round": map[string]any{
 			"round_id":   "review-001-delta",
 			"kind":       "delta",
@@ -1324,9 +1322,10 @@ func TestStatusFailedStepReviewUsesCachedStepWhenManifestIsMissing(t *testing.T)
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.CurrentNode != "execution/step-1/implement" {
-		t.Fatalf("expected cache to stay pinned to the reviewed step, got %#v", state)
+	if state == nil || state.ActiveReviewRound == nil || state.ActiveReviewRound.RoundID != "review-001-delta" {
+		t.Fatalf("expected review control state to remain intact without a node cache, got %#v", state)
 	}
+	assertStateJSONLacksKeys(t, root, "2026-03-18-status-plan", "current_node")
 }
 
 func TestStatusUnknownAggregatedReviewDecisionStaysConservative(t *testing.T) {
@@ -1853,36 +1852,80 @@ func TestStatusWarnsInAwaitMergeWhenCompletedStepStillLacksCloseout(t *testing.T
 	}
 }
 
-func TestStatusArchivedPlanReadyForAwaitMergeFromLegacyEvidenceCache(t *testing.T) {
+func TestStatusArchivedPlanReadyForAwaitMergeFromEvidenceArtifacts(t *testing.T) {
 	root := t.TempDir()
 	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
 		return completeAllSteps(content, true)
 	})
 	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
 	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"latest_publish": map[string]any{
-			"attempt_id": "publish-legacy-001",
-			"pr_url":     "https://github.com/catu-ai/easyharness/pull/13",
-		},
-		"latest_ci": map[string]any{
-			"snapshot_id": "ci-legacy-001",
-			"status":      "success",
-		},
-		"sync": map[string]any{
-			"freshness": "fresh",
-			"conflicts": false,
-		},
+		"revision": 1,
 	})
+
+	svc := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
+		},
+	}
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/easyharness/pull/13"}`)); !result.OK {
+		t.Fatalf("publish evidence: %#v", result)
+	}
+	if result := svc.Submit("ci", []byte(`{"status":"success","provider":"github-actions"}`)); !result.OK {
+		t.Fatalf("ci evidence: %#v", result)
+	}
+	if result := svc.Submit("sync", []byte(`{"status":"fresh","base_ref":"main","head_ref":"codex/test"}`)); !result.OK {
+		t.Fatalf("sync evidence: %#v", result)
+	}
 
 	result := status.Service{Workdir: root}.Read()
 	if result.State.CurrentNode != "execution/finalize/await_merge" {
-		t.Fatalf("expected legacy evidence fallback to reach await_merge, got %#v", result.State)
+		t.Fatalf("expected evidence artifacts to reach await_merge, got %#v", result.State)
 	}
 	if result.Facts == nil || result.Facts.PRURL != "https://github.com/catu-ai/easyharness/pull/13" || result.Facts.CIStatus != "success" || result.Facts.SyncStatus != "fresh" {
 		t.Fatalf("unexpected facts: %#v", result.Facts)
 	}
-	if result.Artifacts == nil || result.Artifacts.PublishRecordID != "publish-legacy-001" || result.Artifacts.CIRecordID != "ci-legacy-001" {
+	if result.Artifacts == nil || result.Artifacts.PublishRecordID == "" || result.Artifacts.CIRecordID == "" || result.Artifacts.SyncRecordID == "" {
 		t.Fatalf("unexpected artifacts: %#v", result.Artifacts)
+	}
+	assertStateJSONLacksKeys(t, root, "2026-03-18-status-plan", "latest_publish", "latest_ci", "latest_evidence")
+}
+
+func TestStatusArchivedPlanIgnoresOlderRevisionEvidenceArtifacts(t *testing.T) {
+	root := t.TempDir()
+	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"revision": 1,
+	})
+
+	svc := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
+		},
+	}
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/easyharness/pull/13"}`)); !result.OK {
+		t.Fatalf("publish evidence: %#v", result)
+	}
+	if result := svc.Submit("ci", []byte(`{"status":"success","provider":"github-actions"}`)); !result.OK {
+		t.Fatalf("ci evidence: %#v", result)
+	}
+	if result := svc.Submit("sync", []byte(`{"status":"fresh","base_ref":"main","head_ref":"codex/test"}`)); !result.OK {
+		t.Fatalf("sync evidence: %#v", result)
+	}
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"revision": 2,
+	})
+
+	result := status.Service{Workdir: root}.Read()
+	if result.State.CurrentNode != "execution/finalize/publish" {
+		t.Fatalf("expected older revision evidence to keep publish state, got %#v", result.State)
+	}
+	if result.Facts != nil && (result.Facts.PRURL != "" || result.Facts.CIStatus != "" || result.Facts.SyncStatus != "") {
+		t.Fatalf("expected older revision evidence to stay hidden, got %#v", result.Facts)
 	}
 }
 
@@ -1950,30 +1993,35 @@ func TestStatusArchivedPlanReadyForAwaitMergeWhenCIAndSyncAreBothNotApplied(t *t
 	}
 }
 
-func TestStatusArchivedPlanStaysInPublishFromLegacyEvidenceCacheWhenDirty(t *testing.T) {
+func TestStatusArchivedPlanStaysInPublishFromEvidenceArtifactsWhenDirty(t *testing.T) {
 	root := t.TempDir()
 	writePlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md", func(content string) string {
 		return completeAllSteps(content, true)
 	})
 	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
 	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"latest_publish": map[string]any{
-			"attempt_id": "publish-legacy-001",
-			"pr_url":     "https://github.com/catu-ai/easyharness/pull/13",
-		},
-		"latest_ci": map[string]any{
-			"snapshot_id": "ci-legacy-001",
-			"status":      "failed",
-		},
-		"sync": map[string]any{
-			"freshness": "fresh",
-			"conflicts": false,
-		},
+		"revision": 1,
 	})
+
+	svc := evidence.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 11, 0, 0, 0, time.UTC)
+		},
+	}
+	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/easyharness/pull/13"}`)); !result.OK {
+		t.Fatalf("publish evidence: %#v", result)
+	}
+	if result := svc.Submit("ci", []byte(`{"status":"failed","provider":"github-actions"}`)); !result.OK {
+		t.Fatalf("ci evidence: %#v", result)
+	}
+	if result := svc.Submit("sync", []byte(`{"status":"fresh","base_ref":"main","head_ref":"codex/test"}`)); !result.OK {
+		t.Fatalf("sync evidence: %#v", result)
+	}
 
 	result := status.Service{Workdir: root}.Read()
 	if result.State.CurrentNode != "execution/finalize/publish" {
-		t.Fatalf("expected dirty legacy evidence fallback to stay in publish, got %#v", result.State)
+		t.Fatalf("expected dirty evidence artifacts to stay in publish, got %#v", result.State)
 	}
 	if result.Facts == nil || result.Facts.CIStatus != "failed" {
 		t.Fatalf("unexpected facts: %#v", result.Facts)
@@ -1988,6 +2036,7 @@ func TestStatusArchivedPlanStaysInPublishFromLegacyEvidenceCacheWhenDirty(t *tes
 	if !foundFixCI {
 		t.Fatalf("unexpected next actions: %#v", result.NextAction)
 	}
+	assertStateJSONLacksKeys(t, root, "2026-03-18-status-plan", "latest_publish", "latest_ci", "latest_evidence")
 }
 
 func TestStatusArchivedPlanStaysInPublishWhenEvidenceIsDirty(t *testing.T) {
@@ -2081,7 +2130,6 @@ func TestStatusLandNode(t *testing.T) {
 	})
 	writeCurrentPlan(t, root, "docs/plans/archived/2026-03-18-status-plan.md")
 	writeState(t, root, "2026-03-18-status-plan", map[string]any{
-		"current_node": "land",
 		"land": map[string]any{
 			"pr_url":    "https://github.com/catu-ai/easyharness/pull/99",
 			"commit":    "abc123",
@@ -2600,6 +2648,34 @@ func writeState(t *testing.T, root, planStem string, payload map[string]any) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "state.json"), data, 0o644); err != nil {
 		t.Fatalf("write state: %v", err)
+	}
+}
+
+func assertStateJSONLacksKeys(t *testing.T, root, planStem string, keys ...string) {
+	t.Helper()
+	path := filepath.Join(root, ".local", "harness", "plans", planStem, "state.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read state json: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("parse state json: %v", err)
+	}
+	requiredAbsent := []string{
+		"current_node",
+		"plan_path",
+		"plan_stem",
+		"latest_evidence",
+		"latest_ci",
+		"sync",
+		"latest_publish",
+	}
+	keys = append(requiredAbsent, keys...)
+	for _, key := range keys {
+		if _, ok := payload[key]; ok {
+			t.Fatalf("expected state.json to omit %q, got %#v", key, payload)
+		}
 	}
 }
 

@@ -405,8 +405,8 @@ Contract:
   `handoff_state`
 - surface aggregated review failures as a concrete repair signal rather than
   falling back to a generic step summary
-- if review metadata cannot be recovered safely, degrade conservatively and do
-  not refresh the cached `current_node`
+- if review metadata cannot be recovered safely, degrade conservatively rather
+  than writing a fallback cache answer into local state
 - once all steps and acceptance criteria are complete, surface archive blockers
   early through a structured `blockers` list plus repair-first next actions
   instead of making the controller learn them only from `harness archive`
@@ -427,10 +427,8 @@ Contract:
   step, keep the current node stable, preserve a conservative warning, and
   steer the controller toward repairing artifacts or rerunning the relevant
   step-closeout review instead of silently trusting older clean passes
-- when refreshing the cached `current_node`, acquire the shared per-plan state
-  lock before loading and rewriting `state.json`; if another command is already
-  mutating local state, return a clear contention error instead of risking a
-  stale cache overwrite
+- treat `state.json` as a control-plane artifact for cross-command runtime
+  state, not as a cache of the latest resolved node or evidence pointers
 
 Recommended next action examples:
 
@@ -731,8 +729,7 @@ Contract:
   - `docs/plans/active/` -> `docs/plans/archived/` for `standard`
   - `docs/plans/active/` ->
     `.local/harness/plans/archived/<plan-stem>.md` for `lightweight`
-- update `.local/harness/current-plan.json` and any existing plan-local
-  `state.json` pointers to the archived path
+- update `.local/harness/current-plan.json` to the archived plan path
 - keep publish, CI, and sync follow-up out of the archive gate; those belong to
   `execution/finalize/publish`
 - return the shared v0.2 envelope with `state.current_node` set to the
@@ -782,10 +779,9 @@ Contract:
 - increment command-owned revision state
 - require an explicit mode such as `finalize-fix` or `new-step`
 - preserve archive audit history via explicit update-required placeholders
-- clear stale review, evidence, and handoff cache signals from the prior
-  archived candidate
-- update `.local/harness/current-plan.json` and any existing plan-local
-  `state.json` pointers back to the active path
+- clear stale review and land control-plane signals from the prior archived
+  candidate
+- update `.local/harness/current-plan.json` back to the active path
 - return the shared v0.2 envelope with the reopened post-command node,
   `facts.revision`, `facts.reopen_mode`, transition artifacts, and actionable
   `next_actions`
@@ -812,7 +808,9 @@ Contract:
   `--help`
 - write a timestamped evidence artifact under
   `.local/harness/plans/<plan-stem>/evidence/<kind>/`
-- update the thin `state.json` cache with the latest pointer for that kind
+- let later status and land-readiness checks discover the latest evidence
+  directly from append-only evidence artifacts instead of storing a pointer in
+  `state.json`
 - preserve trajectory by never editing older evidence artifacts in place
 - accept explicit `not_applied` payloads when a domain truly does not apply
 

@@ -194,8 +194,6 @@ func (s Service) Start(specBytes []byte) StartResult {
 	if state == nil {
 		state = &runstate.State{}
 	}
-	state.PlanPath = relPlanPath
-	state.PlanStem = planStem
 	state.ActiveReviewRound = &runstate.ReviewRound{
 		RoundID:    roundID,
 		Kind:       spec.Kind,
@@ -540,8 +538,6 @@ func (s Service) Aggregate(roundID string) AggregateResult {
 	if state == nil {
 		state = &runstate.State{}
 	}
-	state.PlanPath = manifest.PlanPath
-	state.PlanStem = manifest.PlanStem
 	state.ActiveReviewRound = &runstate.ReviewRound{
 		RoundID:    manifest.RoundID,
 		Kind:       manifest.Kind,
@@ -1054,37 +1050,9 @@ func cloneState(state *runstate.State) *runstate.State {
 		reopen := *state.Reopen
 		cloned.Reopen = &reopen
 	}
-	if state.LatestEvidence != nil {
-		evidenceSet := *state.LatestEvidence
-		cloned.LatestEvidence = &evidenceSet
-		if state.LatestEvidence.CI != nil {
-			ciPtr := *state.LatestEvidence.CI
-			cloned.LatestEvidence.CI = &ciPtr
-		}
-		if state.LatestEvidence.Publish != nil {
-			publishPtr := *state.LatestEvidence.Publish
-			cloned.LatestEvidence.Publish = &publishPtr
-		}
-		if state.LatestEvidence.Sync != nil {
-			syncPtr := *state.LatestEvidence.Sync
-			cloned.LatestEvidence.Sync = &syncPtr
-		}
-	}
 	if state.Land != nil {
 		land := *state.Land
 		cloned.Land = &land
-	}
-	if state.LatestCI != nil {
-		ci := *state.LatestCI
-		cloned.LatestCI = &ci
-	}
-	if state.Sync != nil {
-		sync := *state.Sync
-		cloned.Sync = &sync
-	}
-	if state.LatestPublish != nil {
-		publish := *state.LatestPublish
-		cloned.LatestPublish = &publish
 	}
 	return &cloned
 }

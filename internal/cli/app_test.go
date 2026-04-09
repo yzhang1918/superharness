@@ -478,7 +478,7 @@ func TestExecuteStartRollsBackWhenTimelineAppendFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state after rollback: %v", err)
 	}
-	if state == nil || state.ExecutionStartedAt != "" || state.CurrentNode != "plan" {
+	if state == nil || state.ExecutionStartedAt != "" {
 		t.Fatalf("expected execute start rollback to restore pre-start state, got %#v", state)
 	}
 	current, err := runstate.LoadCurrentPlan(root)
@@ -868,8 +868,6 @@ func TestArchiveCommandAppendsTimelineEvent(t *testing.T) {
 		t.Fatalf("save current plan: %v", err)
 	}
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-ready", &runstate.State{
-		PlanPath:           relPlanPath,
-		PlanStem:           "2026-03-18-archive-ready",
 		ExecutionStartedAt: "2026-03-18T15:00:00Z",
 		Revision:           1,
 		ActiveReviewRound: &runstate.ReviewRound{

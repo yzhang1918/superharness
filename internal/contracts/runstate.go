@@ -15,22 +15,11 @@ type CurrentPlanFile struct {
 	LastLandedAt string `json:"last_landed_at,omitempty"`
 }
 
-// LocalStateFile is the plan-local runtime state cache under
+// LocalStateFile is the plan-local runtime control artifact under
 // `.local/harness/plans/<plan-stem>/state.json`.
 type LocalStateFile struct {
 	// ExecutionStartedAt is the execution-start timestamp for the plan.
 	ExecutionStartedAt string `json:"execution_started_at,omitempty"`
-
-	// CurrentNode is the cached canonical workflow node when one has been
-	// resolved.
-	CurrentNode string `json:"current_node,omitempty"`
-
-	// PlanPath is the current tracked or archived plan path associated with this
-	// state file.
-	PlanPath string `json:"plan_path,omitempty"`
-
-	// PlanStem is the durable plan stem associated with this state file.
-	PlanStem string `json:"plan_stem,omitempty"`
 
 	// Revision is the current plan-local revision number.
 	Revision int `json:"revision,omitempty"`
@@ -42,24 +31,8 @@ type LocalStateFile struct {
 	// flight.
 	ActiveReviewRound *ReviewRoundState `json:"active_review_round,omitempty"`
 
-	// LatestEvidence records the latest evidence pointers tracked in the state
-	// file.
-	LatestEvidence *EvidenceSetState `json:"latest_evidence,omitempty"`
-
 	// Land records the current land state when merge cleanup is in flight.
 	Land *LandState `json:"land,omitempty"`
-
-	// LatestCI is the transitional cached CI state retained while status still
-	// reads legacy evidence hints directly from state.json.
-	LatestCI *LegacyCIState `json:"latest_ci,omitempty"`
-
-	// Sync is the transitional cached sync state retained while status still
-	// reads legacy hints directly from state.json.
-	Sync *LegacySyncState `json:"sync,omitempty"`
-
-	// LatestPublish is the transitional cached publish state retained while
-	// status still reads legacy hints directly from state.json.
-	LatestPublish *LegacyPublishState `json:"latest_publish,omitempty"`
 }
 
 // ReopenState records the active reopen repair state.
@@ -96,34 +69,6 @@ type ReviewRoundState struct {
 	Decision string `json:"decision,omitempty"`
 }
 
-// EvidenceSetState records the latest evidence pointers tracked in the local
-// state file.
-type EvidenceSetState struct {
-	// CI points to the latest CI evidence record when one exists.
-	CI *EvidencePointerState `json:"ci,omitempty"`
-
-	// Publish points to the latest publish evidence record when one exists.
-	Publish *EvidencePointerState `json:"publish,omitempty"`
-
-	// Sync points to the latest sync evidence record when one exists.
-	Sync *EvidencePointerState `json:"sync,omitempty"`
-}
-
-// EvidencePointerState points to one evidence record from the local state file.
-type EvidencePointerState struct {
-	// Kind is the evidence kind.
-	Kind string `json:"kind"`
-
-	// RecordID is the stable identifier of the evidence record.
-	RecordID string `json:"record_id"`
-
-	// Path is the path to the evidence record artifact.
-	Path string `json:"path"`
-
-	// RecordedAt is the evidence record timestamp when one is tracked.
-	RecordedAt string `json:"recorded_at,omitempty"`
-}
-
 // LandState records the current land state in the local state file.
 type LandState struct {
 	// PRURL is the pull request URL recorded for the land phase.
@@ -137,34 +82,4 @@ type LandState struct {
 
 	// CompletedAt is the timestamp when land cleanup completed.
 	CompletedAt string `json:"completed_at,omitempty"`
-}
-
-// LegacyCIState is the transitional CI cache retained in the local state file
-// while status still reads legacy evidence hints directly.
-type LegacyCIState struct {
-	// SnapshotID is the legacy CI snapshot identifier.
-	SnapshotID string `json:"snapshot_id"`
-
-	// Status is the cached legacy CI status.
-	Status string `json:"status"`
-}
-
-// LegacySyncState is the transitional sync cache retained in the local state
-// file while status still reads legacy hints directly.
-type LegacySyncState struct {
-	// Freshness is the cached sync freshness label.
-	Freshness string `json:"freshness"`
-
-	// Conflicts reports whether the cached sync state observed conflicts.
-	Conflicts bool `json:"conflicts"`
-}
-
-// LegacyPublishState is the transitional publish cache retained in the local
-// state file while status still reads legacy hints directly.
-type LegacyPublishState struct {
-	// AttemptID is the legacy publish attempt identifier.
-	AttemptID string `json:"attempt_id"`
-
-	// PRURL is the cached publish pull request URL.
-	PRURL string `json:"pr_url"`
 }

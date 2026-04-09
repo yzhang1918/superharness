@@ -28,7 +28,7 @@ type EvidenceArtifacts struct {
 	// PlanPath is the archived plan path associated with the evidence record.
 	PlanPath string `json:"plan_path"`
 
-	// LocalStatePath is the plan-local state cache path when one exists.
+	// LocalStatePath is the plan-local control-plane state path when one exists.
 	LocalStatePath string `json:"local_state_path,omitempty"`
 
 	// RecordID is the stable identifier of the created evidence record.

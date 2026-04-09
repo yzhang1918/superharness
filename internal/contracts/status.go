@@ -98,7 +98,7 @@ type StatusArtifacts struct {
 	// current status resolution.
 	PlanPath string `json:"plan_path,omitempty" jsonschema:"example=docs/plans/active/2026-03-31-centralize-contract-schemas-and-generated-reference-docs.md"`
 
-	// LocalStatePath is the plan-local state cache path when one exists.
+	// LocalStatePath is the plan-local control-plane state path when one exists.
 	LocalStatePath string `json:"local_state_path,omitempty" jsonschema:"example=.local/harness/plans/2026-03-31-centralize-contract-schemas-and-generated-reference-docs/state.json"`
 
 	// ReviewRoundID is the active review round identifier when review is in

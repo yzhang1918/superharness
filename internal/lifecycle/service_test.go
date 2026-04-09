@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/catu-ai/easyharness/internal/evidence"
 	"github.com/catu-ai/easyharness/internal/lifecycle"
 	"github.com/catu-ai/easyharness/internal/plan"
 	"github.com/catu-ai/easyharness/internal/runstate"
@@ -21,8 +20,6 @@ func TestArchiveMovesPlanAndUpdatesPointers(t *testing.T) {
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	activePath := writeActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -67,9 +64,10 @@ func TestArchiveMovesPlanAndUpdatesPointers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.PlanPath != "docs/plans/archived/2026-03-18-archive-smoke.md" {
+	if state == nil {
 		t.Fatalf("unexpected state: %#v", state)
 	}
+	assertRawStateJSONOmitsKeys(t, filepath.Join(root, ".local", "harness", "plans", "2026-03-18-archive-smoke", "state.json"), "current_node", "plan_path", "plan_stem")
 }
 
 func TestArchiveLightweightMovesLocalPlanAndPromptsBreadcrumb(t *testing.T) {
@@ -77,8 +75,6 @@ func TestArchiveLightweightMovesLocalPlanAndPromptsBreadcrumb(t *testing.T) {
 	activeRelPath := "docs/plans/active/2026-03-18-lightweight.md"
 	activePath := writeLightweightActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-lightweight", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-lightweight",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -150,9 +146,6 @@ func TestExecuteStartPersistsMilestoneAndPointer(t *testing.T) {
 	if state == nil || state.ExecutionStartedAt != "2026-03-18T01:00:00Z" {
 		t.Fatalf("expected execution-start milestone, got %#v", state)
 	}
-	if state.PlanPath != activeRelPath {
-		t.Fatalf("unexpected plan path in state: %#v", state)
-	}
 }
 
 func TestExecuteStartBackfillsLegacyExecutingPlan(t *testing.T) {
@@ -160,10 +153,7 @@ func TestExecuteStartBackfillsLegacyExecutingPlan(t *testing.T) {
 	activeRelPath := "docs/plans/active/2026-03-18-execute-start-legacy.md"
 	writeFile(t, filepath.Join(root, activeRelPath), buildAwaitingPlan(t, "Legacy Execute Start"))
 	if _, err := runstate.SaveState(root, "2026-03-18-execute-start-legacy", &runstate.State{
-		PlanPath:    activeRelPath,
-		PlanStem:    "2026-03-18-execute-start-legacy",
-		Revision:    2,
-		CurrentNode: "execution/step-1/implement",
+		Revision: 2,
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-legacy-delta",
 			Kind:       "delta",
@@ -294,8 +284,6 @@ func TestArchiveRejectsMissingArchiveSummaryFields(t *testing.T) {
 	content = strings.Replace(content, "- PR: NONE\n", "", 1)
 	writeFile(t, path, content)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           "docs/plans/active/2026-03-18-archive-smoke.md",
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -328,8 +316,6 @@ func TestArchivePreflightFailureLeavesPlanAndPointersUntouched(t *testing.T) {
 		t.Fatalf("save current plan: %v", err)
 	}
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -366,8 +352,8 @@ func TestArchivePreflightFailureLeavesPlanAndPointersUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.PlanPath != activeRelPath {
-		t.Fatalf("expected state pointer to remain on active plan, got %#v", state)
+	if state == nil {
+		t.Fatalf("expected state to remain after failed archive, got %#v", state)
 	}
 }
 
@@ -376,8 +362,6 @@ func TestArchiveRollsBackWhenCurrentPlanWriteFails(t *testing.T) {
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	activePath := writeActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -408,8 +392,8 @@ func TestArchiveRollsBackWhenCurrentPlanWriteFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.PlanPath != activeRelPath {
-		t.Fatalf("expected state to roll back to active path, got %#v", state)
+	if state == nil {
+		t.Fatalf("expected state rollback to preserve local state, got %#v", state)
 	}
 }
 
@@ -418,8 +402,6 @@ func TestArchiveRestoresActivePlanWhenTimelineAppendFailsAfterCleanup(t *testing
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	activePath := writeActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -458,8 +440,8 @@ func TestArchiveRestoresActivePlanWhenTimelineAppendFailsAfterCleanup(t *testing
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.PlanPath != activeRelPath {
-		t.Fatalf("expected state to roll back to active path, got %#v", state)
+	if state == nil {
+		t.Fatalf("expected state to roll back to active state, got %#v", state)
 	}
 }
 
@@ -485,8 +467,6 @@ func TestArchiveRejectsUnresolvedLocalState(t *testing.T) {
 			root := t.TempDir()
 			activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 			writeActiveArchiveCandidate(t, root, activeRelPath)
-			tc.state.PlanPath = activeRelPath
-			tc.state.PlanStem = "2026-03-18-archive-smoke"
 			tc.state.ExecutionStartedAt = "2026-03-18T03:30:00Z"
 			if tc.state.ActiveReviewRound == nil && tc.errorPath != "state.active_review_round" {
 				tc.state.ActiveReviewRound = &runstate.ReviewRound{
@@ -555,8 +535,6 @@ func TestArchiveRequiresPassingReviewForRevisionOne(t *testing.T) {
 			root := t.TempDir()
 			activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 			writeActiveArchiveCandidate(t, root, activeRelPath)
-			tc.state.PlanPath = activeRelPath
-			tc.state.PlanStem = "2026-03-18-archive-smoke"
 			tc.state.ExecutionStartedAt = "2026-03-18T03:30:00Z"
 			if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", tc.state); err != nil {
 				t.Fatalf("save state: %v", err)
@@ -578,8 +556,6 @@ func TestArchiveRejectsEarlierStepCloseoutDebtEvenAfterPassingFinalizeReview(t *
 	writeActiveArchiveCandidateWithCloseoutDebt(t, root, activeRelPath)
 
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T03:35:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -607,8 +583,6 @@ func TestArchiveAllowsPassingDeltaReviewForReopenedRevision(t *testing.T) {
 	writeActiveArchiveCandidate(t, root, activeRelPath)
 
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T03:55:00Z",
 		Revision:           2,
 		ActiveReviewRound: &runstate.ReviewRound{
@@ -633,14 +607,13 @@ func TestArchiveAllowsPassingDeltaReviewForReopenedRevision(t *testing.T) {
 	}
 }
 
-func TestArchiveIgnoresCIPublishSyncSignalsOnceFinalizeReviewPasses(t *testing.T) {
+func TestArchiveIgnoresEvidenceArtifactsOnceFinalizeReviewPasses(t *testing.T) {
 	root := t.TempDir()
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	writeActiveArchiveCandidate(t, root, activeRelPath)
+	writeMergeReadyEvidenceArtifacts(t, root, "2026-03-18-archive-smoke", "docs/plans/archived/2026-03-18-archive-smoke.md")
 
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T04:05:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -649,8 +622,6 @@ func TestArchiveIgnoresCIPublishSyncSignalsOnceFinalizeReviewPasses(t *testing.T
 			Aggregated: true,
 			Decision:   "pass",
 		},
-		LatestCI: &runstate.CIState{SnapshotID: "ci-001", Status: "pending"},
-		Sync:     &runstate.SyncState{Freshness: "stale", Conflicts: true},
 	}); err != nil {
 		t.Fatalf("save state: %v", err)
 	}
@@ -671,8 +642,6 @@ func TestArchiveUsesAggregateArtifactForLegacyReviewDecision(t *testing.T) {
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	writeActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T04:25:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -702,8 +671,6 @@ func TestReopenMovesArchivedPlanBackToActiveAndResetsSummaries(t *testing.T) {
 	root := t.TempDir()
 	writeActiveArchiveCandidate(t, root, "docs/plans/active/2026-03-18-archive-smoke.md")
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           "docs/plans/active/2026-03-18-archive-smoke.md",
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -773,8 +740,6 @@ func TestReopenRestoresArchivedPlanWhenTimelineAppendFailsAfterCleanup(t *testin
 	root := t.TempDir()
 	writeActiveArchiveCandidate(t, root, "docs/plans/active/2026-03-18-archive-smoke.md")
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           "docs/plans/active/2026-03-18-archive-smoke.md",
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -821,8 +786,8 @@ func TestReopenRestoresArchivedPlanWhenTimelineAppendFailsAfterCleanup(t *testin
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.PlanPath != archivedRelPath {
-		t.Fatalf("expected state to roll back to archived path, got %#v", state)
+	if state == nil || state.ActiveReviewRound == nil || state.Reopen != nil {
+		t.Fatalf("expected state to roll back to archived review state, got %#v", state)
 	}
 }
 
@@ -831,8 +796,6 @@ func TestReopenRemovesSynthesizedStateWhenTimelineAppendFailsWithoutPriorState(t
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	writeActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -897,8 +860,6 @@ func TestReopenLightweightMovesLocalArchiveBackToTrackedActive(t *testing.T) {
 	activeRelPath := "docs/plans/active/2026-03-18-lightweight-reopen.md"
 	writeLightweightActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-lightweight-reopen", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-lightweight-reopen",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -949,7 +910,7 @@ func TestReopenLightweightMovesLocalArchiveBackToTrackedActive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load reopened state: %v", err)
 	}
-	if state == nil || state.Reopen == nil || state.Reopen.Mode != "finalize-fix" || state.PlanPath != activeRelPath {
+	if state == nil || state.Reopen == nil || state.Reopen.Mode != "finalize-fix" {
 		t.Fatalf("expected reopened lightweight state to point back to tracked active path, got %#v", state)
 	}
 	current, err := runstate.LoadCurrentPlan(root)
@@ -965,8 +926,6 @@ func TestReopenNewStepRecordsModeAndStatusCue(t *testing.T) {
 	root := t.TempDir()
 	writeActiveArchiveCandidate(t, root, "docs/plans/active/2026-03-18-archive-smoke.md")
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           "docs/plans/active/2026-03-18-archive-smoke.md",
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -1029,8 +988,6 @@ func TestReopenMarkersMustBeClearedBeforeRearchive(t *testing.T) {
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	writeActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -1063,8 +1020,6 @@ func TestReopenMarkersMustBeClearedBeforeRearchive(t *testing.T) {
 	}
 
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T03:05:00Z",
 		Revision:           2,
 		Reopen:             &runstate.ReopenState{Mode: "finalize-fix", ReopenedAt: "2026-03-18T03:00:00Z"},
@@ -1105,13 +1060,11 @@ func TestReopenMarkersMustBeClearedBeforeRearchive(t *testing.T) {
 	}
 }
 
-func TestReopenClearsStaleCIAndSyncSignals(t *testing.T) {
+func TestReopenResetsReviewStateAfterArchive(t *testing.T) {
 	root := t.TempDir()
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
 	writeActiveArchiveCandidate(t, root, activeRelPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath:           activeRelPath,
-		PlanStem:           "2026-03-18-archive-smoke",
 		ExecutionStartedAt: "2026-03-18T01:55:00Z",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -1120,8 +1073,6 @@ func TestReopenClearsStaleCIAndSyncSignals(t *testing.T) {
 			Aggregated: true,
 			Decision:   "pass",
 		},
-		LatestCI: &runstate.CIState{SnapshotID: "ci-1", Status: "success"},
-		Sync:     &runstate.SyncState{Freshness: "fresh", Conflicts: false},
 	}); err != nil {
 		t.Fatalf("save initial state: %v", err)
 	}
@@ -1138,8 +1089,6 @@ func TestReopenClearsStaleCIAndSyncSignals(t *testing.T) {
 	}
 
 	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
-		PlanPath: "docs/plans/archived/2026-03-18-archive-smoke.md",
-		PlanStem: "2026-03-18-archive-smoke",
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
 			Kind:       "full",
@@ -1147,15 +1096,6 @@ func TestReopenClearsStaleCIAndSyncSignals(t *testing.T) {
 			Aggregated: true,
 			Decision:   "pass",
 		},
-		LatestEvidence: &runstate.EvidenceSet{
-			CI:      &runstate.EvidencePointer{Kind: "ci", RecordID: "ci-2", Path: ".local/harness/plans/2026-03-18-archive-smoke/evidence/ci/ci-002.json"},
-			Publish: &runstate.EvidencePointer{Kind: "publish", RecordID: "publish-1", Path: ".local/harness/plans/2026-03-18-archive-smoke/evidence/publish/publish-001.json"},
-			Sync:    &runstate.EvidencePointer{Kind: "sync", RecordID: "sync-2", Path: ".local/harness/plans/2026-03-18-archive-smoke/evidence/sync/sync-002.json"},
-		},
-		CurrentNode:   "execution/finalize/await_merge",
-		LatestCI:      &runstate.CIState{SnapshotID: "ci-2", Status: "failed"},
-		Sync:          &runstate.SyncState{Freshness: "stale", Conflicts: true},
-		LatestPublish: &runstate.Publish{AttemptID: "publish-1", PRURL: "https://github.com/catu-ai/easyharness/pull/99"},
 	}); err != nil {
 		t.Fatalf("save archived state: %v", err)
 	}
@@ -1175,8 +1115,8 @@ func TestReopenClearsStaleCIAndSyncSignals(t *testing.T) {
 	if state == nil {
 		t.Fatalf("expected reopened state")
 	}
-	if state.ActiveReviewRound != nil || state.CurrentNode != "" || state.Land != nil || state.LatestEvidence != nil || state.LatestCI != nil || state.Sync != nil || state.LatestPublish != nil {
-		t.Fatalf("expected reopened state to clear stale review/evidence/cache signals, got %#v", state)
+	if state.ActiveReviewRound != nil || state.Land != nil || state.Reopen == nil || state.Reopen.Mode != "finalize-fix" {
+		t.Fatalf("expected reopened state to preserve only reopen metadata, got %#v", state)
 	}
 }
 
@@ -1186,7 +1126,7 @@ func TestReopenRejectsLandCleanupInProgress(t *testing.T) {
 	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
 		t.Fatalf("save current plan: %v", err)
 	}
-	seedMergeReadyEvidenceForLifecycle(t, root)
+	writeMergeReadyEvidenceArtifacts(t, root, "2026-03-18-landed-plan", "docs/plans/archived/2026-03-18-landed-plan.md")
 
 	svc := lifecycle.Service{
 		Workdir: root,
@@ -1203,13 +1143,13 @@ func TestReopenRejectsLandCleanupInProgress(t *testing.T) {
 	if reopen.OK {
 		t.Fatalf("expected reopen to fail during land cleanup, got %#v", reopen)
 	}
-	assertErrorPath(t, reopen.Errors, "state.current_node")
+	assertErrorPath(t, reopen.Errors, "state.land")
 
 	state, _, err := runstate.LoadState(root, "2026-03-18-landed-plan")
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.CurrentNode != "land" || state.Land == nil || state.Land.CompletedAt != "" {
+	if state == nil || state.Land == nil || state.Land.CompletedAt != "" {
 		t.Fatalf("expected land cleanup state to remain intact, got %#v", state)
 	}
 
@@ -1228,7 +1168,7 @@ func TestLandCompleteWritesIdleMarkerForStatus(t *testing.T) {
 	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
 		t.Fatalf("save current plan: %v", err)
 	}
-	seedMergeReadyEvidenceForLifecycle(t, root)
+	writeMergeReadyEvidenceArtifacts(t, root, "2026-03-18-landed-plan", "docs/plans/archived/2026-03-18-landed-plan.md")
 
 	svc := lifecycle.Service{
 		Workdir: root,
@@ -1272,7 +1212,7 @@ func TestLandGuidanceRequiresPRAndIssueBookkeeping(t *testing.T) {
 	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
 		t.Fatalf("save current plan: %v", err)
 	}
-	seedMergeReadyEvidenceForLifecycle(t, root)
+	writeMergeReadyEvidenceArtifacts(t, root, "2026-03-18-landed-plan", "docs/plans/archived/2026-03-18-landed-plan.md")
 
 	result := lifecycle.Service{
 		Workdir: root,
@@ -1312,7 +1252,7 @@ func TestLandCompleteRejectsMissingLandEntry(t *testing.T) {
 	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
 		t.Fatalf("save current plan: %v", err)
 	}
-	seedMergeReadyEvidenceForLifecycle(t, root)
+	writeMergeReadyEvidenceArtifacts(t, root, "2026-03-18-landed-plan", "docs/plans/archived/2026-03-18-landed-plan.md")
 
 	result := lifecycle.Service{
 		Workdir: root,
@@ -1325,23 +1265,18 @@ func TestLandCompleteRejectsMissingLandEntry(t *testing.T) {
 	}
 }
 
-func TestLandUsesLegacyEvidenceCachesWhenPointersAreMissing(t *testing.T) {
+func TestLandReadsEvidenceArtifactsWhenStateIsSparse(t *testing.T) {
 	root := t.TempDir()
 	writeArchivedLandedPlan(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
 	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
 		t.Fatalf("save current plan: %v", err)
 	}
 	if _, err := runstate.SaveState(root, "2026-03-18-landed-plan", &runstate.State{
-		PlanPath:       "docs/plans/archived/2026-03-18-landed-plan.md",
-		PlanStem:       "2026-03-18-landed-plan",
 		Revision:       3,
-		LatestCI:       &runstate.CIState{SnapshotID: "ci-legacy", Status: "success"},
-		LatestPublish:  &runstate.Publish{AttemptID: "publish-legacy", PRURL: "https://github.com/catu-ai/easyharness/pull/99"},
-		Sync:           &runstate.SyncState{Freshness: "fresh", Conflicts: false},
-		LatestEvidence: nil,
 	}); err != nil {
 		t.Fatalf("save legacy state: %v", err)
 	}
+	writeMergeReadyEvidenceArtifacts(t, root, "2026-03-18-landed-plan", "docs/plans/archived/2026-03-18-landed-plan.md")
 
 	result := lifecycle.Service{
 		Workdir: root,
@@ -1350,7 +1285,36 @@ func TestLandUsesLegacyEvidenceCachesWhenPointersAreMissing(t *testing.T) {
 		},
 	}.Land("https://github.com/catu-ai/easyharness/pull/99", "")
 	if !result.OK {
-		t.Fatalf("expected land success from legacy caches, got %#v", result)
+		t.Fatalf("expected land success from evidence artifacts, got %#v", result)
+	}
+}
+
+func TestLandRejectsOlderRevisionEvidenceAfterReopen(t *testing.T) {
+	root := t.TempDir()
+	writeArchivedLandedPlan(t, root, "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	if _, err := runstate.SaveState(root, "2026-03-18-landed-plan", &runstate.State{
+		Revision: 1,
+	}); err != nil {
+		t.Fatalf("save initial state: %v", err)
+	}
+	writeMergeReadyEvidenceArtifacts(t, root, "2026-03-18-landed-plan", "docs/plans/archived/2026-03-18-landed-plan.md")
+	if _, err := runstate.SaveState(root, "2026-03-18-landed-plan", &runstate.State{
+		Revision: 2,
+	}); err != nil {
+		t.Fatalf("save reopened state: %v", err)
+	}
+
+	result := lifecycle.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 6, 0, 0, 0, time.UTC)
+		},
+	}.Land("https://github.com/catu-ai/easyharness/pull/99", "")
+	if result.OK {
+		t.Fatalf("expected older revision evidence to block land, got %#v", result)
 	}
 }
 
@@ -1360,7 +1324,7 @@ func TestLandRejectsOverwriteDuringCleanup(t *testing.T) {
 	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
 		t.Fatalf("save current plan: %v", err)
 	}
-	seedMergeReadyEvidenceForLifecycle(t, root)
+	writeMergeReadyEvidenceArtifacts(t, root, "2026-03-18-landed-plan", "docs/plans/archived/2026-03-18-landed-plan.md")
 
 	svc := lifecycle.Service{
 		Workdir: root,
@@ -1393,7 +1357,7 @@ func TestLandAllowsCommitEnrichmentDuringCleanup(t *testing.T) {
 	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
 		t.Fatalf("save current plan: %v", err)
 	}
-	seedMergeReadyEvidenceForLifecycle(t, root)
+	writeMergeReadyEvidenceArtifacts(t, root, "2026-03-18-landed-plan", "docs/plans/archived/2026-03-18-landed-plan.md")
 
 	svc := lifecycle.Service{
 		Workdir: root,
@@ -1426,7 +1390,7 @@ func TestLandCompleteRollsBackStateWhenCurrentPlanWriteFails(t *testing.T) {
 	if _, err := runstate.SaveCurrentPlan(root, "docs/plans/archived/2026-03-18-landed-plan.md"); err != nil {
 		t.Fatalf("save current plan: %v", err)
 	}
-	seedMergeReadyEvidenceForLifecycle(t, root)
+	writeMergeReadyEvidenceArtifacts(t, root, "2026-03-18-landed-plan", "docs/plans/archived/2026-03-18-landed-plan.md")
 
 	svc := lifecycle.Service{
 		Workdir: root,
@@ -1456,27 +1420,79 @@ func TestLandCompleteRollsBackStateWhenCurrentPlanWriteFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load state: %v", err)
 	}
-	if state == nil || state.CurrentNode != "land" || state.Land == nil || state.Land.CompletedAt != "" {
+	if state == nil || state.Land == nil || state.Land.CompletedAt != "" {
 		t.Fatalf("expected land state rollback after pointer write failure, got %#v", state)
 	}
 }
 
-func seedMergeReadyEvidenceForLifecycle(t *testing.T, root string) {
+func writeMergeReadyEvidenceArtifacts(t *testing.T, root, planStem, planPath string) {
 	t.Helper()
-	svc := evidence.Service{
-		Workdir: root,
-		Now: func() time.Time {
-			return time.Date(2026, 3, 18, 5, 50, 0, 0, time.UTC)
+	revision := 1
+	if state, _, err := runstate.LoadState(root, planStem); err == nil {
+		revision = runstate.CurrentRevision(state)
+	}
+	type recordFile struct {
+		dir     string
+		name    string
+		payload any
+	}
+	recordedAt := time.Date(2026, 3, 18, 5, 50, 0, 0, time.UTC).Format(time.RFC3339)
+	files := []recordFile{
+		{
+			dir:  filepath.Join(root, ".local", "harness", "plans", planStem, "evidence", "publish"),
+			name: "publish-001.json",
+			payload: map[string]any{
+				"record_id":   "publish-001",
+				"kind":        "publish",
+				"plan_path":   planPath,
+				"plan_stem":   planStem,
+				"revision":    revision,
+				"recorded_at": recordedAt,
+				"status":      "recorded",
+				"pr_url":      "https://github.com/catu-ai/easyharness/pull/99",
+			},
+		},
+		{
+			dir:  filepath.Join(root, ".local", "harness", "plans", planStem, "evidence", "ci"),
+			name: "ci-001.json",
+			payload: map[string]any{
+				"record_id":   "ci-001",
+				"kind":        "ci",
+				"plan_path":   planPath,
+				"plan_stem":   planStem,
+				"revision":    revision,
+				"recorded_at": recordedAt,
+				"status":      "success",
+				"provider":    "github-actions",
+			},
+		},
+		{
+			dir:  filepath.Join(root, ".local", "harness", "plans", planStem, "evidence", "sync"),
+			name: "sync-001.json",
+			payload: map[string]any{
+				"record_id":   "sync-001",
+				"kind":        "sync",
+				"plan_path":   planPath,
+				"plan_stem":   planStem,
+				"revision":    revision,
+				"recorded_at": recordedAt,
+				"status":      "fresh",
+				"base_ref":    "main",
+				"head_ref":    "codex/test",
+			},
 		},
 	}
-	if result := svc.Submit("publish", []byte(`{"status":"recorded","pr_url":"https://github.com/catu-ai/easyharness/pull/99"}`)); !result.OK {
-		t.Fatalf("seed publish evidence: %#v", result)
-	}
-	if result := svc.Submit("ci", []byte(`{"status":"success","provider":"github-actions"}`)); !result.OK {
-		t.Fatalf("seed ci evidence: %#v", result)
-	}
-	if result := svc.Submit("sync", []byte(`{"status":"fresh","base_ref":"main","head_ref":"codex/test"}`)); !result.OK {
-		t.Fatalf("seed sync evidence: %#v", result)
+	for _, file := range files {
+		if err := os.MkdirAll(file.dir, 0o755); err != nil {
+			t.Fatalf("mkdir evidence dir: %v", err)
+		}
+		data, err := json.Marshal(file.payload)
+		if err != nil {
+			t.Fatalf("marshal evidence record: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(file.dir, file.name), data, 0o644); err != nil {
+			t.Fatalf("write evidence record: %v", err)
+		}
 	}
 }
 
@@ -1624,4 +1640,21 @@ func assertErrorContains(t *testing.T, issues []lifecycle.CommandError, path, fr
 		}
 	}
 	t.Fatalf("expected error for %s containing %q, got %#v", path, fragment, issues)
+}
+
+func assertRawStateJSONOmitsKeys(t *testing.T, path string, keys ...string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read raw state json: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("parse raw state json: %v", err)
+	}
+	for _, key := range keys {
+		if _, ok := payload[key]; ok {
+			t.Fatalf("expected raw state json to omit %q, got %#v", key, payload)
+		}
+	}
 }

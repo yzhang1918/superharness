@@ -107,8 +107,6 @@ func TestNewHandlerServesTimelineJSON(t *testing.T) {
 		t.Fatalf("save current plan: %v", err)
 	}
 	if _, err := runstate.SaveState(workdir, "2026-04-01-ui-timeline-plan", &runstate.State{
-		PlanPath: relPlanPath,
-		PlanStem: "2026-04-01-ui-timeline-plan",
 		Revision: 1,
 	}); err != nil {
 		t.Fatalf("save state: %v", err)
@@ -174,8 +172,6 @@ func TestNewHandlerServesReviewJSON(t *testing.T) {
 		t.Fatalf("save current plan: %v", err)
 	}
 	if _, err := runstate.SaveState(workdir, "2026-04-02-ui-review-plan", &runstate.State{
-		PlanPath: relPlanPath,
-		PlanStem: "2026-04-02-ui-review-plan",
 		Revision: 2,
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-002-full",
@@ -265,8 +261,6 @@ func TestNewHandlerServesReviewJSONFailureAs503(t *testing.T) {
 	}
 	planStem := "2026-04-02-ui-review-error"
 	if _, err := runstate.SaveState(workdir, planStem, &runstate.State{
-		PlanPath: relPlanPath,
-		PlanStem: planStem,
 		Revision: 1,
 	}); err != nil {
 		t.Fatalf("save state: %v", err)
@@ -333,8 +327,6 @@ func TestNewHandlerServesLargeTimelinePayloadWithoutTruncation(t *testing.T) {
 		t.Fatalf("save current plan: %v", err)
 	}
 	if _, err := runstate.SaveState(workdir, "2026-04-01-ui-timeline-large", &runstate.State{
-		PlanPath: relPlanPath,
-		PlanStem: "2026-04-01-ui-timeline-large",
 		Revision: 1,
 	}); err != nil {
 		t.Fatalf("save state: %v", err)

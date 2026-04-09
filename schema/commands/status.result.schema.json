@@ -60,7 +60,7 @@
         },
         "local_state_path": {
           "type": "string",
-          "description": "LocalStatePath is the plan-local state cache path when one exists.",
+          "description": "LocalStatePath is the plan-local control-plane state path when one exists.",
           "examples": [
             ".local/harness/plans/2026-03-31-centralize-contract-schemas-and-generated-reference-docs/state.json"
           ]

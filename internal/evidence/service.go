@@ -74,17 +74,8 @@ func (s Service) Submit(kind string, inputBytes []byte) Result {
 		if err := writeJSONFile(recordPath, record); err != nil {
 			return errorResult("evidence submit", "Unable to persist the evidence artifact.", []CommandError{{Path: "record", Message: err.Error()}})
 		}
-		originalState := cloneState(state)
-		statePath, err = updateStateAfterEvidence(s.Workdir, planStem, relPlanPath, state, statePath, kind, recordID, recordPath, now, func(next *runstate.State) {
-			next.LatestCI = &runstate.CIState{SnapshotID: recordID, Status: record.Status}
-		})
-		if err != nil {
-			issues := rollbackEvidenceMutation(s.Workdir, planStem, originalState, statePath, recordPath)
-			issues = append([]CommandError{{Path: "state", Message: err.Error()}}, issues...)
-			return errorResult("evidence submit", "Unable to update local harness state.", issues)
-		}
 		return s.finalizeMutation(successResult(planPath, statePath, kind, recordID, recordPath, "Recorded CI evidence for the current archived candidate."), func() []CommandError {
-			return rollbackEvidenceMutation(s.Workdir, planStem, originalState, statePath, recordPath)
+			return rollbackEvidenceMutation(recordPath)
 		})
 	case "publish":
 		var input PublishInput
@@ -115,21 +106,8 @@ func (s Service) Submit(kind string, inputBytes []byte) Result {
 		if err := writeJSONFile(recordPath, record); err != nil {
 			return errorResult("evidence submit", "Unable to persist the evidence artifact.", []CommandError{{Path: "record", Message: err.Error()}})
 		}
-		originalState := cloneState(state)
-		statePath, err = updateStateAfterEvidence(s.Workdir, planStem, relPlanPath, state, statePath, kind, recordID, recordPath, now, func(next *runstate.State) {
-			if record.Status == "recorded" {
-				next.LatestPublish = &runstate.Publish{AttemptID: recordID, PRURL: record.PRURL}
-				return
-			}
-			next.LatestPublish = nil
-		})
-		if err != nil {
-			issues := rollbackEvidenceMutation(s.Workdir, planStem, originalState, statePath, recordPath)
-			issues = append([]CommandError{{Path: "state", Message: err.Error()}}, issues...)
-			return errorResult("evidence submit", "Unable to update local harness state.", issues)
-		}
 		return s.finalizeMutation(successResult(planPath, statePath, kind, recordID, recordPath, "Recorded publish evidence for the current archived candidate."), func() []CommandError {
-			return rollbackEvidenceMutation(s.Workdir, planStem, originalState, statePath, recordPath)
+			return rollbackEvidenceMutation(recordPath)
 		})
 	case "sync":
 		var input SyncInput
@@ -158,26 +136,8 @@ func (s Service) Submit(kind string, inputBytes []byte) Result {
 		if err := writeJSONFile(recordPath, record); err != nil {
 			return errorResult("evidence submit", "Unable to persist the evidence artifact.", []CommandError{{Path: "record", Message: err.Error()}})
 		}
-		originalState := cloneState(state)
-		statePath, err = updateStateAfterEvidence(s.Workdir, planStem, relPlanPath, state, statePath, kind, recordID, recordPath, now, func(next *runstate.State) {
-			switch record.Status {
-			case "fresh":
-				next.Sync = &runstate.SyncState{Freshness: "fresh", Conflicts: false}
-			case "stale":
-				next.Sync = &runstate.SyncState{Freshness: "stale", Conflicts: false}
-			case "conflicted":
-				next.Sync = &runstate.SyncState{Freshness: "stale", Conflicts: true}
-			default:
-				next.Sync = nil
-			}
-		})
-		if err != nil {
-			issues := rollbackEvidenceMutation(s.Workdir, planStem, originalState, statePath, recordPath)
-			issues = append([]CommandError{{Path: "state", Message: err.Error()}}, issues...)
-			return errorResult("evidence submit", "Unable to update local harness state.", issues)
-		}
 		return s.finalizeMutation(successResult(planPath, statePath, kind, recordID, recordPath, "Recorded sync evidence for the current archived candidate."), func() []CommandError {
-			return rollbackEvidenceMutation(s.Workdir, planStem, originalState, statePath, recordPath)
+			return rollbackEvidenceMutation(recordPath)
 		})
 	default:
 		return errorResult("evidence submit", "Evidence kind is invalid.", []CommandError{{
@@ -187,60 +147,16 @@ func (s Service) Submit(kind string, inputBytes []byte) Result {
 	}
 }
 
-func LoadLatestCI(workdir string, state *runstate.State) (*CIRecord, error) {
-	if state == nil {
-		return nil, nil
-	}
-	if state.LatestEvidence != nil && state.LatestEvidence.CI != nil {
-		return loadRecord[CIRecord](workdir, state.LatestEvidence.CI.Path)
-	}
-	if state.LatestCI != nil {
-		return &CIRecord{
-			RecordID: state.LatestCI.SnapshotID,
-			Kind:     "ci",
-			Status:   strings.ToLower(strings.TrimSpace(state.LatestCI.Status)),
-		}, nil
-	}
-	return nil, nil
+func LoadLatestCI(workdir, planStem string, revision int) (*CIRecord, error) {
+	return loadLatestRecord[CIRecord](workdir, planStem, "ci", revision)
 }
 
-func LoadLatestPublish(workdir string, state *runstate.State) (*PublishRecord, error) {
-	if state == nil {
-		return nil, nil
-	}
-	if state.LatestEvidence != nil && state.LatestEvidence.Publish != nil {
-		return loadRecord[PublishRecord](workdir, state.LatestEvidence.Publish.Path)
-	}
-	if state.LatestPublish != nil {
-		return &PublishRecord{
-			RecordID: state.LatestPublish.AttemptID,
-			Kind:     "publish",
-			Status:   "recorded",
-			PRURL:    strings.TrimSpace(state.LatestPublish.PRURL),
-		}, nil
-	}
-	return nil, nil
+func LoadLatestPublish(workdir, planStem string, revision int) (*PublishRecord, error) {
+	return loadLatestRecord[PublishRecord](workdir, planStem, "publish", revision)
 }
 
-func LoadLatestSync(workdir string, state *runstate.State) (*SyncRecord, error) {
-	if state == nil {
-		return nil, nil
-	}
-	if state.LatestEvidence != nil && state.LatestEvidence.Sync != nil {
-		return loadRecord[SyncRecord](workdir, state.LatestEvidence.Sync.Path)
-	}
-	if state.Sync != nil {
-		status := strings.ToLower(strings.TrimSpace(state.Sync.Freshness))
-		if state.Sync.Conflicts {
-			status = "conflicted"
-		}
-		return &SyncRecord{
-			RecordID: "legacy-sync",
-			Kind:     "sync",
-			Status:   status,
-		}, nil
-	}
-	return nil, nil
+func LoadLatestSync(workdir, planStem string, revision int) (*SyncRecord, error) {
+	return loadLatestRecord[SyncRecord](workdir, planStem, "sync", revision)
 }
 
 func loadRecord[T any](workdir, relPath string) (*T, error) {
@@ -257,6 +173,57 @@ func loadRecord[T any](workdir, relPath string) (*T, error) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return &record, nil
+}
+
+func loadLatestRecord[T any](workdir, planStem, kind string, revision int) (*T, error) {
+	if strings.TrimSpace(planStem) == "" {
+		return nil, nil
+	}
+	dir := filepath.Join(workdir, ".local", "harness", "plans", planStem, "evidence", kind)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	maxID := 0
+	var latestRecord *T
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		matches := recordIDPattern.FindStringSubmatch(entry.Name())
+		if matches == nil || matches[1] != kind {
+			continue
+		}
+		n, err := strconv.Atoi(matches[2])
+		if err != nil || n <= maxID {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		var header struct {
+			Revision int `json:"revision"`
+		}
+		if err := json.Unmarshal(data, &header); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+		if revision > 0 && header.Revision != revision {
+			continue
+		}
+		var record T
+		if err := json.Unmarshal(data, &record); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+		maxID = n
+		latestRecord = &record
+	}
+	return latestRecord, nil
 }
 
 func validateCIInput(input CIInput) []CommandError {
@@ -336,40 +303,6 @@ func nextRecordLocation(workdir, planStem, kind string) (string, string, error) 
 	}
 	recordID := fmt.Sprintf("%s-%03d", kind, maxID+1)
 	return recordID, filepath.Join(dir, recordID+".json"), nil
-}
-
-func updateStateAfterEvidence(workdir, planStem, relPlanPath string, state *runstate.State, statePath, kind, recordID, recordPath, recordedAt string, mutate func(next *runstate.State)) (string, error) {
-	if state == nil {
-		state = &runstate.State{}
-	}
-	state.PlanPath = relPlanPath
-	state.PlanStem = planStem
-	if state.Revision <= 0 {
-		state.Revision = 1
-	}
-	if state.LatestEvidence == nil {
-		state.LatestEvidence = &runstate.EvidenceSet{}
-	}
-	relRecordPath, err := filepath.Rel(workdir, recordPath)
-	if err != nil {
-		return statePath, err
-	}
-	pointer := &runstate.EvidencePointer{
-		Kind:       kind,
-		RecordID:   recordID,
-		Path:       filepath.ToSlash(relRecordPath),
-		RecordedAt: recordedAt,
-	}
-	switch kind {
-	case "ci":
-		state.LatestEvidence.CI = pointer
-	case "publish":
-		state.LatestEvidence.Publish = pointer
-	case "sync":
-		state.LatestEvidence.Sync = pointer
-	}
-	mutate(state)
-	return saveState(workdir, planStem, state)
 }
 
 func successResult(planPath, statePath, kind, recordID, recordPath, summary string) Result {
@@ -505,16 +438,15 @@ func (s Service) loadCurrentArchivedPlan() (string, string, string, *runstate.St
 			}},
 		}
 	}
-	if state != nil && (strings.TrimSpace(state.CurrentNode) == "land" ||
-		(state.Land != nil &&
-			strings.TrimSpace(state.Land.LandedAt) != "" &&
-			strings.TrimSpace(state.Land.CompletedAt) == "")) {
+	if state != nil && state.Land != nil &&
+		strings.TrimSpace(state.Land.LandedAt) != "" &&
+		strings.TrimSpace(state.Land.CompletedAt) == "" {
 		release()
 		return "", "", "", nil, "", func() {}, &Result{
 			OK:      false,
 			Summary: "Evidence commands are not allowed after merge confirmation enters required post-merge bookkeeping.",
 			Errors: []CommandError{{
-				Path:    "state.current_node",
+				Path:    "state.land",
 				Message: "current archived candidate is already in required post-merge bookkeeping",
 			}},
 		}
@@ -542,52 +474,15 @@ func cloneState(state *runstate.State) *runstate.State {
 		reopen := *state.Reopen
 		cloned.Reopen = &reopen
 	}
-	if state.LatestEvidence != nil {
-		evidenceSet := *state.LatestEvidence
-		cloned.LatestEvidence = &evidenceSet
-		if state.LatestEvidence.CI != nil {
-			ciPtr := *state.LatestEvidence.CI
-			cloned.LatestEvidence.CI = &ciPtr
-		}
-		if state.LatestEvidence.Publish != nil {
-			publishPtr := *state.LatestEvidence.Publish
-			cloned.LatestEvidence.Publish = &publishPtr
-		}
-		if state.LatestEvidence.Sync != nil {
-			syncPtr := *state.LatestEvidence.Sync
-			cloned.LatestEvidence.Sync = &syncPtr
-		}
-	}
 	if state.Land != nil {
 		land := *state.Land
 		cloned.Land = &land
 	}
-	if state.LatestCI != nil {
-		ci := *state.LatestCI
-		cloned.LatestCI = &ci
-	}
-	if state.Sync != nil {
-		sync := *state.Sync
-		cloned.Sync = &sync
-	}
-	if state.LatestPublish != nil {
-		publish := *state.LatestPublish
-		cloned.LatestPublish = &publish
-	}
 	return &cloned
 }
 
-func rollbackEvidenceMutation(workdir, planStem string, originalState *runstate.State, statePath, recordPath string) []CommandError {
-	issues := make([]CommandError, 0, 2)
-	if originalState != nil {
-		if _, err := runstate.SaveState(workdir, planStem, originalState); err != nil {
-			issues = append(issues, CommandError{Path: "state", Message: fmt.Sprintf("rollback local state: %v", err)})
-		}
-	} else if statePath != "" {
-		if err := os.Remove(statePath); err != nil && !os.IsNotExist(err) {
-			issues = append(issues, CommandError{Path: "state", Message: fmt.Sprintf("rollback local state: %v", err)})
-		}
-	}
+func rollbackEvidenceMutation(recordPath string) []CommandError {
+	issues := make([]CommandError, 0, 1)
 	if err := os.Remove(recordPath); err != nil && !os.IsNotExist(err) {
 		issues = append(issues, CommandError{Path: "record", Message: fmt.Sprintf("rollback evidence artifact: %v", err)})
 	}

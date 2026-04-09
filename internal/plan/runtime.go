@@ -1,10 +1,6 @@
 package plan
 
-import (
-	"strings"
-
-	"github.com/catu-ai/easyharness/internal/runstate"
-)
+import "github.com/catu-ai/easyharness/internal/runstate"
 
 func (d *Document) DerivedPlanStatus() string {
 	switch d.PathKind {
@@ -33,19 +29,9 @@ func (d *Document) ExecutionStarted(state *runstate.State) bool {
 		return false
 	}
 	return state.ExecutionStartedAt != "" ||
-		currentNodeImpliesExecution(state.CurrentNode) ||
 		state.ActiveReviewRound != nil ||
-		state.LatestEvidence != nil ||
 		state.Land != nil ||
-		state.LatestCI != nil ||
-		state.Sync != nil ||
-		state.LatestPublish != nil ||
 		state.Reopen != nil
-}
-
-func currentNodeImpliesExecution(node string) bool {
-	node = strings.TrimSpace(node)
-	return strings.HasPrefix(node, "execution/") || node == "land"
 }
 
 func (d *Document) DerivedLifecycle(state *runstate.State) string {
