@@ -184,7 +184,10 @@ Timeline even though the layout change is shared. The repair generalized the
 browser-level probe so `scripts/ui-playwright-smoke` now applies the same
 document-vs-pane wheel assertions to `Status`, `Timeline`, and `Review`,
 injecting temporary spacer content when a fixture route is otherwise too short
-to scroll on its own.
+to scroll on its own. After broadening the helper, the same cross-page probe
+was rerun directly against the seeded local UI fixture and the passing results
+were recorded at
+`output/playwright/manual-scroll-check/cross-page-scroll-contract.json`.
 
 #### Review Notes
 
