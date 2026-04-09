@@ -62,13 +62,10 @@ func (s Service) ExecuteStart() Result {
 	if state.Revision <= 0 {
 		state.Revision = 1
 	}
-	state.PlanPath = relCurrentPath
-	state.PlanStem = planStem
 
 	if strings.TrimSpace(state.ExecutionStartedAt) == "" {
 		state.ExecutionStartedAt = now.Format(time.RFC3339)
 	}
-	state.CurrentNode = ""
 
 	savedStatePath, err := runstate.SaveState(s.Workdir, planStem, state)
 	if err != nil {
@@ -181,9 +178,6 @@ func (s Service) Archive() Result {
 	originalState := cloneState(state)
 	nextState := cloneState(state)
 	if nextState != nil {
-		nextState.PlanPath = relTargetPath
-		nextState.PlanStem = planStem
-		nextState.CurrentNode = ""
 		nextState.Reopen = nil
 		nextState.Land = nil
 		statePath, err = runstate.SaveState(s.Workdir, planStem, nextState)
@@ -255,9 +249,9 @@ func (s Service) Reopen(mode string) Result {
 			Message: fmt.Sprintf("reopen requires status=archived and lifecycle=awaiting_merge_approval, got status=%q lifecycle=%q", doc.DerivedPlanStatus(), doc.DerivedLifecycle(state)),
 		}})
 	}
-	if state != nil && (state.CurrentNode == "land" || (state.Land != nil && strings.TrimSpace(state.Land.LandedAt) != "" && strings.TrimSpace(state.Land.CompletedAt) == "")) {
+	if state != nil && state.Land != nil && strings.TrimSpace(state.Land.LandedAt) != "" && strings.TrimSpace(state.Land.CompletedAt) == "" {
 		return errorResult("reopen", "Archived candidate is already in required post-merge bookkeeping.", []CommandError{{
-			Path:    "state.current_node",
+			Path:    "state.land",
 			Message: "required post-merge bookkeeping must finish with `harness land complete` before reopen is allowed",
 		}})
 	}
@@ -318,8 +312,6 @@ func (s Service) Reopen(mode string) Result {
 	if nextState == nil {
 		nextState = &runstate.State{}
 	}
-	nextState.PlanPath = relTargetPath
-	nextState.PlanStem = planStem
 	nextState.ExecutionStartedAt = now.Format(time.RFC3339)
 	nextState.Revision = runstate.CurrentRevision(state) + 1
 	nextState.Reopen = &runstate.ReopenState{
@@ -328,12 +320,7 @@ func (s Service) Reopen(mode string) Result {
 		BaseStepCount: len(doc.Steps),
 	}
 	nextState.ActiveReviewRound = nil
-	nextState.CurrentNode = ""
-	nextState.LatestEvidence = nil
 	nextState.Land = nil
-	nextState.LatestCI = nil
-	nextState.Sync = nil
-	nextState.LatestPublish = nil
 	statePath, err = runstate.SaveState(s.Workdir, planStem, nextState)
 	if err != nil {
 		_ = os.Remove(targetPath)
@@ -465,19 +452,16 @@ func (s Service) Land(prURL, commit string) Result {
 			},
 		}, nil)
 	}
-	if issues := s.landReadinessIssues(state, prURL); len(issues) > 0 {
+	if issues := s.landReadinessIssues(planStem, state, prURL); len(issues) > 0 {
 		return errorResult("land", "Archived candidate is not ready to enter required post-merge bookkeeping.", issues)
 	}
 	originalState := cloneState(state)
 	if state == nil {
 		state = &runstate.State{}
 	}
-	state.PlanPath = relCurrentPath
-	state.PlanStem = planStem
 	if state.Revision <= 0 {
 		state.Revision = 1
 	}
-	state.CurrentNode = "land"
 	state.Land = &runstate.LandState{
 		PRURL:    prURL,
 		Commit:   strings.TrimSpace(commit),
@@ -539,7 +523,6 @@ func (s Service) LandComplete() Result {
 	if err != nil {
 		return errorResult("land complete", "Unable to read the current-plan pointer before land completion.", []CommandError{{Path: "state", Message: err.Error()}})
 	}
-	state.CurrentNode = "idle"
 	state.Land.CompletedAt = now.Format(time.RFC3339)
 	statePath, err = runstate.SaveState(s.Workdir, planStem, state)
 	if err != nil {
@@ -872,37 +855,9 @@ func cloneState(state *runstate.State) *runstate.State {
 		reopen := *state.Reopen
 		cloned.Reopen = &reopen
 	}
-	if state.LatestEvidence != nil {
-		evidenceSet := *state.LatestEvidence
-		cloned.LatestEvidence = &evidenceSet
-		if state.LatestEvidence.CI != nil {
-			ciPtr := *state.LatestEvidence.CI
-			cloned.LatestEvidence.CI = &ciPtr
-		}
-		if state.LatestEvidence.Publish != nil {
-			publishPtr := *state.LatestEvidence.Publish
-			cloned.LatestEvidence.Publish = &publishPtr
-		}
-		if state.LatestEvidence.Sync != nil {
-			syncPtr := *state.LatestEvidence.Sync
-			cloned.LatestEvidence.Sync = &syncPtr
-		}
-	}
 	if state.Land != nil {
 		land := *state.Land
 		cloned.Land = &land
-	}
-	if state.LatestCI != nil {
-		ci := *state.LatestCI
-		cloned.LatestCI = &ci
-	}
-	if state.Sync != nil {
-		sync := *state.Sync
-		cloned.Sync = &sync
-	}
-	if state.LatestPublish != nil {
-		publish := *state.LatestPublish
-		cloned.LatestPublish = &publish
 	}
 	return &cloned
 }
@@ -1065,16 +1020,16 @@ func requiredReviewMessage(revision int) string {
 	return "archive requires a passing aggregated finalize review before archive"
 }
 
-func (s Service) landReadinessIssues(state *runstate.State, prURL string) []CommandError {
+func (s Service) landReadinessIssues(planStem string, state *runstate.State, prURL string) []CommandError {
 	issues := make([]CommandError, 0)
 
-	publish, err := evidence.LoadLatestPublish(s.Workdir, state)
+	publish, err := evidence.LoadLatestPublish(s.Workdir, planStem, runstate.CurrentRevision(state))
 	if err != nil {
-		return []CommandError{{Path: "state.latest_evidence.publish", Message: err.Error()}}
+		return []CommandError{{Path: "evidence.publish", Message: err.Error()}}
 	}
 	if publish == nil || publish.Status != "recorded" || strings.TrimSpace(publish.PRURL) == "" {
 		issues = append(issues, CommandError{
-			Path:    "state.latest_evidence.publish",
+			Path:    "evidence.publish",
 			Message: "record publish evidence with a PR URL before entering required post-merge bookkeeping",
 		})
 	} else if strings.TrimSpace(publish.PRURL) != prURL {
@@ -1084,24 +1039,24 @@ func (s Service) landReadinessIssues(state *runstate.State, prURL string) []Comm
 		})
 	}
 
-	ciRecord, err := evidence.LoadLatestCI(s.Workdir, state)
+	ciRecord, err := evidence.LoadLatestCI(s.Workdir, planStem, runstate.CurrentRevision(state))
 	if err != nil {
-		return []CommandError{{Path: "state.latest_evidence.ci", Message: err.Error()}}
+		return []CommandError{{Path: "evidence.ci", Message: err.Error()}}
 	}
 	if ciRecord == nil || (ciRecord.Status != "success" && ciRecord.Status != "not_applied") {
 		issues = append(issues, CommandError{
-			Path:    "state.latest_evidence.ci",
+			Path:    "evidence.ci",
 			Message: "record passing or explicit not_applied CI evidence before entering required post-merge bookkeeping",
 		})
 	}
 
-	syncRecord, err := evidence.LoadLatestSync(s.Workdir, state)
+	syncRecord, err := evidence.LoadLatestSync(s.Workdir, planStem, runstate.CurrentRevision(state))
 	if err != nil {
-		return []CommandError{{Path: "state.latest_evidence.sync", Message: err.Error()}}
+		return []CommandError{{Path: "evidence.sync", Message: err.Error()}}
 	}
 	if syncRecord == nil || (syncRecord.Status != "fresh" && syncRecord.Status != "not_applied") {
 		issues = append(issues, CommandError{
-			Path:    "state.latest_evidence.sync",
+			Path:    "evidence.sync",
 			Message: "record fresh or explicit not_applied sync evidence before entering required post-merge bookkeeping",
 		})
 	}

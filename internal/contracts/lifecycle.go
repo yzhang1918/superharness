@@ -65,7 +65,7 @@ type LifecycleArtifacts struct {
 	// a plan artifact.
 	ToPlanPath string `json:"to_plan_path"`
 
-	// LocalStatePath is the plan-local state cache path when one exists.
+	// LocalStatePath is the plan-local control-plane state path when one exists.
 	LocalStatePath string `json:"local_state_path,omitempty"`
 
 	// CurrentPlanPath is the worktree-level current-plan pointer path when the

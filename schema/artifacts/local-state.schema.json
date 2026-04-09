@@ -3,53 +3,6 @@
   "$id": "https://github.com/catu-ai/easyharness/tree/main/schema/artifacts/local-state.schema.json",
   "$ref": "#/$defs/LocalStateFile",
   "$defs": {
-    "EvidencePointerState": {
-      "properties": {
-        "kind": {
-          "type": "string",
-          "description": "Kind is the evidence kind."
-        },
-        "record_id": {
-          "type": "string",
-          "description": "RecordID is the stable identifier of the evidence record."
-        },
-        "path": {
-          "type": "string",
-          "description": "Path is the path to the evidence record artifact."
-        },
-        "recorded_at": {
-          "type": "string",
-          "description": "RecordedAt is the evidence record timestamp when one is tracked."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "kind",
-        "record_id",
-        "path"
-      ],
-      "description": "EvidencePointerState points to one evidence record from the local state file."
-    },
-    "EvidenceSetState": {
-      "properties": {
-        "ci": {
-          "$ref": "#/$defs/EvidencePointerState",
-          "description": "CI points to the latest CI evidence record when one exists."
-        },
-        "publish": {
-          "$ref": "#/$defs/EvidencePointerState",
-          "description": "Publish points to the latest publish evidence record when one exists."
-        },
-        "sync": {
-          "$ref": "#/$defs/EvidencePointerState",
-          "description": "Sync points to the latest sync evidence record when one exists."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "description": "EvidenceSetState records the latest evidence pointers tracked in the local state file."
-    },
     "LandState": {
       "properties": {
         "pr_url": {
@@ -73,80 +26,11 @@
       "type": "object",
       "description": "LandState records the current land state in the local state file."
     },
-    "LegacyCIState": {
-      "properties": {
-        "snapshot_id": {
-          "type": "string",
-          "description": "SnapshotID is the legacy CI snapshot identifier."
-        },
-        "status": {
-          "type": "string",
-          "description": "Status is the cached legacy CI status."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "snapshot_id",
-        "status"
-      ],
-      "description": "LegacyCIState is the transitional CI cache retained in the local state file while status still reads legacy evidence hints directly."
-    },
-    "LegacyPublishState": {
-      "properties": {
-        "attempt_id": {
-          "type": "string",
-          "description": "AttemptID is the legacy publish attempt identifier."
-        },
-        "pr_url": {
-          "type": "string",
-          "description": "PRURL is the cached publish pull request URL."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "attempt_id",
-        "pr_url"
-      ],
-      "description": "LegacyPublishState is the transitional publish cache retained in the local state file while status still reads legacy hints directly."
-    },
-    "LegacySyncState": {
-      "properties": {
-        "freshness": {
-          "type": "string",
-          "description": "Freshness is the cached sync freshness label."
-        },
-        "conflicts": {
-          "type": "boolean",
-          "description": "Conflicts reports whether the cached sync state observed conflicts."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "freshness",
-        "conflicts"
-      ],
-      "description": "LegacySyncState is the transitional sync cache retained in the local state file while status still reads legacy hints directly."
-    },
     "LocalStateFile": {
       "properties": {
         "execution_started_at": {
           "type": "string",
           "description": "ExecutionStartedAt is the execution-start timestamp for the plan."
-        },
-        "current_node": {
-          "type": "string",
-          "description": "CurrentNode is the cached canonical workflow node when one has been resolved."
-        },
-        "plan_path": {
-          "type": "string",
-          "description": "PlanPath is the current tracked or archived plan path associated with this state file."
-        },
-        "plan_stem": {
-          "type": "string",
-          "description": "PlanStem is the durable plan stem associated with this state file."
         },
         "revision": {
           "type": "integer",
@@ -160,30 +44,14 @@
           "$ref": "#/$defs/ReviewRoundState",
           "description": "ActiveReviewRound records the current active review round when review is in flight."
         },
-        "latest_evidence": {
-          "$ref": "#/$defs/EvidenceSetState",
-          "description": "LatestEvidence records the latest evidence pointers tracked in the state file."
-        },
         "land": {
           "$ref": "#/$defs/LandState",
           "description": "Land records the current land state when merge cleanup is in flight."
-        },
-        "latest_ci": {
-          "$ref": "#/$defs/LegacyCIState",
-          "description": "LatestCI is the transitional cached CI state retained while status still reads legacy evidence hints directly from state.json."
-        },
-        "sync": {
-          "$ref": "#/$defs/LegacySyncState",
-          "description": "Sync is the transitional cached sync state retained while status still reads legacy hints directly from state.json."
-        },
-        "latest_publish": {
-          "$ref": "#/$defs/LegacyPublishState",
-          "description": "LatestPublish is the transitional cached publish state retained while status still reads legacy hints directly from state.json."
         }
       },
       "additionalProperties": false,
       "type": "object",
-      "description": "LocalStateFile is the plan-local runtime state cache under `.local/harness/plans/\u003cplan-stem\u003e/state.json`."
+      "description": "LocalStateFile is the plan-local runtime control artifact under `.local/harness/plans/\u003cplan-stem\u003e/state.json`."
     },
     "ReopenState": {
       "properties": {

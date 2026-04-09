@@ -19,8 +19,6 @@ func TestReadLoadsCurrentPlanTimelineEvents(t *testing.T) {
 		t.Fatalf("save current plan: %v", err)
 	}
 	if _, err := runstate.SaveState(root, "2026-04-01-timeline-plan", &runstate.State{
-		PlanPath:           relPlanPath,
-		PlanStem:           "2026-04-01-timeline-plan",
 		ExecutionStartedAt: "2026-04-01T10:00:00Z",
 		Revision:           1,
 	}); err != nil {
@@ -106,8 +104,6 @@ func TestReadSynthesizesImplementBootstrapWhenExecutionStartedPredatesEventIndex
 		t.Fatalf("save current plan: %v", err)
 	}
 	if _, err := runstate.SaveState(root, "2026-04-01-timeline-plan", &runstate.State{
-		PlanPath:           relPlanPath,
-		PlanStem:           "2026-04-01-timeline-plan",
 		ExecutionStartedAt: "2026-04-01T10:00:00Z",
 		Revision:           1,
 	}); err != nil {

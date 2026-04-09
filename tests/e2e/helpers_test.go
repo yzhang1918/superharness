@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -207,9 +208,7 @@ type statusResult struct {
 
 type runState struct {
 	ExecutionStartedAt string `json:"execution_started_at"`
-	PlanPath           string `json:"plan_path"`
 	Revision           int    `json:"revision"`
-	CurrentNode        string `json:"current_node"`
 	ActiveReviewRound  struct {
 		RoundID    string `json:"round_id"`
 		Aggregated bool   `json:"aggregated"`
@@ -284,6 +283,23 @@ func assertNode(t *testing.T, status statusResult, want string) {
 	t.Helper()
 	if status.State.CurrentNode != want {
 		t.Fatalf("expected current node %q, got %#v", want, status)
+	}
+}
+
+func assertRawStateJSONOmitsKeys(t *testing.T, path string, keys ...string) {
+	t.Helper()
+	var payload map[string]any
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read raw state json: %v", err)
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("parse raw state json: %v", err)
+	}
+	for _, key := range keys {
+		if _, ok := payload[key]; ok {
+			t.Fatalf("expected raw state json to omit %q, got %#v", key, payload)
+		}
 	}
 }
 

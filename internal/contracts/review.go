@@ -377,7 +377,7 @@ type ReviewStartArtifacts struct {
 	// PlanPath is the current plan path associated with the review round.
 	PlanPath string `json:"plan_path"`
 
-	// LocalStatePath is the plan-local state cache path.
+	// LocalStatePath is the plan-local control-plane state path.
 	LocalStatePath string `json:"local_state_path"`
 
 	// RoundID is the stable identifier for the review round.
@@ -466,6 +466,6 @@ type ReviewAggregateArtifacts struct {
 	// AggregatePath is the path to the updated aggregate artifact.
 	AggregatePath string `json:"aggregate_path"`
 
-	// LocalStatePath is the plan-local state cache path.
+	// LocalStatePath is the plan-local control-plane state path.
 	LocalStatePath string `json:"local_state_path"`
 }

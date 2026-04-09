@@ -241,8 +241,6 @@ func writeExecutingPlanFixture(t *testing.T, root, relPath string) {
 	planStem := strings.TrimSuffix(filepath.Base(relPath), filepath.Ext(relPath))
 	if _, err := runstate.SaveState(root, planStem, &runstate.State{
 		ExecutionStartedAt: "2026-04-01T09:30:00Z",
-		PlanPath:           relPath,
-		PlanStem:           planStem,
 		Revision:           1,
 	}); err != nil {
 		t.Fatalf("save execute-start state: %v", err)

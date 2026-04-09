@@ -149,9 +149,6 @@ func archivedReviewHiddenDuringLand(state *runstate.State) bool {
 	if state == nil {
 		return false
 	}
-	if strings.TrimSpace(state.CurrentNode) == "land" {
-		return true
-	}
 	return state.Land != nil &&
 		strings.TrimSpace(state.Land.LandedAt) != "" &&
 		strings.TrimSpace(state.Land.CompletedAt) == ""

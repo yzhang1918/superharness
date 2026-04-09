@@ -11,7 +11,7 @@ import (
 	"github.com/catu-ai/easyharness/internal/runstate"
 )
 
-func TestSubmitRemovesRecordArtifactWhenStateSaveFails(t *testing.T) {
+func TestSubmitIgnoresStateSaveFailuresAndKeepsRecordArtifact(t *testing.T) {
 	testCases := []struct {
 		name       string
 		kind       string
@@ -60,13 +60,13 @@ func TestSubmitRemovesRecordArtifactWhenStateSaveFails(t *testing.T) {
 					return time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC)
 				},
 			}.Submit(tc.kind, []byte(tc.input))
-			if result.OK {
-				t.Fatalf("expected evidence submit failure, got %#v", result)
+			if !result.OK {
+				t.Fatalf("expected evidence submit success, got %#v", result)
 			}
 
 			recordPath := filepath.Join(root, tc.recordPath)
-			if _, err := os.Stat(recordPath); !os.IsNotExist(err) {
-				t.Fatalf("expected evidence record to be removed on rollback, got %v", err)
+			if _, err := os.Stat(recordPath); err != nil {
+				t.Fatalf("expected evidence record to remain on disk, got %v", err)
 			}
 
 			state, statePath, err := runstate.LoadState(root, "2026-04-01-evidence-rollback")
@@ -74,11 +74,11 @@ func TestSubmitRemovesRecordArtifactWhenStateSaveFails(t *testing.T) {
 				t.Fatalf("load state: %v", err)
 			}
 			if state != nil {
-				t.Fatalf("expected no persisted state after rollback, got %#v", state)
+				t.Fatalf("expected no persisted state cache writes, got %#v", state)
 			}
 			if statePath != "" {
 				if _, err := os.Stat(statePath); !os.IsNotExist(err) {
-					t.Fatalf("expected no state file after rollback, got %v", err)
+					t.Fatalf("expected no state file to be written, got %v", err)
 				}
 			}
 		})

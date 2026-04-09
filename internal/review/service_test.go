@@ -113,8 +113,6 @@ func TestStartAcceptsExplicitEarlierStepFromFinalizeContext(t *testing.T) {
 	writeExecutingFinalizePlan(t, root, relPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-review-contract", &runstate.State{
 		ExecutionStartedAt: "2026-03-18T01:00:00Z",
-		PlanPath:           relPath,
-		PlanStem:           "2026-03-18-review-contract",
 		Revision:           1,
 		ActiveReviewRound: &runstate.ReviewRound{
 			RoundID:    "review-001-full",
@@ -242,8 +240,6 @@ func TestStartAcceptsExecutionStartMilestoneWithoutLegacyExecutingLifecycle(t *t
 	writePlainReviewPlan(t, root, relPath)
 	if _, err := runstate.SaveState(root, "2026-03-18-review-contract", &runstate.State{
 		ExecutionStartedAt: "2026-03-18T01:01:00Z",
-		PlanPath:           relPath,
-		PlanStem:           "2026-03-18-review-contract",
 	}); err != nil {
 		t.Fatalf("save state: %v", err)
 	}
@@ -1175,8 +1171,6 @@ func writeExecutingPlan(t *testing.T, root, relPath string) string {
 	path := writePlainReviewPlan(t, root, relPath)
 	if _, err := runstate.SaveState(root, strings.TrimSuffix(filepath.Base(relPath), filepath.Ext(relPath)), &runstate.State{
 		ExecutionStartedAt: "2026-03-18T01:00:00Z",
-		PlanPath:           relPath,
-		PlanStem:           strings.TrimSuffix(filepath.Base(relPath), filepath.Ext(relPath)),
 		Revision:           1,
 	}); err != nil {
 		t.Fatalf("save execute-start state: %v", err)
@@ -1197,8 +1191,6 @@ func writeExecutingFinalizePlan(t *testing.T, root, relPath string) string {
 	}
 	if _, err := runstate.SaveState(root, strings.TrimSuffix(filepath.Base(relPath), filepath.Ext(relPath)), &runstate.State{
 		ExecutionStartedAt: "2026-03-18T01:00:00Z",
-		PlanPath:           relPath,
-		PlanStem:           strings.TrimSuffix(filepath.Base(relPath), filepath.Ext(relPath)),
 		Revision:           1,
 	}); err != nil {
 		t.Fatalf("save execute-start state: %v", err)

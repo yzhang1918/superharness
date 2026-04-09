@@ -287,7 +287,7 @@ func TestServiceReadReturnsArchivedPlanRounds(t *testing.T) {
 func TestServiceReadHidesArchivedRoundsDuringLandCleanup(t *testing.T) {
 	workdir := t.TempDir()
 	relPlanPath, planStem := seedArchivedPlan(t, workdir, "2026-04-02-review-ui-landed.md", "Review UI Landed")
-	saveReviewStateWithNode(t, workdir, planStem, relPlanPath, 1, "", "land")
+	saveReviewStateWithLand(t, workdir, planStem, relPlanPath, 1, "2026-04-03T01:00:00Z", "")
 
 	writeReviewRoundFixture(t, workdir, planStem, "review-001-full", map[string]any{
 		"round_id":        "review-001-full",
@@ -910,8 +910,6 @@ func TestServiceReadKeepsMissingLedgerRoundsDegradedEvenWithAggregateDecision(t 
 		"kind":            "full",
 		"revision":        1,
 		"review_title":    "Finalize review",
-		"plan_path":       relPlanPath,
-		"plan_stem":       planStem,
 		"created_at":      "2026-04-02T12:00:00Z",
 		"ledger_path":     roundArtifactPath(workdir, planStem, "review-001-full", "ledger.json"),
 		"aggregate_path":  roundArtifactPath(workdir, planStem, "review-001-full", "aggregate.json"),
@@ -1006,11 +1004,10 @@ func saveReviewState(t *testing.T, workdir, planStem, relPlanPath string, revisi
 func saveReviewStateWithNode(t *testing.T, workdir, planStem, relPlanPath string, revision int, activeRoundID, currentNode string) {
 	t.Helper()
 	state := &runstate.State{
-		CurrentNode: currentNode,
-		PlanPath:    relPlanPath,
-		PlanStem:    planStem,
-		Revision:    revision,
+		Revision: revision,
 	}
+	_ = relPlanPath
+	_ = currentNode
 	if activeRoundID != "" {
 		state.ActiveReviewRound = &runstate.ReviewRound{
 			RoundID:    activeRoundID,
@@ -1027,14 +1024,13 @@ func saveReviewStateWithNode(t *testing.T, workdir, planStem, relPlanPath string
 func saveReviewStateWithLand(t *testing.T, workdir, planStem, relPlanPath string, revision int, landedAt, completedAt string) {
 	t.Helper()
 	state := &runstate.State{
-		PlanPath: relPlanPath,
-		PlanStem: planStem,
 		Revision: revision,
 		Land: &runstate.LandState{
 			LandedAt:    landedAt,
 			CompletedAt: completedAt,
 		},
 	}
+	_ = relPlanPath
 	if _, err := runstate.SaveState(workdir, planStem, state); err != nil {
 		t.Fatalf("save state: %v", err)
 	}

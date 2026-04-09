@@ -139,21 +139,6 @@ func (s Service) read(acquireLock bool) Result {
 		}
 	}
 
-	relPlanPath, err := filepath.Rel(s.Workdir, planPath)
-	if err != nil {
-		return Result{
-			OK:      false,
-			Command: "status",
-			Summary: "Unable to determine the current plan path.",
-			Artifacts: &Artifacts{
-				PlanPath:       planPath,
-				LocalStatePath: statePath,
-			},
-			Errors: []StatusError{{Path: "plan", Message: err.Error()}},
-		}
-	}
-	relPlanPath = filepath.ToSlash(relPlanPath)
-
 	result := Result{
 		OK:      true,
 		Command: "status",
@@ -212,7 +197,7 @@ func (s Service) read(acquireLock bool) Result {
 			}
 		}
 	case doc.DerivedPlanStatus() == "archived":
-		evidenceCtx, evidenceWarnings := loadEvidenceContext(s.Workdir, state)
+		evidenceCtx, evidenceWarnings := loadEvidenceContext(s.Workdir, planStem, runstate.CurrentRevision(state))
 		result.Warnings = append(result.Warnings, evidenceWarnings...)
 		applyEvidenceFacts(facts, result.Artifacts, evidenceCtx)
 		if archivedCandidateReadyForMerge(evidenceCtx) {
@@ -261,15 +246,6 @@ func (s Service) read(acquireLock bool) Result {
 		result.Facts = nil
 	} else {
 		result.Facts = facts
-	}
-
-	cacheSafe := reviewCtx == nil || !reviewCtx.UnsafeFallback
-	if !cacheSafe {
-		result.Warnings = append(result.Warnings, "Skipping current_node cache refresh because the reviewed step could not be recovered safely from local review metadata.")
-	} else if savedStatePath, err := s.cacheResolvedNode(planStem, relPlanPath, state, result.State.CurrentNode); err != nil {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("Unable to refresh the current_node cache: %v", err))
-	} else if strings.TrimSpace(savedStatePath) != "" {
-		result.Artifacts.LocalStatePath = savedStatePath
 	}
 
 	if result.Artifacts != nil && result.Artifacts.PlanPath == "" && result.Artifacts.LocalStatePath == "" &&
@@ -437,21 +413,21 @@ func loadReviewContext(workdir, planStem string, doc *plan.Document, state *runs
 	return ctx, warnings
 }
 
-func loadEvidenceContext(workdir string, state *runstate.State) (*evidenceContext, []string) {
+func loadEvidenceContext(workdir, planStem string, revision int) (*evidenceContext, []string) {
 	ctx := &evidenceContext{}
 	warnings := make([]string, 0)
 
-	if publish, err := evidence.LoadLatestPublish(workdir, state); err != nil {
+	if publish, err := evidence.LoadLatestPublish(workdir, planStem, revision); err != nil {
 		warnings = append(warnings, fmt.Sprintf("Unable to read publish evidence: %v", err))
 	} else {
 		ctx.Publish = publish
 	}
-	if ci, err := evidence.LoadLatestCI(workdir, state); err != nil {
+	if ci, err := evidence.LoadLatestCI(workdir, planStem, revision); err != nil {
 		warnings = append(warnings, fmt.Sprintf("Unable to read CI evidence: %v", err))
 	} else {
 		ctx.CI = ci
 	}
-	if sync, err := evidence.LoadLatestSync(workdir, state); err != nil {
+	if sync, err := evidence.LoadLatestSync(workdir, planStem, revision); err != nil {
 		warnings = append(warnings, fmt.Sprintf("Unable to read sync evidence: %v", err))
 	} else {
 		ctx.Sync = sync
@@ -989,19 +965,6 @@ func idleResult(currentPlan *runstate.CurrentPlan) Result {
 	return result
 }
 
-func (s Service) cacheResolvedNode(planStem, relPlanPath string, state *runstate.State, currentNode string) (string, error) {
-	if strings.TrimSpace(planStem) == "" {
-		return "", nil
-	}
-	if state == nil {
-		state = &runstate.State{}
-	}
-	state.PlanPath = relPlanPath
-	state.PlanStem = planStem
-	state.CurrentNode = currentNode
-	return runstate.SaveState(s.Workdir, planStem, state)
-}
-
 func currentStepIndex(doc *plan.Document) int {
 	currentStep := doc.CurrentStep()
 	if currentStep == nil {
@@ -1057,24 +1020,6 @@ func activeReviewForStepCloseoutScan(reviewCtx *reviewContext) *stepcloseout.Act
 	}
 }
 
-func fallbackReviewTitleStep(doc *plan.Document, state *runstate.State) (int, bool) {
-	if state != nil {
-		if index, ok := stepIndexFromNode(state.CurrentNode); ok {
-			return index, false
-		}
-	}
-	if index := currentStepIndex(doc); index >= 0 {
-		if index > 0 {
-			return index - 1, true
-		}
-		return index, true
-	}
-	if len(doc.Steps) == 0 {
-		return -1, false
-	}
-	return len(doc.Steps) - 1, true
-}
-
 func landInProgress(state *runstate.State) bool {
 	return state != nil &&
 		state.Land != nil &&
@@ -1084,23 +1029,6 @@ func landInProgress(state *runstate.State) bool {
 
 func stepNode(index int, phase string) string {
 	return fmt.Sprintf("execution/step-%d/%s", index+1, phase)
-}
-
-func stepIndexFromNode(node string) (int, bool) {
-	node = strings.TrimSpace(node)
-	if !strings.HasPrefix(node, "execution/step-") {
-		return -1, false
-	}
-	node = strings.TrimPrefix(node, "execution/step-")
-	parts := strings.SplitN(node, "/", 2)
-	if len(parts) != 2 {
-		return -1, false
-	}
-	var stepNumber int
-	if _, err := fmt.Sscanf(parts[0], "%d", &stepNumber); err != nil || stepNumber <= 0 {
-		return -1, false
-	}
-	return stepNumber - 1, true
 }
 
 func commandErrorsToStatusErrors(errors []lifecycle.CommandError) []StatusError {

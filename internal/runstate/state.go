@@ -18,12 +18,7 @@ type CurrentPlan = contracts.CurrentPlanFile
 type State = contracts.LocalStateFile
 type ReopenState = contracts.ReopenState
 type ReviewRound = contracts.ReviewRoundState
-type EvidenceSet = contracts.EvidenceSetState
-type EvidencePointer = contracts.EvidencePointerState
 type LandState = contracts.LandState
-type CIState = contracts.LegacyCIState
-type SyncState = contracts.LegacySyncState
-type Publish = contracts.LegacyPublishState
 
 type reviewAggregate struct {
 	Decision string `json:"decision"`

@@ -46,15 +46,19 @@ func TestSaveStateWritesExactJSON(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte(`{"current_node":"execution/step-999/review","plan_path":"stale","plan_stem":"old","revision":999}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"revision":999,"execution_started_at":"stale","land":{"landed_at":"stale"}}`), 0o644); err != nil {
 		t.Fatalf("seed state.json: %v", err)
 	}
 
 	state := &State{
-		CurrentNode: "execution/step-1/implement",
-		PlanPath:    "docs/plans/active/example.md",
-		PlanStem:    planStem,
-		Revision:    1,
+		ExecutionStartedAt: "2026-03-26T10:00:00Z",
+		Revision:           1,
+		ActiveReviewRound: &ReviewRound{
+			RoundID:    "review-001-delta",
+			Kind:       "delta",
+			Revision:   1,
+			Aggregated: false,
+		},
 	}
 	savedPath, err := SaveState(root, planStem, state)
 	if err != nil {
@@ -83,7 +87,13 @@ func TestSaveStateWritesExactJSON(t *testing.T) {
 	if loaded == nil {
 		t.Fatalf("LoadState returned nil state")
 	}
-	if loaded.CurrentNode != state.CurrentNode || loaded.PlanPath != state.PlanPath || loaded.PlanStem != state.PlanStem || loaded.Revision != state.Revision {
+	if loaded.ExecutionStartedAt != state.ExecutionStartedAt || loaded.Revision != state.Revision {
+		t.Fatalf("loaded state = %#v, want %#v", loaded, state)
+	}
+	if loaded.ActiveReviewRound == nil || state.ActiveReviewRound == nil {
+		t.Fatalf("expected active review round to survive save/load, got %#v", loaded)
+	}
+	if loaded.ActiveReviewRound.RoundID != state.ActiveReviewRound.RoundID || loaded.ActiveReviewRound.Kind != state.ActiveReviewRound.Kind || loaded.ActiveReviewRound.Revision != state.ActiveReviewRound.Revision {
 		t.Fatalf("loaded state = %#v, want %#v", loaded, state)
 	}
 }

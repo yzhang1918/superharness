@@ -86,7 +86,7 @@
         },
         "local_state_path": {
           "type": "string",
-          "description": "LocalStatePath is the plan-local state cache path."
+          "description": "LocalStatePath is the plan-local control-plane state path."
         },
         "round_id": {
           "type": "string",

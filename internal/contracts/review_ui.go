@@ -34,7 +34,7 @@ type ReviewArtifacts struct {
 	// PlanPath is the current plan path associated with the review data.
 	PlanPath string `json:"plan_path,omitempty"`
 
-	// LocalStatePath is the plan-local state cache path when one exists.
+	// LocalStatePath is the plan-local control-plane state path when one exists.
 	LocalStatePath string `json:"local_state_path,omitempty"`
 
 	// ReviewsDir is the current-plan review rounds directory.

@@ -345,9 +345,10 @@ func TestReviewWorkflowWithBuiltBinary(t *testing.T) {
 	})
 
 	state := support.ReadJSONFile[runState](t, aggregatePayload.Artifacts.LocalStatePath)
-	if state.ExecutionStartedAt == "" || state.PlanPath != planRelPath {
+	if state.ExecutionStartedAt == "" || state.Revision != 1 {
 		t.Fatalf("unexpected runstate: %#v", state)
 	}
+	assertRawStateJSONOmitsKeys(t, aggregatePayload.Artifacts.LocalStatePath, "current_node", "plan_path", "plan_stem")
 	if state.ActiveReviewRound.RoundID != startPayload.Artifacts.RoundID {
 		t.Fatalf("expected active review round %q, got %#v", startPayload.Artifacts.RoundID, state)
 	}
