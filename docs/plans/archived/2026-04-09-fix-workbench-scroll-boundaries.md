@@ -189,6 +189,14 @@ was rerun directly against the seeded local UI fixture and the passing results
 were recorded at
 `output/playwright/manual-scroll-check/cross-page-scroll-contract.json`.
 
+After archive, remote `main` moved ahead and the candidate was reopened in
+`finalize-fix` mode for revision 2 so the branch could absorb the latest
+shared state-model changes before merge handoff. That merge landed cleanly, and
+revision 2 validation reran `pnpm --dir web check`, `pnpm --dir web build`,
+`go test ./...`, rebuilt the repo-local `harness` binary, and reran direct
+cross-page Playwright scroll probes against the current repository's own live
+UI so the evidence no longer depended on the older seeded fixture.
+
 #### Review Notes
 
 NO_STEP_REVIEW_NEEDED: This validation step exists to close the same UI slice as
@@ -214,14 +222,19 @@ as a separate step-only review.
 
 ## Validation Summary
 
-Validated the shared workbench scroll fix with `pnpm --dir web check`,
-`pnpm --dir web build`, `go test ./internal/ui`, and direct Playwright probes
-against a seeded local UI fixture. The retained local evidence includes
-cross-page document-vs-pane scroll results under
+Revision 1 validated the shared workbench scroll fix with
+`pnpm --dir web check`, `pnpm --dir web build`, `go test ./internal/ui`, and
+direct Playwright probes against a seeded local UI fixture. The retained local
+evidence includes cross-page document-vs-pane scroll results under
 `output/playwright/manual-scroll-check/cross-page-scroll-contract.json`,
 covering `Status`, `Timeline`, and `Review`. `scripts/ui-playwright-smoke` was
 also updated to carry the same scroll-contract assertions forward in the repo's
 browser smoke path, and the script still passes `bash -n`.
+
+After revision 2 reopened to absorb `origin/main`, validation was rerun with
+`pnpm --dir web check`, `pnpm --dir web build`, `go test ./...`, a rebuilt
+repo-local `harness` binary, and fresh direct Playwright scroll probes against
+the current repository's own live `Status`, `Timeline`, and `Review` pages.
 
 ## Review Summary
 
@@ -231,26 +244,34 @@ requested changes because the first scroll regression only exercised
 cross-page helper lacked recorded rerun evidence after broadening the smoke
 coverage. Those findings were fixed by extending the shared browser probe to
 `Status` and `Review` and recording direct cross-page evidence. The final
-candidate passed `review-003-full` with no blocking or non-blocking findings.
+revision-1 candidate passed `review-003-full` with no blocking or non-blocking
+findings.
+
+The candidate then reopened in `finalize-fix` mode for revision 2 so it could
+merge the latest `origin/main` before merge handoff. After rerunning the
+validation stack, `review-004-full` passed cleanly with no blocking or
+non-blocking findings.
 
 ## Archive Summary
 
-- Archived At: 2026-04-09T21:42:43+08:00
-- Revision: 1
+- Archived At: 2026-04-09T21:52:25+08:00
+- Revision: 2
 This candidate fixes the shared workbench scroll boundary bug by locking the
 desktop shell to a fixed-height grid, giving Explorer and Inspector panes owned
 overflow, and restoring proper left-pane sizing with
 `.workbench-explorer-body { flex: 1; }`. The shipped browser validation now
 checks the scroll contract across `Status`, `Timeline`, and `Review` instead of
-proving it only on the original Timeline repro.
+proving it only on the original Timeline repro, and revision 2 absorbed the
+latest `origin/main` before merge handoff.
 
-- PR: NONE. The candidate has not been pushed or opened as a PR yet.
-- Ready: Acceptance criteria are satisfied, finalize review is clean, and the
-  retained validation evidence matches the shared workbench change.
-- Merge Handoff: Run `harness archive`, commit the tracked archive move plus
-  summary updates, push branch `codex/fix-workbench-scroll-boundaries`, open or
-  refresh the PR, and record publish/CI/sync evidence until `harness status`
-  reaches `execution/finalize/await_merge`.
+- PR: https://github.com/catu-ai/easyharness/pull/124
+- Ready: Acceptance criteria are satisfied, revision 2 has a clean finalize
+  review in `review-004-full`, and local validation plus browser evidence
+  match the reopened candidate.
+- Merge Handoff: Re-archive the revision-2 candidate, commit the tracked plan
+  move, push branch `codex/fix-workbench-scroll-boundaries`, update PR #124 as
+  needed, and refresh publish/CI/sync evidence until `harness status` reaches
+  `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
@@ -264,6 +285,8 @@ proving it only on the original Timeline repro.
   `harness ui` serves the repaired layout.
 - Cross-page scroll-contract validation in `scripts/ui-playwright-smoke` plus
   retained local Playwright evidence for `Status`, `Timeline`, and `Review`.
+- Revision-2 merge of `origin/main` so the archived candidate includes the
+  latest shared state-model changes before merge handoff.
 
 ### Not Delivered
 
