@@ -1,4 +1,4 @@
-export type Page = "status" | "timeline" | "review";
+export type Page = "status" | "plan" | "timeline" | "review";
 
 export type PageDef = { id: Page; label: string; href: string };
 
@@ -25,6 +25,54 @@ export type StatusResult = {
   artifacts?: Record<string, unknown> | null;
   next_actions?: NextAction[] | null;
   blockers?: ErrorDetail[] | null;
+  warnings?: string[] | null;
+  errors?: ErrorDetail[] | null;
+};
+
+export type PlanHeading = {
+  id: string;
+  label: string;
+  level: number;
+  anchor: string;
+  children?: PlanHeading[] | null;
+};
+
+export type PlanPreview = {
+  status: string;
+  content_type?: string;
+  content?: string;
+  reason?: string;
+  byte_size?: number;
+  extension?: string;
+};
+
+export type PlanNode = {
+  id: string;
+  kind: "directory" | "file";
+  label: string;
+  path?: string;
+  children?: PlanNode[] | null;
+  preview?: PlanPreview | null;
+};
+
+export type PlanDocument = {
+  title: string;
+  path: string;
+  markdown: string;
+  headings: PlanHeading[];
+};
+
+export type PlanResult = {
+  ok: boolean;
+  resource: string;
+  summary: string;
+  artifacts?: {
+    plan_path?: string;
+    supplements_path?: string;
+    local_state_path?: string;
+  } | null;
+  document?: PlanDocument | null;
+  supplements?: PlanNode | null;
   warnings?: string[] | null;
   errors?: ErrorDetail[] | null;
 };

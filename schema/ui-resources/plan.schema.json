@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/catu-ai/easyharness/tree/main/schema/ui-resources/plan.schema.json",
+  "$ref": "#/$defs/PlanResult",
+  "$defs": {
+    "ErrorDetail": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path identifies the field, section, or artifact path associated with the error."
+        },
+        "message": {
+          "type": "string",
+          "description": "Message is the human-readable explanation of the problem."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path",
+        "message"
+      ],
+      "description": "ErrorDetail describes one machine-readable validation or execution problem in a command result."
+    },
+    "PlanArtifacts": {
+      "properties": {
+        "plan_path": {
+          "type": "string",
+          "description": "PlanPath is the current plan path relevant to the plan browser."
+        },
+        "supplements_path": {
+          "type": "string",
+          "description": "SupplementsPath is the current plan's companion supplements directory when one exists."
+        },
+        "local_state_path": {
+          "type": "string",
+          "description": "LocalStatePath is the plan-local control-plane state path when one exists."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "PlanArtifacts points to the current plan package sources."
+    },
+    "PlanDocumentView": {
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Title is the plan title rendered from the markdown H1."
+        },
+        "path": {
+          "type": "string",
+          "description": "Path is the current plan markdown path."
+        },
+        "markdown": {
+          "type": "string",
+          "description": "Markdown is the frontmatter-free markdown body for the plan document."
+        },
+        "headings": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PlanHeadingView"
+              },
+              "type": "array",
+              "description": "Headings is the hierarchical heading tree used by the Plan explorer."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Headings is the hierarchical heading tree used by the Plan explorer."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "title",
+        "path",
+        "markdown",
+        "headings"
+      ],
+      "description": "PlanDocumentView is the main markdown document for the current plan."
+    },
+    "PlanHeadingView": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID is the stable node identifier for this heading within the plan tree."
+        },
+        "label": {
+          "type": "string",
+          "description": "Label is the rendered heading text."
+        },
+        "level": {
+          "type": "integer",
+          "description": "Level is the markdown heading depth from 1 to 6."
+        },
+        "anchor": {
+          "type": "string",
+          "description": "Anchor is the stable in-document anchor for reader navigation."
+        },
+        "children": {
+          "items": {
+            "$ref": "#/$defs/PlanHeadingView"
+          },
+          "type": "array",
+          "description": "Children lists nested heading nodes."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "level",
+        "anchor"
+      ],
+      "description": "PlanHeadingView is one heading node in the current plan markdown document."
+    },
+    "PlanNodeView": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID is the stable explorer node identifier."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Kind reports whether the node is a directory or file."
+        },
+        "label": {
+          "type": "string",
+          "description": "Label is the display label for the node."
+        },
+        "path": {
+          "type": "string",
+          "description": "Path is the repository-relative node path."
+        },
+        "children": {
+          "items": {
+            "$ref": "#/$defs/PlanNodeView"
+          },
+          "type": "array",
+          "description": "Children lists child directory or file nodes."
+        },
+        "preview": {
+          "$ref": "#/$defs/PlanPreview",
+          "description": "Preview is the file preview payload when Kind is `file`."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "label"
+      ],
+      "description": "PlanNodeView is one supplement tree node in the current plan package."
+    },
+    "PlanPreview": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "Status reports whether the preview is fully supported, plain-text fallback, or unavailable."
+        },
+        "content_type": {
+          "type": "string",
+          "description": "ContentType reports how the preview should be rendered."
+        },
+        "content": {
+          "type": "string",
+          "description": "Content carries the preview body when a preview is available."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Reason explains why preview is unavailable or downgraded."
+        },
+        "byte_size": {
+          "type": "integer",
+          "description": "ByteSize is the source file size in bytes."
+        },
+        "extension": {
+          "type": "string",
+          "description": "Extension is the normalized lowercase file extension without the leading dot."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "description": "PlanPreview is the preview state for one supplement file."
+    },
+    "PlanResult": {
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "description": "OK reports whether plan loading succeeded."
+        },
+        "resource": {
+          "type": "string",
+          "description": "Resource is the stable UI resource identifier."
+        },
+        "summary": {
+          "type": "string",
+          "description": "Summary is the concise human-readable explanation of the loaded plan state."
+        },
+        "artifacts": {
+          "$ref": "#/$defs/PlanArtifacts",
+          "description": "Artifacts points to the active-plan package paths used to build this response."
+        },
+        "document": {
+          "$ref": "#/$defs/PlanDocumentView",
+          "description": "Document is the current plan markdown document when one is available for browsing."
+        },
+        "supplements": {
+          "$ref": "#/$defs/PlanNodeView",
+          "description": "Supplements is the current plan package supplements tree when one exists."
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Warnings lists non-fatal degraded-state notes for the overall plan resource."
+        },
+        "errors": {
+          "items": {
+            "$ref": "#/$defs/ErrorDetail"
+          },
+          "type": "array",
+          "description": "Errors lists hard failures that prevented plan loading."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ok",
+        "resource",
+        "summary"
+      ],
+      "description": "PlanResult is the read-only UI resource returned by `/api/plan`."
+    }
+  },
+  "title": "Plan UI resource",
+  "description": "Read-only JSON resource returned by `/api/plan` for `harness ui`."
+}

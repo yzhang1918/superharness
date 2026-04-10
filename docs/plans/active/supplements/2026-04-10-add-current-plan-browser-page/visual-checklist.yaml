@@ -1,0 +1,12 @@
+plan_page:
+  explorer:
+    - current plan title is the root item
+    - heading tree is expanded through H3 by default
+    - supplements appear as a folder under the active plan package
+  reader:
+    - heading clicks keep the full document visible
+    - markdown supplements read like documents, not raw blobs
+    - yaml supplements render as structured plain text
+  unsupported_states:
+    - preview-unavailable messaging stays explicit
+    - oversize and binary cases do not look like crashes

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import "./styles.css";
 
 import {
+  formatPlanError,
   formatReviewError,
   formatStatusError,
   formatTimelineError,
@@ -11,18 +12,19 @@ import {
   productNameLabel,
   workdirLabel,
 } from "./helpers";
-import { ReviewWorkspace, StatusWorkspace, TimelineWorkspace } from "./pages";
-import type { Page, PageDef, ReviewResult, StatusResult, TimelineResult } from "./types";
+import { PlanWorkspace, ReviewWorkspace, StatusWorkspace, TimelineWorkspace } from "./pages";
+import type { Page, PageDef, PlanResult, ReviewResult, StatusResult, TimelineResult } from "./types";
 import { RailIcon, TopbarMetric } from "./workbench";
 
 const pages: PageDef[] = [
   { id: "status", label: "Status", href: "/status" },
+  { id: "plan", label: "Plan", href: "/plan" },
   { id: "timeline", label: "Timeline", href: "/timeline" },
   { id: "review", label: "Review", href: "/review" },
 ];
 
 function isPage(value: string | null): value is Page {
-  return value === "status" || value === "timeline" || value === "review";
+  return value === "status" || value === "plan" || value === "timeline" || value === "review";
 }
 
 function pageFromPathname(pathname: string): Page | null {
@@ -60,6 +62,9 @@ function App() {
   const [status, setStatus] = useState<StatusResult | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
+  const [plan, setPlan] = useState<PlanResult | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
   const [timeline, setTimeline] = useState<TimelineResult | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
@@ -126,6 +131,35 @@ function App() {
 
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (page !== "plan") return;
+
+    const controller = new AbortController();
+    setPlanLoading(true);
+    setPlanError(null);
+
+    fetch("/api/plan", { signal: controller.signal })
+      .then(async (response) => {
+        const payload = (await response.json()) as PlanResult;
+        if (!response.ok || payload.ok === false) {
+          throw new Error(formatPlanError(payload, response.status));
+        }
+        return payload;
+      })
+      .then((nextPlan) => {
+        setPlan(nextPlan);
+        setPlanLoading(false);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setPlan(null);
+        setPlanError(error instanceof Error ? error.message : "Unable to load plan");
+        setPlanLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [page]);
 
   useEffect(() => {
     if (page !== "timeline") return;
@@ -206,6 +240,17 @@ function App() {
     [timeline],
   );
 
+  const activePlan = useMemo(
+    () => ({
+      summary: plan?.summary ?? "Waiting for plan data.",
+      document: plan?.document ?? null,
+      supplements: plan?.supplements ?? null,
+      warnings: Array.isArray(plan?.warnings) ? plan.warnings ?? [] : [],
+      artifacts: pickEntries((plan?.artifacts as Record<string, unknown>) ?? null),
+    }),
+    [plan],
+  );
+
   const activeReview = useMemo(
     () => ({
       rounds: Array.isArray(review?.rounds) ? review.rounds ?? [] : [],
@@ -280,7 +325,17 @@ function App() {
         </aside>
 
         <main class="main-stage">
-          {page === "timeline" ? (
+          {page === "plan" ? (
+            <PlanWorkspace
+              loading={planLoading}
+              error={planError}
+              summary={activePlan.summary}
+              document={activePlan.document}
+              supplements={activePlan.supplements}
+              warnings={activePlan.warnings}
+              artifacts={activePlan.artifacts}
+            />
+          ) : page === "timeline" ? (
             <TimelineWorkspace loading={timelineLoading} error={timelineError} events={activeTimeline.events} />
           ) : page === "review" ? (
             <ReviewWorkspace

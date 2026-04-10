@@ -990,14 +990,14 @@ sleep 0.5
 capture_session_snapshot "$rail_session" "status-topbar-warnings"
 assert_has_text "status-topbar-warnings" "Warnings"
 navigate_via_rail "$rail_session" "timeline-rail" "Status" "status-rail" "Status"
-navigate_via_rail "$rail_session" "status-rail" "Review" "review-rail" "Review data is hidden once land cleanup begins."
+navigate_via_rail "$rail_session" "status-rail" "Review" "review-rail" "Review data is hidden once required post-merge bookkeeping begins."
 assert_workbench_scroll_contract "$rail_session" "review"
 navigate_via_rail "$rail_session" "review-rail" "Status" "status-return" "Status"
 pwcli_close "$rail_session"
 capture_snapshot "/review" "review"
 assert_has_text "review" "Review"
 assert_has_text "review" "Explorer"
-assert_has_text "review" "Review data is hidden once land cleanup begins."
+assert_has_text "review" "Review data is hidden once required post-merge bookkeeping begins."
 assert_lacks_text "review" "Archived finalize review"
 assert_lacks_text "review" "WIP"
 
@@ -1017,7 +1017,7 @@ PY
 capture_snapshot "/review" "review-archived-visible"
 assert_has_text "review-archived-visible" "Archived finalize review"
 assert_has_text "review-archived-visible" "Aggregate review passed cleanly."
-assert_lacks_text "review-archived-visible" "Review data is hidden once land cleanup begins."
+assert_lacks_text "review-archived-visible" "Review data is hidden once required post-merge bookkeeping begins."
 
 python3 - "$runtime_workdir/.local/harness/plans/$plan_stem/state.json" <<'PY'
 import json

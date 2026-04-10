@@ -3,12 +3,20 @@ import { useEffect, useState } from "preact/hooks";
 
 type Tone = "good" | "danger" | "warning" | "muted";
 
-export function RailIcon(props: { page: "status" | "timeline" | "review" }) {
+export function RailIcon(props: { page: "status" | "plan" | "timeline" | "review" }) {
   switch (props.page) {
     case "status":
       return (
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M3 3.5h10v3H3zM3 8.5h10v4H3z" fill="none" stroke="currentColor" stroke-width="1.2" />
+        </svg>
+      );
+    case "plan":
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M4 3.5h6.5L12 5v7.5H4z" fill="none" stroke="currentColor" stroke-width="1.2" />
+          <path d="M10.5 3.7v1.8H12" fill="none" stroke="currentColor" stroke-width="1.2" />
+          <path d="M5.7 7h4.6M5.7 9.2h4.6M5.7 11.4h3.1" fill="none" stroke="currentColor" stroke-width="1.2" />
         </svg>
       );
     case "timeline":

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/catu-ai/easyharness/internal/planui"
 	"github.com/catu-ai/easyharness/internal/reviewui"
 	"github.com/catu-ai/easyharness/internal/status"
 	"github.com/catu-ai/easyharness/internal/timeline"
@@ -96,6 +97,13 @@ func NewHandler(workdir string) (http.Handler, error) {
 		}
 		writeStatusJSON(w, status.Service{Workdir: workdir}.Read())
 	})
+	mux.HandleFunc("/api/plan", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writePlanJSON(w, planui.Service{Workdir: workdir}.Read())
+	})
 	mux.HandleFunc("/api/timeline", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -170,6 +178,14 @@ func serveIndex(staticFS fs.FS, workdir string, w http.ResponseWriter) {
 }
 
 func writeStatusJSON(w http.ResponseWriter, result status.Result) {
+	statusCode := http.StatusOK
+	if !result.OK {
+		statusCode = http.StatusServiceUnavailable
+	}
+	writeJSON(w, statusCode, result)
+}
+
+func writePlanJSON(w http.ResponseWriter, result planui.Result) {
 	statusCode := http.StatusOK
 	if !result.OK {
 		statusCode = http.StatusServiceUnavailable

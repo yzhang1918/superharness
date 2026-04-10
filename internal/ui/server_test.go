@@ -89,6 +89,92 @@ func TestNewHandlerFallsBackToIndexForSPAPath(t *testing.T) {
 	}
 }
 
+func TestNewHandlerServesPlanJSON(t *testing.T) {
+	workdir := t.TempDir()
+	relPlanPath := "docs/plans/active/2026-04-10-ui-plan.md"
+	path := filepath.Join(workdir, filepath.FromSlash(relPlanPath))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir plan dir: %v", err)
+	}
+	rendered, err := plan.RenderTemplate(plan.TemplateOptions{Title: "UI Plan"})
+	if err != nil {
+		t.Fatalf("render plan: %v", err)
+	}
+	rendered = strings.Replace(rendered, "Describe the intended outcome in one or two short paragraphs.", "Read the plan.\n", 1)
+	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	if _, err := runstate.SaveCurrentPlan(workdir, relPlanPath); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	supplementsDir := filepath.Join(workdir, "docs", "plans", "active", "supplements", "2026-04-10-ui-plan")
+	if err := os.MkdirAll(supplementsDir, 0o755); err != nil {
+		t.Fatalf("mkdir supplements: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(supplementsDir, "notes.txt"), []byte("hello plan page\n"), 0o644); err != nil {
+		t.Fatalf("write supplement: %v", err)
+	}
+
+	handler, err := NewHandler(workdir)
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/plan", nil)
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+	if got := recorder.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+
+	var payload struct {
+		OK       bool   `json:"ok"`
+		Resource string `json:"resource"`
+		Document *struct {
+			Title    string `json:"title"`
+			Markdown string `json:"markdown"`
+			Headings []struct {
+				Label    string `json:"label"`
+				Children []struct {
+					Label string `json:"label"`
+				} `json:"children"`
+			} `json:"headings"`
+		} `json:"document"`
+		Supplements *struct {
+			Label    string `json:"label"`
+			Children []struct {
+				Label   string `json:"label"`
+				Preview *struct {
+					Status      string `json:"status"`
+					ContentType string `json:"content_type"`
+				} `json:"preview"`
+			} `json:"children"`
+		} `json:"supplements"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v\n%s", err, recorder.Body.String())
+	}
+	if !payload.OK || payload.Resource != "plan" {
+		t.Fatalf("unexpected plan payload: %#v", payload)
+	}
+	if payload.Document == nil || payload.Document.Title != "UI Plan" || strings.Contains(payload.Document.Markdown, "template_version") {
+		t.Fatalf("unexpected document payload: %#v", payload.Document)
+	}
+	if len(payload.Document.Headings) < 2 || payload.Document.Headings[0].Label != "Goal" || payload.Document.Headings[1].Label != "Scope" {
+		t.Fatalf("unexpected heading tree: %#v", payload.Document.Headings)
+	}
+	if payload.Supplements == nil || payload.Supplements.Label != "2026-04-10-ui-plan" || len(payload.Supplements.Children) != 1 {
+		t.Fatalf("unexpected supplements payload: %#v", payload.Supplements)
+	}
+	if payload.Supplements.Children[0].Preview == nil || payload.Supplements.Children[0].Preview.Status != "supported" || payload.Supplements.Children[0].Preview.ContentType != "text" {
+		t.Fatalf("unexpected supplement preview: %#v", payload.Supplements.Children[0])
+	}
+}
+
 func TestNewHandlerServesTimelineJSON(t *testing.T) {
 	workdir := t.TempDir()
 	relPlanPath := "docs/plans/active/2026-04-01-ui-timeline-plan.md"

@@ -243,6 +243,16 @@
       "go_type": "github.com/catu-ai/easyharness/internal/contracts.NextAction"
     },
     {
+      "key": "ui_resources.plan",
+      "group": "ui_resources",
+      "surface": "public",
+      "title": "Plan UI resource",
+      "description": "Read-only JSON resource returned by `/api/plan` for `harness ui`.",
+      "path": "schema/ui-resources/plan.schema.json",
+      "id": "https://github.com/catu-ai/easyharness/tree/main/schema/ui-resources/plan.schema.json",
+      "go_type": "github.com/catu-ai/easyharness/internal/contracts.PlanResult"
+    },
+    {
       "key": "ui_resources.review",
       "group": "ui_resources",
       "surface": "public",

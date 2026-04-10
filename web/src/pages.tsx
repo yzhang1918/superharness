@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import MarkdownIt from "markdown-it";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 
 import {
   buildTimelineTabs,
@@ -32,6 +33,9 @@ import {
 import type {
   ErrorDetail,
   NextAction,
+  PlanDocument,
+  PlanHeading,
+  PlanNode,
   ReviewAggregateFinding,
   ReviewArtifact,
   ReviewFinding,
@@ -50,6 +54,11 @@ import {
   StatusBadge,
   WorkbenchFrame,
 } from "./workbench";
+
+const markdownRenderer = new MarkdownIt({
+  html: false,
+  linkify: true,
+});
 
 function ReviewFindingCard(props: { finding: ReviewFinding; provenance?: string | null }) {
   const { finding, provenance } = props;
@@ -275,6 +284,375 @@ export function StatusWorkspace(props: {
       </div>
     </WorkbenchFrame>
   );
+}
+
+type FlattenedPlanHeading = PlanHeading & { nodeId: string };
+
+export function PlanWorkspace(props: {
+  loading: boolean;
+  error: string | null;
+  summary: string;
+  document: PlanDocument | null;
+  supplements: PlanNode | null;
+  warnings: string[];
+  artifacts: Array<[string, unknown]>;
+}) {
+  const { loading, error, summary, document, supplements, warnings, artifacts } = props;
+  const documentRootId = document ? `document:${document.path}` : "document";
+  const [selectedNodeId, setSelectedNodeId] = useState<string>(documentRootId);
+  const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(new Set());
+  const readerRef = useRef<HTMLDivElement | null>(null);
+
+  const flattenedHeadings = useMemo(() => flattenPlanHeadings(document?.headings ?? []), [document?.headings]);
+  const documentHTML = useMemo(() => (document ? markdownRenderer.render(document.markdown) : ""), [document]);
+
+  useEffect(() => {
+    setExpandedNodeIds(buildDefaultPlanExpanded(documentRootId, document?.headings ?? [], supplements));
+  }, [documentRootId, document?.headings, supplements]);
+
+  useEffect(() => {
+    if (!document) {
+      setSelectedNodeId(supplements ? planSupplementSelectionId(supplements) : "document");
+      return;
+    }
+
+    setSelectedNodeId((current) => {
+      if (current === documentRootId) return current;
+      if (flattenedHeadings.some((heading) => heading.nodeId === current)) return current;
+      if (supplements && findSupplementNodeBySelectionId(supplements, current)) return current;
+      return documentRootId;
+    });
+  }, [document, documentRootId, flattenedHeadings, supplements]);
+
+  const selectedHeading = flattenedHeadings.find((heading) => heading.nodeId === selectedNodeId) ?? null;
+  const selectedSupplementNode = supplements ? findSupplementNodeBySelectionId(supplements, selectedNodeId) : null;
+  const selectedFile = selectedSupplementNode?.kind === "file" ? selectedSupplementNode : null;
+  const selectedDirectory = selectedSupplementNode?.kind === "directory" ? selectedSupplementNode : null;
+  const detailLabel = selectedHeading?.label || selectedFile?.label || selectedDirectory?.label || document?.title || "Current plan";
+  const explorerCount = document ? String((supplements ? 2 : 1)) : supplements ? "1" : "0";
+
+  useEffect(() => {
+    if (!document || selectedFile) return;
+    const root = readerRef.current;
+    if (!root) return;
+
+    const renderedHeadings = Array.from(root.querySelectorAll("h1, h2, h3, h4, h5, h6"));
+    const headingElements = renderedHeadings.filter(
+      (element, index) => !(index === 0 && element.tagName === "H1" && normalizePlanText(element.textContent || "") === normalizePlanText(document.title)),
+    );
+
+    headingElements.forEach((element, index) => {
+      const heading = flattenedHeadings[index];
+      if (heading) {
+        element.id = heading.anchor;
+      }
+    });
+
+    if (selectedHeading) {
+      const target = headingElements.find((element) => element.id === selectedHeading.anchor) as HTMLElement | undefined;
+      if (target) {
+        root.scrollTop = Math.max(0, target.offsetTop - 18);
+        return;
+      }
+    }
+    root.scrollTop = 0;
+  }, [document, documentHTML, flattenedHeadings, selectedFile, selectedHeading]);
+
+  const toggleNode = (id: string) => {
+    setExpandedNodeIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const renderHeadingNode = (heading: PlanHeading, depth: number) => {
+    const nodeId = planHeadingSelectionId(heading);
+    const isExpanded = expandedNodeIds.has(nodeId);
+    const hasChildren = Array.isArray(heading.children) && heading.children.length > 0;
+
+    return (
+      <div key={nodeId} class="plan-tree-branch">
+        <div class={`plan-tree-row${selectedNodeId === nodeId ? " is-active" : ""}`} style={{ "--plan-depth": String(depth) }}>
+          <button
+            type="button"
+            class={`plan-tree-toggle${hasChildren ? "" : " is-placeholder"}`}
+            onClick={() => hasChildren && toggleNode(nodeId)}
+            aria-label={hasChildren ? `${isExpanded ? "Collapse" : "Expand"} ${heading.label}` : undefined}
+            disabled={!hasChildren}
+          >
+            {hasChildren ? (isExpanded ? "v" : ">") : ""}
+          </button>
+          <button type="button" class="plan-tree-label" onClick={() => setSelectedNodeId(nodeId)}>
+            <span class="plan-tree-text">{heading.label}</span>
+            <span class="plan-tree-meta">H{heading.level}</span>
+          </button>
+        </div>
+        {hasChildren && isExpanded ? <div class="plan-tree-children">{heading.children?.map((child) => renderHeadingNode(child, depth + 1))}</div> : null}
+      </div>
+    );
+  };
+
+  const renderSupplementNode = (node: PlanNode, depth: number) => {
+    const nodeId = planSupplementSelectionId(node);
+    const hasChildren = node.kind === "directory" && Array.isArray(node.children) && node.children.length > 0;
+    const isExpanded = expandedNodeIds.has(nodeId);
+    const previewStatus = node.preview?.status === "fallback" ? "TXT" : node.preview?.content_type?.toUpperCase() || "";
+
+    return (
+      <div key={nodeId} class="plan-tree-branch">
+        <div class={`plan-tree-row${selectedNodeId === nodeId ? " is-active" : ""}`} style={{ "--plan-depth": String(depth) }}>
+          <button
+            type="button"
+            class={`plan-tree-toggle${hasChildren ? "" : " is-placeholder"}`}
+            onClick={() => hasChildren && toggleNode(nodeId)}
+            aria-label={hasChildren ? `${isExpanded ? "Collapse" : "Expand"} ${node.label}` : undefined}
+            disabled={!hasChildren}
+          >
+            {hasChildren ? (isExpanded ? "v" : ">") : ""}
+          </button>
+          <button type="button" class="plan-tree-label" onClick={() => setSelectedNodeId(nodeId)}>
+            <span class="plan-tree-text">{node.kind === "directory" ? node.label : node.label}</span>
+            {node.kind === "file" && previewStatus ? <span class="plan-tree-meta">{previewStatus}</span> : null}
+          </button>
+        </div>
+        {hasChildren && isExpanded ? <div class="plan-tree-children">{node.children?.map((child) => renderSupplementNode(child, depth + 1))}</div> : null}
+      </div>
+    );
+  };
+
+  return (
+    <WorkbenchFrame
+      explorerLabel="Explorer"
+      explorerTitle="Plan"
+      explorerCount={explorerCount}
+      pageTitle="Plan"
+      detailLabel={detailLabel}
+      loading={loading}
+      storageKey="plan"
+      defaultExplorerWidth={320}
+      explorerContent={
+        document || supplements ? (
+          <div class="plan-tree" aria-label="Plan package explorer">
+            {document ? (
+              <div class="plan-tree-branch">
+                <div class={`plan-tree-row${selectedNodeId === documentRootId ? " is-active" : ""}`} style={{ "--plan-depth": "0" }}>
+                  <button
+                    type="button"
+                    class={`plan-tree-toggle${document.headings.length > 0 ? "" : " is-placeholder"}`}
+                    onClick={() => document.headings.length > 0 && toggleNode(documentRootId)}
+                    aria-label={document.headings.length > 0 ? `${expandedNodeIds.has(documentRootId) ? "Collapse" : "Expand"} ${document.title}` : undefined}
+                    disabled={document.headings.length === 0}
+                  >
+                    {document.headings.length > 0 ? (expandedNodeIds.has(documentRootId) ? "v" : ">") : ""}
+                  </button>
+                  <button type="button" class="plan-tree-label" onClick={() => setSelectedNodeId(documentRootId)}>
+                    <span class="plan-tree-text">{document.title}</span>
+                    <span class="plan-tree-meta">PLAN</span>
+                  </button>
+                </div>
+                {expandedNodeIds.has(documentRootId) ? (
+                  <div class="plan-tree-children">{document.headings.map((heading) => renderHeadingNode(heading, 1))}</div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {supplements ? (
+              <div class="plan-tree-branch">
+                <div class={`plan-tree-row${selectedNodeId === planSupplementSelectionId(supplements) ? " is-active" : ""}`} style={{ "--plan-depth": "0" }}>
+                  <button
+                    type="button"
+                    class={`plan-tree-toggle${supplements.children?.length ? "" : " is-placeholder"}`}
+                    onClick={() => supplements.children?.length && toggleNode(planSupplementSelectionId(supplements))}
+                    aria-label={supplements.children?.length ? `${expandedNodeIds.has(planSupplementSelectionId(supplements)) ? "Collapse" : "Expand"} supplements` : undefined}
+                    disabled={!supplements.children?.length}
+                  >
+                    {supplements.children?.length ? (expandedNodeIds.has(planSupplementSelectionId(supplements)) ? "v" : ">") : ""}
+                  </button>
+                  <button type="button" class="plan-tree-label" onClick={() => setSelectedNodeId(planSupplementSelectionId(supplements))}>
+                    <span class="plan-tree-text">supplements</span>
+                    <span class="plan-tree-meta">DIR</span>
+                  </button>
+                </div>
+                {expandedNodeIds.has(planSupplementSelectionId(supplements)) ? (
+                  <div class="plan-tree-children">{supplements.children?.map((node) => renderSupplementNode(node, 1))}</div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <EmptyState>{summary}</EmptyState>
+        )
+      }
+    >
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      {warnings.map((warning) => (
+        <Notice key={warning} tone="warning">
+          {warning}
+        </Notice>
+      ))}
+
+      {document || supplements ? (
+        <div class="inspector-panel">
+          <InspectorHeader
+            title={selectedHeading?.label || selectedFile?.label || selectedDirectory?.label || document?.title || "Plan"}
+            subtitle={
+              selectedHeading
+                ? `${selectedHeading.label} · ${selectedHeading.level ? `H${selectedHeading.level}` : "heading"}`
+                : selectedFile?.path || selectedDirectory?.path || document?.path || summary
+            }
+            meta={
+              selectedFile?.preview ? (
+                <>
+                  <StatusBadge tone={selectedFile.preview.status === "supported" ? "good" : selectedFile.preview.status === "fallback" ? "warning" : "muted"}>
+                    {selectedFile.preview.status === "fallback" ? "Plain Text" : humanizeLabel(selectedFile.preview.status)}
+                  </StatusBadge>
+                  <span>{selectedFile.preview.byte_size ? `${selectedFile.preview.byte_size} bytes` : ""}</span>
+                </>
+              ) : null
+            }
+          />
+
+          {selectedFile ? (
+            <PlanFilePreview file={selectedFile} />
+          ) : selectedDirectory ? (
+            <section class="content-section">
+              <div class="section-head">
+                <h2>{selectedDirectory.label === supplements?.label ? "Supplements" : selectedDirectory.label}</h2>
+                <span class="muted">{selectedDirectory.children?.length ?? 0}</span>
+              </div>
+              <p class="detail-copy">
+                {selectedDirectory.children?.length
+                  ? "Choose a child file to preview its contents."
+                  : "This folder is present but does not contain any previewable entries yet."}
+              </p>
+            </section>
+          ) : document ? (
+            <div class="plan-reader-shell">
+              <div ref={readerRef} class="plan-reader" dangerouslySetInnerHTML={{ __html: documentHTML }} />
+            </div>
+          ) : (
+            <EmptyState>{summary}</EmptyState>
+          )}
+
+          {artifacts.length > 0 ? (
+            <section class="content-section content-section-secondary">
+              <div class="section-head">
+                <h2>Package metadata</h2>
+                <span class="muted">{artifacts.length}</span>
+              </div>
+              <dl class="kv-list">
+                {artifacts.map(([key, value]) => (
+                  <div key={key}>
+                    <dt>{key}</dt>
+                    <dd>{formatValue(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ) : null}
+        </div>
+      ) : (
+        <EmptyState>{summary}</EmptyState>
+      )}
+    </WorkbenchFrame>
+  );
+}
+
+function PlanFilePreview(props: { file: PlanNode }) {
+  const { file } = props;
+  const preview = file.preview;
+  if (!preview) {
+    return <EmptyState>No preview information is available for this file.</EmptyState>;
+  }
+
+  if (preview.status === "not_supported") {
+    return (
+      <section class="content-section">
+        <div class="section-head">
+          <h2>Preview unavailable</h2>
+          <span class="muted">{preview.extension || "file"}</span>
+        </div>
+        <p class="detail-copy">{preview.reason || "This file type is not supported yet."}</p>
+      </section>
+    );
+  }
+
+  if (preview.content_type === "markdown") {
+    return (
+      <div class="plan-reader-shell">
+        {preview.reason ? <div class="plan-preview-note">{preview.reason}</div> : null}
+        <div class="plan-reader" dangerouslySetInnerHTML={{ __html: markdownRenderer.render(preview.content || "") }} />
+      </div>
+    );
+  }
+
+  return (
+    <section class="content-section">
+      {preview.reason ? <div class="plan-preview-note">{preview.reason}</div> : null}
+      <pre class="inspector-json plan-code-block">{preview.content || ""}</pre>
+    </section>
+  );
+}
+
+function flattenPlanHeadings(headings: PlanHeading[]): FlattenedPlanHeading[] {
+  const flattened: FlattenedPlanHeading[] = [];
+  const visit = (items: PlanHeading[]) => {
+    items.forEach((item) => {
+      flattened.push({ ...item, nodeId: planHeadingSelectionId(item) });
+      if (Array.isArray(item.children) && item.children.length > 0) {
+        visit(item.children);
+      }
+    });
+  };
+  visit(headings);
+  return flattened;
+}
+
+function buildDefaultPlanExpanded(documentRootId: string, headings: PlanHeading[], supplements: PlanNode | null): Set<string> {
+  const expanded = new Set<string>();
+  if (headings.length > 0) {
+    expanded.add(documentRootId);
+  }
+  const visit = (items: PlanHeading[]) => {
+    items.forEach((item) => {
+      if (Array.isArray(item.children) && item.children.length > 0 && item.level < 3) {
+        expanded.add(planHeadingSelectionId(item));
+        visit(item.children);
+      }
+    });
+  };
+  visit(headings);
+  if (supplements) {
+    expanded.add(planSupplementSelectionId(supplements));
+  }
+  return expanded;
+}
+
+function planHeadingSelectionId(heading: PlanHeading): string {
+  return `heading:${heading.id}`;
+}
+
+function planSupplementSelectionId(node: PlanNode): string {
+  return `${node.kind}:${node.path || node.id}`;
+}
+
+function findSupplementNodeBySelectionId(root: PlanNode, selectionId: string): PlanNode | null {
+  if (planSupplementSelectionId(root) === selectionId) return root;
+  if (!Array.isArray(root.children)) return null;
+  for (const child of root.children) {
+    const found = findSupplementNodeBySelectionId(child, selectionId);
+    if (found) return found;
+  }
+  return null;
+}
+
+function normalizePlanText(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 export function TimelineWorkspace(props: {

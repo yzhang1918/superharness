@@ -1,5 +1,6 @@
 import type {
   ErrorDetail,
+  PlanResult,
   ReviewAggregateFinding,
   ReviewArtifact,
   ReviewFinding,
@@ -403,6 +404,25 @@ export function reviewArtifactText(artifact: ReviewArtifact | null): string {
   if (!artifact) return "";
   if (artifact.content_type === "text" && typeof artifact.content === "string") return artifact.content;
   return jsonStringify(artifact.content ?? { status: artifact.status, summary: artifact.summary, path: artifact.path });
+}
+
+export function formatPlanError(result: PlanResult | null, statusCode?: number): string {
+  const details = Array.isArray(result?.errors)
+    ? result.errors
+        ?.map((item) => {
+          const path = item.path?.trim();
+          const message = item.message?.trim();
+          if (path && message) return `${path}: ${message}`;
+          return message || path || "";
+        })
+        .filter(Boolean)
+    : [];
+  const summary = result?.summary?.trim();
+  if (summary && details.length > 0) return `${summary} ${details.join("; ")}`;
+  if (summary) return summary;
+  if (details.length > 0) return details.join("; ");
+  if (statusCode) return `GET /api/plan failed with ${statusCode}`;
+  return "Unable to load plan";
 }
 
 export function formatReviewError(result: ReviewResult | null, statusCode?: number): string {

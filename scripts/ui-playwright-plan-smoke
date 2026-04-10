@@ -1,0 +1,539 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v npx >/dev/null 2>&1; then
+  echo "npx is required to run Playwright browser validation." >&2
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required to run Playwright browser validation." >&2
+  exit 1
+fi
+
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pnpm is required to rebuild embedded UI assets before browser validation." >&2
+  exit 1
+fi
+
+export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+export PWCLI="$CODEX_HOME/skills/playwright/scripts/playwright_cli.sh"
+export PATH="$HOME/.local/bin:$PATH"
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+harness_bin="${HARNESS_UI_BINARY:-$repo_root/.local/bin/harness}"
+host="${HARNESS_UI_HOST:-127.0.0.1}"
+tmp_dir="$(mktemp -d)"
+active_workdir="$tmp_dir/active-workdir"
+empty_workdir="$tmp_dir/empty-workdir"
+playwright_root="$tmp_dir/playwright"
+session_prefix="${HARNESS_UI_PLAYWRIGHT_SESSION:-harness-ui-plan-smoke-$$-$(date +%s%N)-$RANDOM}"
+output_dir="${HARNESS_UI_OUTPUT_DIR:-output/playwright/$session_prefix}"
+server_log=""
+server_pid=""
+base_url=""
+
+log_phase() {
+  printf '[plan-ui-smoke] %s\n' "$*" >&2
+}
+
+clear_pwcli_socket() {
+  local session="$1"
+  find "${TMPDIR:-/tmp}" -path "*/pw-*/cli/*-${session}.sock" -delete 2>/dev/null || true
+}
+
+session_workdir() {
+  printf '%s/%s\n' "$playwright_root" "$1"
+}
+
+pwcli() {
+  local session="$1"
+  shift
+  local workdir
+  workdir="$(session_workdir "$session")"
+  mkdir -p "$workdir"
+  python3 - "$PWCLI" "$workdir" "$session" "$@" <<'PY'
+import subprocess
+import sys
+
+pwcli, cwd, session, *args = sys.argv[1:]
+completed = subprocess.run([pwcli, "--session", session, *args], cwd=cwd, check=False)
+sys.exit(completed.returncode)
+PY
+}
+
+pwcli_close() {
+  local session="$1"
+  local workdir
+  workdir="$(session_workdir "$session")"
+  mkdir -p "$workdir"
+  python3 - "$PWCLI" "$session" "$workdir" <<'PY'
+import os
+import signal
+import subprocess
+import sys
+
+pwcli, session, cwd = sys.argv[1:4]
+proc = subprocess.Popen(
+    [pwcli, "--session", session, "close"],
+    cwd=cwd,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    start_new_session=True,
+)
+try:
+    proc.wait(timeout=5)
+except subprocess.TimeoutExpired:
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
+PY
+}
+
+stop_server() {
+  if [[ -n "$server_pid" ]]; then
+    kill "$server_pid" >/dev/null 2>&1 || true
+    wait "$server_pid" >/dev/null 2>&1 || true
+    server_pid=""
+    base_url=""
+  fi
+}
+
+cleanup() {
+  stop_server
+  rm -rf "$tmp_dir"
+}
+
+trap cleanup EXIT
+
+if [[ ! -x "$harness_bin" ]]; then
+  echo "Expected repo-local harness binary at ${harness_bin}" >&2
+  echo "Run scripts/install-dev-harness first, or override HARNESS_UI_BINARY." >&2
+  exit 1
+fi
+
+mkdir -p "$active_workdir" "$empty_workdir" "$playwright_root" "$output_dir"
+
+log_phase "rebuilding embedded UI assets"
+pnpm --dir "$repo_root/web" build >/dev/null
+log_phase "refreshing local harness binary"
+"$repo_root/scripts/install-dev-harness" >/dev/null
+harness_bin="${HARNESS_UI_BINARY:-$repo_root/.local/bin/harness}"
+
+log_phase "seeding active-plan plan-browser fixture"
+python3 - "$active_workdir" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+plan_rel = "docs/plans/active/2026-04-10-plan-ui-smoke.md"
+plan_stem = "2026-04-10-plan-ui-smoke"
+plan_path = root / plan_rel
+supplements_root = root / "docs" / "plans" / "active" / "supplements" / plan_stem
+state_path = root / ".local" / "harness" / "plans" / plan_stem / "state.json"
+
+plan_path.parent.mkdir(parents=True, exist_ok=True)
+supplements_root.mkdir(parents=True, exist_ok=True)
+(supplements_root / "nested").mkdir(parents=True, exist_ok=True)
+state_path.parent.mkdir(parents=True, exist_ok=True)
+(root / ".local" / "harness").mkdir(parents=True, exist_ok=True)
+
+plan_path.write_text(
+    """---
+template_version: 0.2.0
+created_at: "2026-04-10T10:00:00Z"
+source_type: direct_request
+source_refs: []
+---
+
+# Plan UI Smoke
+
+## Goal
+
+Read the current plan package in one dense workbench.
+
+## Scope
+
+### In Scope
+
+- Tree navigation for headings and supplements.
+
+### Out of Scope
+
+- Archived plan browsing.
+
+## Acceptance Criteria
+
+- [ ] The plan page renders the active plan package.
+- [ ] Supplements preview states are visible in the reader.
+
+## Deferred Items
+
+- None.
+
+## Work Breakdown
+
+### Step 1: Build the read model
+
+- Done: [ ]
+
+#### Objective
+
+Serve the active plan package to the UI.
+
+#### Details
+
+Preview supported files in-place.
+
+#### Expected Files
+
+- `internal/planui/service.go`
+
+#### Validation
+
+- `go test ./internal/planui ./internal/ui`
+
+#### Execution Notes
+
+PENDING_STEP_EXECUTION
+
+#### Review Notes
+
+PENDING_STEP_REVIEW
+
+## Validation Strategy
+
+- Use Playwright to inspect the plan page.
+
+## Risks
+
+- Risk: Reader navigation could drift from the selected heading.
+  - Mitigation: Verify heading clicks against reader scroll position.
+
+## Validation Summary
+
+PENDING_UNTIL_ARCHIVE
+
+## Review Summary
+
+PENDING_UNTIL_ARCHIVE
+
+## Archive Summary
+
+PENDING_UNTIL_ARCHIVE
+
+## Outcome Summary
+
+### Delivered
+
+PENDING_UNTIL_ARCHIVE
+
+### Not Delivered
+
+PENDING_UNTIL_ARCHIVE
+
+### Follow-Up Issues
+
+NONE
+""",
+    encoding="utf-8",
+)
+
+(root / ".local" / "harness" / "current-plan.json").write_text(json.dumps({"plan_path": plan_rel}), encoding="utf-8")
+state_path.write_text(
+    json.dumps(
+        {
+            "execution_started_at": "2026-04-10T10:05:00Z",
+            "current_node": "execution/step-1/implement",
+            "plan_path": plan_rel,
+            "plan_stem": plan_stem,
+            "revision": 1,
+        }
+    ),
+    encoding="utf-8",
+)
+
+(supplements_root / "design.md").write_text(
+    "# Reader polish goals\n\nKeep the reader dense, calm, and hierarchy-first.\n",
+    encoding="utf-8",
+)
+(supplements_root / "notes.log").write_text(
+    "plain text fallback\nsecond line\n",
+    encoding="utf-8",
+)
+(supplements_root / "data.json").write_text(
+    json.dumps({"preview": "supported", "kind": "json"}, indent=2) + "\n",
+    encoding="utf-8",
+)
+(supplements_root / "nested" / "config.yaml").write_text(
+    "theme: workbench\nreader: dense\n",
+    encoding="utf-8",
+)
+(supplements_root / "image.png").write_bytes(b"")
+(supplements_root / "binary.bin").write_bytes(bytes([255, 0, 1, 2]))
+(supplements_root / "large.txt").write_text("x" * (256 * 1024 + 8), encoding="utf-8")
+PY
+
+start_server() {
+  local workdir="$1"
+  server_log="$tmp_dir/$(basename "$workdir").log"
+  (
+    cd "$workdir"
+    "$harness_bin" ui --no-open --host "$host" --port 0 >"$server_log" 2>&1
+  ) &
+  server_pid="$!"
+
+  base_url=""
+  for _ in $(seq 1 150); do
+    base_url="$(sed -n 's/^Harness UI listening at \(http:\/\/[^[:space:]]*\)$/\1/p' "$server_log" | tail -n 1)"
+    if [[ -n "$base_url" ]] && curl -sf "${base_url}/api/status" >/dev/null; then
+      return
+    fi
+    sleep 0.2
+  done
+
+  echo "Harness UI failed to start for ${workdir}." >&2
+  cat "$server_log" >&2 || true
+  exit 1
+}
+
+snapshot_path_from_output() {
+  sed -n 's/.*\[Snapshot](\(.*\)).*/\1/p' | tail -n 1
+}
+
+screenshot_path_from_output() {
+  sed -n 's/^- \[Screenshot of viewport\](\(.*\))$/\1/p' | head -n 1
+}
+
+write_inline_snapshot_from_output() {
+  local destination="$1"
+  awk '
+    /^```yaml$/ { capture=1; next }
+    capture && /^```$/ { capture=0; exit }
+    capture { print }
+  ' >"$destination"
+  [[ -s "$destination" ]]
+}
+
+resolve_snapshot_path() {
+  local session="$1"
+  local snapshot="$2"
+  if [[ "$snapshot" == /* ]]; then
+    printf '%s\n' "$snapshot"
+    return
+  fi
+  printf '%s/%s\n' "$(session_workdir "$session")" "$snapshot"
+}
+
+resolve_screenshot_path() {
+  local session="$1"
+  local screenshot="$2"
+  if [[ "$screenshot" == /* ]]; then
+    printf '%s\n' "$screenshot"
+    return
+  fi
+  printf '%s/%s\n' "$(session_workdir "$session")" "$screenshot"
+}
+
+capture_snapshot() {
+  local session="$1"
+  local label="$2"
+  local output snapshot target
+  target="${output_dir}/${label}.yml"
+  output="$(pwcli "$session" snapshot)"
+  snapshot="$(resolve_snapshot_path "$session" "$(printf '%s\n' "$output" | snapshot_path_from_output || true)")"
+  if [[ -n "$snapshot" && -f "$snapshot" ]]; then
+    cp "$snapshot" "$target"
+    return
+  fi
+  if printf '%s\n' "$output" | write_inline_snapshot_from_output "$target"; then
+    return
+  fi
+  echo "Missing Playwright snapshot for ${label}" >&2
+  printf '%s\n' "$output" >&2
+  exit 1
+}
+
+capture_screenshot() {
+  local session="$1"
+  local label="$2"
+  local output screenshot target
+  target="${output_dir}/${label}.png"
+  output="$(pwcli "$session" screenshot)"
+  screenshot="$(resolve_screenshot_path "$session" "$(printf '%s\n' "$output" | screenshot_path_from_output || true)")"
+  if [[ -n "$screenshot" && -f "$screenshot" ]]; then
+    cp "$screenshot" "$target"
+    return
+  fi
+  echo "Missing Playwright screenshot for ${label}" >&2
+  printf '%s\n' "$output" >&2
+  exit 1
+}
+
+assert_has_text() {
+  local label="$1"
+  local expected="$2"
+  local snapshot="${output_dir}/${label}.yml"
+  if ! grep -Fq -- "$expected" "$snapshot"; then
+    echo "Snapshot ${snapshot} did not contain expected text: ${expected}" >&2
+    cat "$snapshot" >&2
+    exit 1
+  fi
+}
+
+link_ref_from_snapshot() {
+  local label="$1"
+  local snapshot="$2"
+  [[ -f "$snapshot" ]] || return 0
+  sed -n "s/.*link \"$label\" .*\\[ref=\\(e[0-9][0-9]*\\)\\].*/\\1/p" "$snapshot" | head -n 1 || true
+}
+
+interactive_ref_from_snapshot() {
+  local label="$1"
+  local snapshot="$2"
+  [[ -f "$snapshot" ]] || return 0
+  grep -F "\"$label\"" "$snapshot" | head -n 1 | sed -n 's/.*\[ref=\(e[0-9][0-9]*\)\].*/\1/p' || true
+}
+
+button_ref_from_snapshot() {
+  local label="$1"
+  local snapshot="$2"
+  [[ -f "$snapshot" ]] || return 0
+  grep -F "button \"$label" "$snapshot" | head -n 1 | sed -n 's/.*\[ref=\(e[0-9][0-9]*\)\].*/\1/p' || true
+}
+
+main_session="plan-main"
+clear_pwcli_socket "$main_session"
+start_server "$active_workdir"
+
+log_phase "capturing Plan page and rail navigation"
+pwcli "$main_session" open "${base_url}/status" >/dev/null
+sleep 1
+capture_snapshot "$main_session" "plan-status-entry"
+plan_ref="$(link_ref_from_snapshot "Plan" "${output_dir}/plan-status-entry.yml")"
+if [[ -z "$plan_ref" ]]; then
+  echo "Could not find Plan rail link." >&2
+  cat "${output_dir}/plan-status-entry.yml" >&2
+  exit 1
+fi
+pwcli "$main_session" click "$plan_ref" >/dev/null
+sleep 0.7
+capture_snapshot "$main_session" "plan-initial"
+capture_screenshot "$main_session" "plan-initial"
+assert_has_text "plan-initial" "Plan"
+assert_has_text "plan-initial" "Plan UI Smoke"
+assert_has_text "plan-initial" "supplements"
+assert_has_text "plan-initial" "design.md"
+assert_has_text "plan-initial" "In Scope"
+
+log_phase "validating heading navigation and explorer expand/collapse"
+scope_ref="$(interactive_ref_from_snapshot "Scope" "${output_dir}/plan-initial.yml")"
+if [[ -z "$scope_ref" ]]; then
+  echo "Could not find Scope heading ref." >&2
+  cat "${output_dir}/plan-initial.yml" >&2
+  exit 1
+fi
+pwcli "$main_session" click "$scope_ref" >/dev/null
+sleep 0.4
+capture_snapshot "$main_session" "plan-scope"
+capture_screenshot "$main_session" "plan-scope"
+assert_has_text "plan-scope" "Scope"
+pwcli "$main_session" run-code '
+async (page) => {
+  return await page.evaluate(() => {
+    const reader = document.querySelector(".plan-reader");
+    const scope = document.querySelector("#scope");
+    if (!reader || !scope) {
+      throw new Error("missing plan reader or #scope anchor");
+    }
+    if (reader.scrollTop < 10) {
+      throw new Error(`expected plan reader to scroll after selecting Scope, got ${reader.scrollTop}`);
+    }
+    return { scrollTop: reader.scrollTop };
+  });
+}
+' >/dev/null
+
+nested_toggle_ref="$(button_ref_from_snapshot "Expand nested" "${output_dir}/plan-scope.yml")"
+if [[ -n "$nested_toggle_ref" ]]; then
+  pwcli "$main_session" click "$nested_toggle_ref" >/dev/null
+  sleep 0.3
+  capture_snapshot "$main_session" "plan-nested-expanded"
+  assert_has_text "plan-nested-expanded" "config.yaml"
+fi
+
+log_phase "validating supplement previews"
+design_ref="$(button_ref_from_snapshot "design.md" "${output_dir}/plan-scope.yml")"
+if [[ -z "$design_ref" ]]; then
+  design_ref="$(button_ref_from_snapshot "design.md" "${output_dir}/plan-nested-expanded.yml")"
+fi
+if [[ -z "$design_ref" ]]; then
+  echo "Could not find design.md ref." >&2
+  exit 1
+fi
+pwcli "$main_session" click "$design_ref" >/dev/null
+sleep 0.4
+capture_snapshot "$main_session" "plan-design-md"
+capture_screenshot "$main_session" "plan-design-md"
+assert_has_text "plan-design-md" "Reader polish goals"
+assert_has_text "plan-design-md" "Keep the reader dense"
+
+notes_ref="$(button_ref_from_snapshot "notes.log" "${output_dir}/plan-design-md.yml")"
+if [[ -z "$notes_ref" ]]; then
+  notes_ref="$(button_ref_from_snapshot "notes.log" "${output_dir}/plan-scope.yml")"
+fi
+pwcli "$main_session" click "$notes_ref" >/dev/null
+sleep 0.4
+capture_snapshot "$main_session" "plan-notes-log"
+capture_screenshot "$main_session" "plan-notes-log"
+assert_has_text "plan-notes-log" "Rendered as plain text because this extension has no richer preview yet."
+assert_has_text "plan-notes-log" "plain text fallback"
+
+image_ref="$(button_ref_from_snapshot "image.png" "${output_dir}/plan-notes-log.yml")"
+if [[ -z "$image_ref" ]]; then
+  image_ref="$(button_ref_from_snapshot "image.png" "${output_dir}/plan-scope.yml")"
+fi
+pwcli "$main_session" click "$image_ref" >/dev/null
+sleep 0.4
+capture_snapshot "$main_session" "plan-image"
+capture_screenshot "$main_session" "plan-image"
+assert_has_text "plan-image" "Preview unavailable"
+assert_has_text "plan-image" "Image preview is not supported in the Plan page yet."
+
+large_ref="$(button_ref_from_snapshot "large.txt" "${output_dir}/plan-image.yml")"
+if [[ -z "$large_ref" ]]; then
+  large_ref="$(button_ref_from_snapshot "large.txt" "${output_dir}/plan-scope.yml")"
+fi
+pwcli "$main_session" click "$large_ref" >/dev/null
+sleep 0.4
+capture_snapshot "$main_session" "plan-large"
+capture_screenshot "$main_session" "plan-large"
+assert_has_text "plan-large" "Preview unavailable"
+assert_has_text "plan-large" "preview limit"
+
+log_phase "validating empty-state behavior in a clean workdir"
+stop_server
+empty_session="plan-empty"
+clear_pwcli_socket "$empty_session"
+start_server "$empty_workdir"
+pwcli "$empty_session" open "${base_url}/plan" >/dev/null
+sleep 0.8
+capture_snapshot "$empty_session" "plan-empty"
+capture_screenshot "$empty_session" "plan-empty"
+assert_has_text "plan-empty" "No current active plan is available to browse in this worktree."
+
+pwcli_close "$main_session" >/dev/null 2>&1 || true
+pwcli_close "$empty_session" >/dev/null 2>&1 || true
+
+log_phase "plan-page Playwright validation passed"
+echo "Playwright Plan UI smoke validation passed."
