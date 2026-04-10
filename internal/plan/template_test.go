@@ -76,3 +76,23 @@ func TestRenderTemplateLightweightSeedsWorkflowProfileAndSingleStep(t *testing.T
 		t.Fatalf("expected lightweight template to collapse to a single step\n%s", rendered)
 	}
 }
+
+func TestRenderTemplateIncludesSupplementsArchiveGuidance(t *testing.T) {
+	rendered, err := plan.RenderTemplate(plan.TemplateOptions{
+		Title: "Supplements Guidance Plan",
+	})
+	if err != nil {
+		t.Fatalf("RenderTemplate returned error: %v", err)
+	}
+	for _, want := range []string{
+		"supplements/<plan-stem>/",
+		"supplement absorption in Archive",
+		"Summary or Outcome Summary",
+		"formal tracked locations",
+		"Lightweight plans should normally avoid",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("expected supplements archive guidance %q in rendered template, got:\n%s", want, rendered)
+		}
+	}
+}

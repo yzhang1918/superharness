@@ -197,6 +197,142 @@ func TestLintFileRejectsInvalidFilename(t *testing.T) {
 	assertHasError(t, result, "path")
 }
 
+func TestLintFileRejectsPlanMarkdownInsideSupplementsDirectory(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/active/supplements/2026-03-17-bad-place.md")
+	content := mustRenderTemplate(t, "Bad Supplements Placement")
+	writeFile(t, path, content)
+
+	result := plan.LintFile(path)
+	if result.OK {
+		t.Fatalf("expected lint failure, got %#v", result)
+	}
+	assertHasError(t, result, "path")
+}
+
+func TestLintFileAllowsValidPlanWhenAncestorDirectoryIsNamedSupplements(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "supplements-parent", "project")
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-valid-plan.md")
+	content := mustRenderTemplate(t, "Valid Plan Under Supplements-Named Ancestor")
+	writeFile(t, path, content)
+
+	result := plan.LintFile(path)
+	if !result.OK {
+		t.Fatalf("expected lint success, got %#v", result)
+	}
+}
+
+func TestLintFileRejectsSupplementsPathWhenItIsAFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-has-supplements.md")
+	content := mustRenderTemplate(t, "Supplements Path Must Be Directory")
+	writeFile(t, path, content)
+	writeFile(t, filepath.Join(root, "docs/plans/active/supplements/2026-03-17-has-supplements"), "not a directory")
+
+	result := plan.LintFile(path)
+	if result.OK {
+		t.Fatalf("expected lint failure, got %#v", result)
+	}
+	assertHasError(t, result, "supplements")
+}
+
+func TestLintFileRejectsSupplementsParentPathWhenItIsAFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-has-supplements.md")
+	content := mustRenderTemplate(t, "Supplements Parent Must Be Directory")
+	writeFile(t, path, content)
+	writeFile(t, filepath.Join(root, "docs/plans/active/supplements"), "not a directory")
+
+	result := plan.LintFile(path)
+	if result.OK {
+		t.Fatalf("expected lint failure, got %#v", result)
+	}
+	assertHasError(t, result, "supplements")
+}
+
+func TestLintFileRejectsArchivedSupplementsParentPathWhenItIsAFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-has-supplements.md")
+	content := mustRenderTemplate(t, "Archived Supplements Parent Must Be Directory")
+	writeFile(t, path, content)
+	writeFile(t, filepath.Join(root, "docs/plans/archived/supplements"), "not a directory")
+
+	result := plan.LintFile(path)
+	if result.OK {
+		t.Fatalf("expected lint failure, got %#v", result)
+	}
+	assertHasError(t, result, "supplements")
+}
+
+func TestLintFileAcceptsMatchingSupplementsDirectory(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-has-supplements.md")
+	content := mustRenderTemplate(t, "Matching Supplements Directory")
+	writeFile(t, path, content)
+	writeFile(t, filepath.Join(root, "docs/plans/active/supplements/2026-03-17-has-supplements/spec.md"), "# draft\n")
+
+	result := plan.LintFile(path)
+	if !result.OK {
+		t.Fatalf("expected lint success, got %#v", result)
+	}
+}
+
+func TestLintFileRejectsConflictingSupplementsRootForSameStem(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-has-supplements.md")
+	content := mustRenderTemplate(t, "Conflicting Supplements Root")
+	writeFile(t, path, content)
+	writeFile(t, filepath.Join(root, "docs/plans/active/supplements/2026-03-17-has-supplements/spec.md"), "# active draft\n")
+	writeFile(t, filepath.Join(root, "docs/plans/archived/supplements/2026-03-17-has-supplements/spec.md"), "# stale archived draft\n")
+
+	result := plan.LintFile(path)
+	if result.OK {
+		t.Fatalf("expected lint failure, got %#v", result)
+	}
+	assertHasError(t, result, "supplements")
+}
+
+func TestLintFileRejectsConflictingSupplementsFileForSameStem(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/active/2026-03-17-has-supplements.md")
+	content := mustRenderTemplate(t, "Conflicting Supplements File")
+	writeFile(t, path, content)
+	writeFile(t, filepath.Join(root, "docs/plans/archived/supplements/2026-03-17-has-supplements"), "stale file")
+
+	result := plan.LintFile(path)
+	if result.OK {
+		t.Fatalf("expected lint failure, got %#v", result)
+	}
+	assertHasError(t, result, "supplements")
+}
+
+func TestLintFileAcceptsMatchingArchivedSupplementsDirectory(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/archived/2026-03-17-has-supplements.md")
+	content := makeArchiveReady(checkAllBoxes(strings.ReplaceAll(mustRenderTemplate(t, "Archived Matching Supplements Directory"), "- Done: [ ]", "- Done: [x]")))
+	writeFile(t, path, content)
+	writeFile(t, filepath.Join(root, "docs/plans/archived/supplements/2026-03-17-has-supplements/spec.md"), "# archived draft\n")
+
+	result := plan.LintFile(path)
+	if !result.OK {
+		t.Fatalf("expected lint success, got %#v", result)
+	}
+}
+
+func TestLintFileRejectsArchivedPlanWhenSupplementsRemainInActiveRoot(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs/plans/archived/2026-03-17-has-supplements.md")
+	content := makeArchiveReady(checkAllBoxes(strings.ReplaceAll(mustRenderTemplate(t, "Archived Conflicting Supplements Root"), "- Done: [ ]", "- Done: [x]")))
+	writeFile(t, path, content)
+	writeFile(t, filepath.Join(root, "docs/plans/active/supplements/2026-03-17-has-supplements/spec.md"), "# stale active draft\n")
+
+	result := plan.LintFile(path)
+	if result.OK {
+		t.Fatalf("expected lint failure, got %#v", result)
+	}
+	assertHasError(t, result, "supplements")
+}
+
 func TestLintFileAcceptsTrackedActiveLightweightPlan(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "docs/plans/active/2026-03-17-lightweight-plan.md")

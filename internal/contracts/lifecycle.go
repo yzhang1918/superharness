@@ -61,9 +61,17 @@ type LifecycleArtifacts struct {
 	// plan.
 	FromPlanPath string `json:"from_plan_path"`
 
+	// FromSupplementsPath is the source supplements directory for transitions
+	// that move a whole plan package.
+	FromSupplementsPath string `json:"from_supplements_path,omitempty"`
+
 	// ToPlanPath is the destination plan path for transitions that create or move
 	// a plan artifact.
 	ToPlanPath string `json:"to_plan_path"`
+
+	// ToSupplementsPath is the destination supplements directory for transitions
+	// that move a whole plan package.
+	ToSupplementsPath string `json:"to_supplements_path,omitempty"`
 
 	// LocalStatePath is the plan-local control-plane state path when one exists.
 	LocalStatePath string `json:"local_state_path,omitempty"`

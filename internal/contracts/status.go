@@ -98,6 +98,10 @@ type StatusArtifacts struct {
 	// current status resolution.
 	PlanPath string `json:"plan_path,omitempty" jsonschema:"example=docs/plans/active/2026-03-31-centralize-contract-schemas-and-generated-reference-docs.md"`
 
+	// SupplementsPath is the companion supplements directory for the current
+	// plan package when one exists.
+	SupplementsPath string `json:"supplements_path,omitempty" jsonschema:"example=docs/plans/active/supplements/2026-03-31-centralize-contract-schemas-and-generated-reference-docs"`
+
 	// LocalStatePath is the plan-local control-plane state path when one exists.
 	LocalStatePath string `json:"local_state_path,omitempty" jsonschema:"example=.local/harness/plans/2026-03-31-centralize-contract-schemas-and-generated-reference-docs/state.json"`
 

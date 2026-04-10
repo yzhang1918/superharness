@@ -138,6 +138,38 @@ func TestDetectCurrentPathKeepsArchivedLightweightPointerWhenNoActivePlanExists(
 	}
 }
 
+func TestSupplementsDirForPlanPath(t *testing.T) {
+	testCases := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "tracked active plan",
+			path: filepath.Join("docs", "plans", "active", "2026-03-18-first.md"),
+			want: filepath.Join("docs", "plans", "active", "supplements", "2026-03-18-first"),
+		},
+		{
+			name: "tracked archived plan",
+			path: filepath.Join("docs", "plans", "archived", "2026-03-18-first.md"),
+			want: filepath.Join("docs", "plans", "archived", "supplements", "2026-03-18-first"),
+		},
+		{
+			name: "local archived lightweight plan",
+			path: filepath.Join(".local", "harness", "plans", "archived", "2026-03-18-first.md"),
+			want: filepath.Join(".local", "harness", "plans", "archived", "supplements", "2026-03-18-first"),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SupplementsDirForPlanPath(tc.path); got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
 func writeTestFile(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -149,6 +149,8 @@ func (s Service) Archive() Result {
 	}
 
 	targetPath := plan.ArchivedPathFor(s.Workdir, planStem, currentPath, doc.WorkflowProfile())
+	sourceSupplementsPath := plan.SupplementsDirForPlanPath(currentPath)
+	targetSupplementsPath := plan.ArchivedSupplementsDirFor(s.Workdir, planStem, currentPath, doc.WorkflowProfile())
 	if _, err := os.Stat(targetPath); err == nil {
 		return errorResult("archive", "Archived target path already exists.", []CommandError{{Path: "path", Message: fmt.Sprintf("target already exists: %s", targetPath)}})
 	}
@@ -163,13 +165,20 @@ func (s Service) Archive() Result {
 	if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
 		return errorResult("archive", "Unable to write archived plan.", []CommandError{{Path: "path", Message: err.Error()}})
 	}
+	movedSupplements, err := moveSupplementsDirIfPresent(sourceSupplementsPath, targetSupplementsPath)
+	if err != nil {
+		_ = os.Remove(targetPath)
+		return errorResult("archive", "Unable to move archived plan supplements.", []CommandError{{Path: "supplements", Message: err.Error()}})
+	}
 	if lint := plan.LintFile(targetPath); !lint.OK {
+		rollbackSupplementsMove(sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 		_ = os.Remove(targetPath)
 		return errorResult("archive", "Archived plan did not pass validation.", lintErrorsToCommandErrors(lint.Errors))
 	}
 
 	relTargetPath, err := filepath.Rel(s.Workdir, targetPath)
 	if err != nil {
+		rollbackSupplementsMove(sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 		_ = os.Remove(targetPath)
 		return errorResult("archive", "Unable to relativize archived plan path.", []CommandError{{Path: "path", Message: err.Error()}})
 	}
@@ -182,6 +191,7 @@ func (s Service) Archive() Result {
 		nextState.Land = nil
 		statePath, err = runstate.SaveState(s.Workdir, planStem, nextState)
 		if err != nil {
+			rollbackSupplementsMove(sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 			_ = os.Remove(targetPath)
 			return errorResult("archive", "Unable to update local state after archiving.", []CommandError{{Path: "state", Message: err.Error()}})
 		}
@@ -192,6 +202,7 @@ func (s Service) Archive() Result {
 		if originalState != nil {
 			_, _ = runstate.SaveState(s.Workdir, planStem, originalState)
 		}
+		rollbackSupplementsMove(sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 		_ = os.Remove(targetPath)
 		return errorResult("archive", "Unable to update current-plan pointer.", []CommandError{{Path: "state", Message: err.Error()}})
 	}
@@ -217,20 +228,22 @@ func (s Service) Archive() Result {
 		},
 		Facts: &Facts{Revision: revision},
 		Artifacts: &Artifacts{
-			FromPlanPath:    relCurrentPath,
-			ToPlanPath:      relTargetPath,
-			LocalStatePath:  statePath,
-			CurrentPlanPath: currentPlanPath,
+			FromPlanPath:        relCurrentPath,
+			ToPlanPath:          relTargetPath,
+			FromSupplementsPath: relPathOrEmpty(s.Workdir, sourceSupplementsPath, movedSupplements),
+			ToSupplementsPath:   relPathOrEmpty(s.Workdir, targetSupplementsPath, movedSupplements),
+			LocalStatePath:      statePath,
+			CurrentPlanPath:     currentPlanPath,
 		},
 		NextAction: nextActions,
 	}
 	if err := os.Remove(currentPath); err != nil {
-		rollbackErrors := rollbackTransition(s.Workdir, relCurrentPath, planStem, originalState, targetPath, statePath)
+		rollbackErrors := rollbackTransition(s.Workdir, relCurrentPath, planStem, originalState, targetPath, statePath, sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 		rollbackErrors = append([]CommandError{{Path: "path", Message: err.Error()}}, rollbackErrors...)
 		return errorResult("archive", "Unable to remove the active plan after archiving.", rollbackErrors)
 	}
 	result = s.finalizeMutation(result, func() []CommandError {
-		return rollbackTransition(s.Workdir, relCurrentPath, planStem, originalState, targetPath, statePath)
+		return rollbackTransition(s.Workdir, relCurrentPath, planStem, originalState, targetPath, statePath, sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 	})
 	return result
 }
@@ -281,6 +294,8 @@ func (s Service) Reopen(mode string) Result {
 	}
 
 	targetPath := plan.ActivePathFor(s.Workdir, planStem, currentPath, doc.WorkflowProfile())
+	sourceSupplementsPath := plan.SupplementsDirForPlanPath(currentPath)
+	targetSupplementsPath := plan.ActiveSupplementsDirFor(s.Workdir, planStem, currentPath, doc.WorkflowProfile())
 	if _, err := os.Stat(targetPath); err == nil {
 		return errorResult("reopen", "Active target path already exists.", []CommandError{{Path: "path", Message: fmt.Sprintf("target already exists: %s", targetPath)}})
 	}
@@ -295,13 +310,20 @@ func (s Service) Reopen(mode string) Result {
 	if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
 		return errorResult("reopen", "Unable to write reopened plan.", []CommandError{{Path: "path", Message: err.Error()}})
 	}
+	movedSupplements, err := moveSupplementsDirIfPresent(sourceSupplementsPath, targetSupplementsPath)
+	if err != nil {
+		_ = os.Remove(targetPath)
+		return errorResult("reopen", "Unable to move reopened plan supplements.", []CommandError{{Path: "supplements", Message: err.Error()}})
+	}
 	if lint := plan.LintFile(targetPath); !lint.OK {
+		rollbackSupplementsMove(sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 		_ = os.Remove(targetPath)
 		return errorResult("reopen", "Reopened plan did not pass validation.", lintErrorsToCommandErrors(lint.Errors))
 	}
 
 	relTargetPath, err := filepath.Rel(s.Workdir, targetPath)
 	if err != nil {
+		rollbackSupplementsMove(sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 		_ = os.Remove(targetPath)
 		return errorResult("reopen", "Unable to relativize active plan path.", []CommandError{{Path: "path", Message: err.Error()}})
 	}
@@ -323,6 +345,7 @@ func (s Service) Reopen(mode string) Result {
 	nextState.Land = nil
 	statePath, err = runstate.SaveState(s.Workdir, planStem, nextState)
 	if err != nil {
+		rollbackSupplementsMove(sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 		_ = os.Remove(targetPath)
 		return errorResult("reopen", "Unable to update local state after reopen.", []CommandError{{Path: "state", Message: err.Error()}})
 	}
@@ -332,6 +355,7 @@ func (s Service) Reopen(mode string) Result {
 		if originalState != nil {
 			_, _ = runstate.SaveState(s.Workdir, planStem, originalState)
 		}
+		rollbackSupplementsMove(sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 		_ = os.Remove(targetPath)
 		return errorResult("reopen", "Unable to update current-plan pointer.", []CommandError{{Path: "state", Message: err.Error()}})
 	}
@@ -345,10 +369,12 @@ func (s Service) Reopen(mode string) Result {
 		},
 		Facts: &Facts{Revision: nextState.Revision, ReopenMode: mode},
 		Artifacts: &Artifacts{
-			FromPlanPath:    relCurrentPath,
-			ToPlanPath:      relTargetPath,
-			LocalStatePath:  statePath,
-			CurrentPlanPath: currentPlanPath,
+			FromPlanPath:        relCurrentPath,
+			ToPlanPath:          relTargetPath,
+			FromSupplementsPath: relPathOrEmpty(s.Workdir, sourceSupplementsPath, movedSupplements),
+			ToSupplementsPath:   relPathOrEmpty(s.Workdir, targetSupplementsPath, movedSupplements),
+			LocalStatePath:      statePath,
+			CurrentPlanPath:     currentPlanPath,
 		},
 		NextAction: []NextAction{
 			{Command: nil, Description: "Review the feedback or remote change that caused reopen."},
@@ -357,12 +383,12 @@ func (s Service) Reopen(mode string) Result {
 		},
 	}
 	if err := os.Remove(currentPath); err != nil {
-		rollbackErrors := rollbackTransition(s.Workdir, relCurrentPath, planStem, originalState, targetPath, statePath)
+		rollbackErrors := rollbackTransition(s.Workdir, relCurrentPath, planStem, originalState, targetPath, statePath, sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 		rollbackErrors = append([]CommandError{{Path: "path", Message: err.Error()}}, rollbackErrors...)
 		return errorResult("reopen", "Unable to remove the archived plan after reopening.", rollbackErrors)
 	}
 	result = s.finalizeMutation(result, func() []CommandError {
-		return rollbackTransition(s.Workdir, relCurrentPath, planStem, originalState, targetPath, statePath)
+		return rollbackTransition(s.Workdir, relCurrentPath, planStem, originalState, targetPath, statePath, sourceSupplementsPath, targetSupplementsPath, movedSupplements)
 	})
 	return result
 }
@@ -869,7 +895,7 @@ func reopenNextActionDescription(mode string) string {
 	return "Repair the reopened finalize-scope issues, refresh durable summaries as needed, and rerun review before archive."
 }
 
-func rollbackTransition(workdir, relCurrentPath, planStem string, originalState *runstate.State, targetPath, statePath string) []CommandError {
+func rollbackTransition(workdir, relCurrentPath, planStem string, originalState *runstate.State, targetPath, statePath, sourceSupplementsPath, targetSupplementsPath string, movedSupplements bool) []CommandError {
 	issues := make([]CommandError, 0)
 	absCurrentPath := filepath.Join(workdir, filepath.FromSlash(relCurrentPath))
 	currentExists := false
@@ -893,11 +919,67 @@ func rollbackTransition(workdir, relCurrentPath, planStem string, originalState 
 	} else if !os.IsNotExist(err) {
 		issues = append(issues, CommandError{Path: "path", Message: fmt.Sprintf("rollback target path stat: %v", err)})
 	}
+	if movedSupplements {
+		issues = append(issues, rollbackSupplementsMove(sourceSupplementsPath, targetSupplementsPath, movedSupplements)...)
+	}
 	if _, err := runstate.SaveCurrentPlan(workdir, relCurrentPath); err != nil {
 		issues = append(issues, CommandError{Path: "state", Message: fmt.Sprintf("rollback current-plan pointer: %v", err)})
 	}
 	issues = append(issues, restoreStateSnapshot(workdir, planStem, originalState, statePath)...)
 	return issues
+}
+
+func moveSupplementsDirIfPresent(sourcePath, targetPath string) (bool, error) {
+	info, err := os.Stat(sourcePath)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.IsDir() {
+		return false, fmt.Errorf("supplements path must be a directory: %s", sourcePath)
+	}
+	if _, err := os.Stat(targetPath); err == nil {
+		return false, fmt.Errorf("target already exists: %s", targetPath)
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		return false, err
+	}
+	if err := os.Rename(sourcePath, targetPath); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func rollbackSupplementsMove(sourcePath, targetPath string, moved bool) []CommandError {
+	if !moved {
+		return nil
+	}
+	issues := make([]CommandError, 0)
+	if _, err := os.Stat(targetPath); err == nil {
+		if err := os.MkdirAll(filepath.Dir(sourcePath), 0o755); err != nil {
+			issues = append(issues, CommandError{Path: "supplements", Message: fmt.Sprintf("rollback supplements parent: %v", err)})
+		} else if err := os.Rename(targetPath, sourcePath); err != nil {
+			issues = append(issues, CommandError{Path: "supplements", Message: fmt.Sprintf("rollback supplements restore: %v", err)})
+		}
+	} else if !os.IsNotExist(err) {
+		issues = append(issues, CommandError{Path: "supplements", Message: fmt.Sprintf("rollback supplements stat: %v", err)})
+	}
+	return issues
+}
+
+func relPathOrEmpty(workdir, path string, include bool) string {
+	if !include {
+		return ""
+	}
+	rel, err := filepath.Rel(workdir, path)
+	if err != nil {
+		return ""
+	}
+	return filepath.ToSlash(rel)
 }
 
 func restoreStateSnapshot(workdir, planStem string, originalState *runstate.State, statePath string) []CommandError {

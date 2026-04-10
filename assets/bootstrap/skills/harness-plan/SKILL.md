@@ -37,8 +37,22 @@ Use this skill to create or update the tracked plan that will drive execution.
 5. Make the plan self-contained. Fold in decisions from discovery or prior
    discussion so another agent can execute from the plan plus repository state
    alone.
+   - when durable execution detail would bloat the markdown plan, persist it in
+     the matching `supplements/<plan-stem>/` package directory under the same
+     active or archived root and treat that material as part of the approved
+     plan package
+   - do not leave repository-facing normative content living only in
+     supplements; before archive, absorb anything the repository should keep
+     depending on into formal tracked locations such as `docs/specs/`, code,
+     tests, or other durable docs
 6. Keep execution detail concise. Push runtime mechanics into skills and CLI
    contracts instead of bloating the plan.
+   - use the markdown plan as the main review entrypoint and use supplements
+     only for bulky durable detail such as spec drafts, formulas, or structured
+     design notes
+   - lightweight plans should avoid supplements by default; if one is truly
+     needed, keep it minimal and remember that its archived snapshot belongs in
+     `.local/harness/plans/archived/supplements/<plan-stem>/`, not tracked git
 7. Reread the plan as if the chat history were unavailable. Fix anything that
    still depends on hidden context.
 8. Run `harness plan lint <plan-path>`.
@@ -65,6 +79,9 @@ The plan is ready when:
   lightweight was eligible, know that archive snapshots move to
   `.local/harness/plans/archived/<plan-stem>.md`, and know that archive-time
   breadcrumb guidance remains required
+- if supplements exist, a future agent could tell what was absorbed into formal
+  tracked locations before archive so the archived supplements are only backup
+  context rather than a hidden dependency
 - the human can approve or challenge it without hidden context
 - when reviewer subagents are likely later, the approval handoff makes that
   expected authorization explicit instead of deferring it implicitly
@@ -77,3 +94,5 @@ The plan is ready when:
   command or spec already defines them.
 - Do not let deferred work float without being named clearly in the plan.
 - Do not leave key decisions only in discovery chat or session memory.
+- Do not treat `supplements/` as optional scratch space once the plan is up for
+  approval; if it matters for execution, it belongs in the approved package.

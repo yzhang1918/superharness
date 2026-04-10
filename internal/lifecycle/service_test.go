@@ -60,6 +60,9 @@ func TestArchiveMovesPlanAndUpdatesPointers(t *testing.T) {
 	if current == nil || current.PlanPath != "docs/plans/archived/2026-03-18-archive-smoke.md" {
 		t.Fatalf("unexpected current plan: %#v", current)
 	}
+	if result.Artifacts == nil || result.Artifacts.FromSupplementsPath != "" || result.Artifacts.ToSupplementsPath != "" {
+		t.Fatalf("expected no supplements artifacts for markdown-only archive, got %#v", result.Artifacts)
+	}
 	state, _, err := runstate.LoadState(root, "2026-03-18-archive-smoke")
 	if err != nil {
 		t.Fatalf("load state: %v", err)
@@ -68,6 +71,42 @@ func TestArchiveMovesPlanAndUpdatesPointers(t *testing.T) {
 		t.Fatalf("unexpected state: %#v", state)
 	}
 	assertRawStateJSONOmitsKeys(t, filepath.Join(root, ".local", "harness", "plans", "2026-03-18-archive-smoke", "state.json"), "current_node", "plan_path", "plan_stem")
+}
+
+func TestArchiveMovesSupplementsDirectoryWithPlanPackage(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
+	writeActiveArchiveCandidate(t, root, activeRelPath)
+	activeSupplements := filepath.Join(root, "docs/plans/active/supplements/2026-03-18-archive-smoke/spec.md")
+	writeFile(t, activeSupplements, "# draft spec\n")
+	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-001-full",
+			Kind:       "full",
+			Revision:   1,
+			Aggregated: true,
+			Decision:   "pass",
+		},
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	result := lifecycle.Service{Workdir: root}.Archive()
+	if !result.OK {
+		t.Fatalf("expected archive success, got %#v", result)
+	}
+
+	archivedSupplements := filepath.Join(root, "docs/plans/archived/supplements/2026-03-18-archive-smoke/spec.md")
+	if _, err := os.Stat(archivedSupplements); err != nil {
+		t.Fatalf("expected archived supplements to move, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(activeSupplements)); !os.IsNotExist(err) {
+		t.Fatalf("expected active supplements directory to be removed, got %v", err)
+	}
+	if result.Artifacts == nil || result.Artifacts.FromSupplementsPath != "docs/plans/active/supplements/2026-03-18-archive-smoke" || result.Artifacts.ToSupplementsPath != "docs/plans/archived/supplements/2026-03-18-archive-smoke" {
+		t.Fatalf("unexpected supplements artifacts: %#v", result.Artifacts)
+	}
 }
 
 func TestArchiveLightweightMovesLocalPlanAndPromptsBreadcrumb(t *testing.T) {
@@ -108,11 +147,45 @@ func TestArchiveLightweightMovesLocalPlanAndPromptsBreadcrumb(t *testing.T) {
 	if result.Artifacts == nil || result.Artifacts.ToPlanPath != archivedRelPath {
 		t.Fatalf("expected archived artifact path %q, got %#v", archivedRelPath, result.Artifacts)
 	}
+	if result.Artifacts.FromSupplementsPath != "" || result.Artifacts.ToSupplementsPath != "" {
+		t.Fatalf("expected no supplements artifacts for lightweight archive without supplements, got %#v", result.Artifacts)
+	}
 	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "repo-visible breadcrumb") {
 		t.Fatalf("expected breadcrumb guidance first, got %#v", result.NextAction)
 	}
 	if !containsActionDescription(result.NextAction, "tracked active-plan removal") {
 		t.Fatalf("expected lightweight archive guidance to mention the tracked active-plan removal, got %#v", result.NextAction)
+	}
+}
+
+func TestArchiveLightweightMovesSupplementsIntoLocalArchivePackage(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-lightweight.md"
+	writeLightweightActiveArchiveCandidate(t, root, activeRelPath)
+	writeFile(t, filepath.Join(root, "docs/plans/active/supplements/2026-03-18-lightweight/spec.md"), "# lightweight draft\n")
+	if _, err := runstate.SaveState(root, "2026-03-18-lightweight", &runstate.State{
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-001-full",
+			Kind:       "full",
+			Revision:   1,
+			Aggregated: true,
+			Decision:   "pass",
+		},
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	result := lifecycle.Service{Workdir: root}.Archive()
+	if !result.OK {
+		t.Fatalf("expected archive success, got %#v", result)
+	}
+	archivedSupplements := filepath.Join(root, ".local/harness/plans/archived/supplements/2026-03-18-lightweight/spec.md")
+	if _, err := os.Stat(archivedSupplements); err != nil {
+		t.Fatalf("expected lightweight archived supplements path, got %v", err)
+	}
+	if result.Artifacts == nil || result.Artifacts.ToSupplementsPath != ".local/harness/plans/archived/supplements/2026-03-18-lightweight" {
+		t.Fatalf("unexpected lightweight supplements artifacts: %#v", result.Artifacts)
 	}
 }
 
@@ -442,6 +515,42 @@ func TestArchiveRestoresActivePlanWhenTimelineAppendFailsAfterCleanup(t *testing
 	}
 	if state == nil {
 		t.Fatalf("expected state to roll back to active state, got %#v", state)
+	}
+}
+
+func TestArchiveRollbackRestoresSupplementsDirectory(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
+	writeActiveArchiveCandidate(t, root, activeRelPath)
+	activeSupplements := filepath.Join(root, "docs/plans/active/supplements/2026-03-18-archive-smoke/spec.md")
+	writeFile(t, activeSupplements, "# draft spec\n")
+	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-001-full",
+			Kind:       "full",
+			Revision:   1,
+			Aggregated: true,
+			Decision:   "pass",
+		},
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	result := lifecycle.Service{
+		Workdir: root,
+		AfterMutation: func(lifecycle.Result) error {
+			return errors.New("timeline append failed")
+		},
+	}.Archive()
+	if result.OK {
+		t.Fatalf("expected archive failure, got %#v", result)
+	}
+	if _, err := os.Stat(activeSupplements); err != nil {
+		t.Fatalf("expected active supplements to be restored, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "docs/plans/archived/supplements/2026-03-18-archive-smoke")); !os.IsNotExist(err) {
+		t.Fatalf("expected archived supplements directory to be rolled back, got %v", err)
 	}
 }
 
@@ -791,6 +900,52 @@ func TestReopenRestoresArchivedPlanWhenTimelineAppendFailsAfterCleanup(t *testin
 	}
 }
 
+func TestReopenRollbackRestoresArchivedSupplementsDirectory(t *testing.T) {
+	root := t.TempDir()
+	writeActiveArchiveCandidate(t, root, "docs/plans/active/2026-03-18-archive-smoke.md")
+	writeFile(t, filepath.Join(root, "docs/plans/active/supplements/2026-03-18-archive-smoke/spec.md"), "# active draft\n")
+	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-001-full",
+			Kind:       "full",
+			Revision:   1,
+			Aggregated: true,
+			Decision:   "pass",
+		},
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	svc := lifecycle.Service{Workdir: root}
+	archive := svc.Archive()
+	if !archive.OK {
+		t.Fatalf("archive failed: %#v", archive)
+	}
+
+	archivedRelPath := "docs/plans/archived/2026-03-18-archive-smoke.md"
+	archivedPath := filepath.Join(root, archivedRelPath)
+	archivedSupplements := filepath.Join(root, "docs/plans/archived/supplements/2026-03-18-archive-smoke/spec.md")
+	reopen := lifecycle.Service{
+		Workdir: root,
+		AfterMutation: func(lifecycle.Result) error {
+			return errors.New("timeline append failed")
+		},
+	}.Reopen("finalize-fix")
+	if reopen.OK {
+		t.Fatalf("expected reopen failure, got %#v", reopen)
+	}
+	if _, err := os.Stat(archivedPath); err != nil {
+		t.Fatalf("expected archived plan to be restored, got %v", err)
+	}
+	if _, err := os.Stat(archivedSupplements); err != nil {
+		t.Fatalf("expected archived supplements to be restored, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "docs/plans/active/supplements/2026-03-18-archive-smoke")); !os.IsNotExist(err) {
+		t.Fatalf("expected reopened active supplements directory to be removed on rollback, got %v", err)
+	}
+}
+
 func TestReopenRemovesSynthesizedStateWhenTimelineAppendFailsWithoutPriorState(t *testing.T) {
 	root := t.TempDir()
 	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
@@ -919,6 +1074,85 @@ func TestReopenLightweightMovesLocalArchiveBackToTrackedActive(t *testing.T) {
 	}
 	if current == nil || current.PlanPath != activeRelPath {
 		t.Fatalf("expected reopened current-plan pointer to move back to tracked active path, got %#v", current)
+	}
+	if reopen.Artifacts == nil || reopen.Artifacts.FromSupplementsPath != "" || reopen.Artifacts.ToSupplementsPath != "" {
+		t.Fatalf("expected no supplements artifacts for markdown-only reopen, got %#v", reopen.Artifacts)
+	}
+}
+
+func TestReopenLightweightMovesSupplementsBackToTrackedActivePackage(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-lightweight-reopen.md"
+	writeLightweightActiveArchiveCandidate(t, root, activeRelPath)
+	writeFile(t, filepath.Join(root, "docs/plans/active/supplements/2026-03-18-lightweight-reopen/spec.md"), "# lightweight active draft\n")
+	if _, err := runstate.SaveState(root, "2026-03-18-lightweight-reopen", &runstate.State{
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
+		Revision:           1,
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-001-full",
+			Kind:       "full",
+			Revision:   1,
+			Aggregated: true,
+			Decision:   "pass",
+		},
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	archive := lifecycle.Service{Workdir: root}.Archive()
+	if !archive.OK {
+		t.Fatalf("archive failed: %#v", archive)
+	}
+	reopen := lifecycle.Service{Workdir: root}.Reopen("finalize-fix")
+	if !reopen.OK {
+		t.Fatalf("reopen failed: %#v", reopen)
+	}
+	reopenedSupplements := filepath.Join(root, "docs/plans/active/supplements/2026-03-18-lightweight-reopen/spec.md")
+	if _, err := os.Stat(reopenedSupplements); err != nil {
+		t.Fatalf("expected reopened lightweight supplements path, got %v", err)
+	}
+	if reopen.Artifacts == nil || reopen.Artifacts.FromSupplementsPath != ".local/harness/plans/archived/supplements/2026-03-18-lightweight-reopen" || reopen.Artifacts.ToSupplementsPath != "docs/plans/active/supplements/2026-03-18-lightweight-reopen" {
+		t.Fatalf("unexpected reopened lightweight supplements artifacts: %#v", reopen.Artifacts)
+	}
+}
+
+func TestReopenMovesSupplementsDirectoryBackToActivePlanPackage(t *testing.T) {
+	root := t.TempDir()
+	activeRelPath := "docs/plans/active/2026-03-18-archive-smoke.md"
+	writeActiveArchiveCandidate(t, root, activeRelPath)
+	writeFile(t, filepath.Join(root, "docs/plans/active/supplements/2026-03-18-archive-smoke/spec.md"), "# active draft\n")
+	if _, err := runstate.SaveState(root, "2026-03-18-archive-smoke", &runstate.State{
+		ExecutionStartedAt: "2026-03-18T01:55:00Z",
+		Revision:           1,
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-001-full",
+			Kind:       "full",
+			Revision:   1,
+			Aggregated: true,
+			Decision:   "pass",
+		},
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	archive := lifecycle.Service{Workdir: root}.Archive()
+	if !archive.OK {
+		t.Fatalf("archive failed: %#v", archive)
+	}
+
+	reopen := lifecycle.Service{Workdir: root}.Reopen("finalize-fix")
+	if !reopen.OK {
+		t.Fatalf("reopen failed: %#v", reopen)
+	}
+	reopenedSupplements := filepath.Join(root, "docs/plans/active/supplements/2026-03-18-archive-smoke/spec.md")
+	if _, err := os.Stat(reopenedSupplements); err != nil {
+		t.Fatalf("expected reopened supplements path, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "docs/plans/archived/supplements/2026-03-18-archive-smoke")); !os.IsNotExist(err) {
+		t.Fatalf("expected archived supplements directory to be removed after reopen, got %v", err)
+	}
+	if reopen.Artifacts == nil || reopen.Artifacts.FromSupplementsPath != "docs/plans/archived/supplements/2026-03-18-archive-smoke" || reopen.Artifacts.ToSupplementsPath != "docs/plans/active/supplements/2026-03-18-archive-smoke" {
+		t.Fatalf("unexpected reopen supplements artifacts: %#v", reopen.Artifacts)
 	}
 }
 

@@ -7,7 +7,8 @@
   allowed v0.2 `current_node` transition, including command-driven milestones
   and derived progression rules.
 - [Plan Schema](./plan-schema.md): shared plan contract for tracked `standard`
-  plans, local `lightweight` plans, and local state expectations.
+  and `lightweight` plans, their markdown-led package layout, and local state
+  expectations.
 - [CLI Contract](./cli-contract.md): agent-facing command surface and JSON
   contract, including repository bootstrap through `harness install`.
 - [Contract Registry](./contract.md): normative guide to the checked-in JSON
