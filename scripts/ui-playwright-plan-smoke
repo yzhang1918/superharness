@@ -191,6 +191,7 @@ Read the current plan package in one dense workbench.
 
 - [ ] The plan page renders the current plan package.
 - [ ] Supplements preview states are visible in the reader.
+- [ ] Inline code like `supplements/`, `H3`, and `not supported` stays readable in flowing text.
 
 ## Deferred Items
 
@@ -229,6 +230,10 @@ PENDING_STEP_REVIEW
 ## Validation Strategy
 
 - Use Playwright to inspect the plan page.
+
+```bash
+harness ui
+```
 
 ## Risks
 
@@ -605,6 +610,34 @@ async (page) => {
     const acceptanceList = acceptanceHeading?.nextElementSibling;
     if (!acceptanceList || acceptanceList.textContent?.includes("[x]") || acceptanceList.textContent?.includes("[ ]")) {
       throw new Error("expected Acceptance Criteria to render without raw markdown checkbox markers");
+    }
+    const inlineCodeValues = ["supplements/", "H3", "not supported"];
+    for (const value of inlineCodeValues) {
+      const codeNode = Array.from(reader.querySelectorAll("code")).find((code) => code.textContent?.trim() === value);
+      if (!(codeNode instanceof HTMLElement)) {
+        throw new Error(`expected inline code token ${value} in the plan reader`);
+      }
+      const styles = window.getComputedStyle(codeNode);
+      if (styles.display !== "inline") {
+        throw new Error(`expected ${value} to render inline, got ${styles.display}`);
+      }
+      if (styles.whiteSpace !== "normal") {
+        throw new Error(`expected ${value} to use normal whitespace, got ${styles.whiteSpace}`);
+      }
+      if (!["normal", "auto"].includes(styles.wordBreak)) {
+        throw new Error(`expected ${value} not to force word breaking, got ${styles.wordBreak}`);
+      }
+    }
+    const fencedCode = Array.from(reader.querySelectorAll("pre code")).find((code) => code.textContent?.includes("harness ui"));
+    if (!(fencedCode instanceof HTMLElement)) {
+      throw new Error("expected fenced code block in the plan reader");
+    }
+    const fencedStyles = window.getComputedStyle(fencedCode);
+    if (fencedStyles.display !== "block") {
+      throw new Error(`expected fenced code to remain block-level, got ${fencedStyles.display}`);
+    }
+    if (!["pre", "pre-wrap"].includes(fencedStyles.whiteSpace)) {
+      throw new Error(`expected fenced code to preserve preformatted whitespace, got ${fencedStyles.whiteSpace}`);
     }
     return { checkboxCount: checkboxes.length };
   });

@@ -206,7 +206,7 @@
         },
         "artifacts": {
           "$ref": "#/$defs/PlanArtifacts",
-          "description": "Artifacts points to the active-plan package paths used to build this response."
+          "description": "Artifacts points to the current-plan package paths used to build this response."
         },
         "document": {
           "$ref": "#/$defs/PlanDocumentView",

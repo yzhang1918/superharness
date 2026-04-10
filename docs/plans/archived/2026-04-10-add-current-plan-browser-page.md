@@ -379,8 +379,17 @@ than treating the validation step as a substitute for candidate review.
   unsupported preview states, idle empty state, hidden package metadata, and
   rendered task-list checkboxes in the reader.
 - Fresh browser artifacts were captured under
-  `output/playwright/harness-ui-plan-smoke-84406-1775831061142582000-25826/`,
-  including `plan-scope.png` and `plan-archived-notes.png` for visual review.
+  `output/playwright/harness-ui-plan-smoke-22415-1775832353429795000-24157/`,
+  including `plan-initial.png` and `plan-scope.png` for visual review.
+- After CI later failed on stale generated contract artifacts, reran the exact
+  failing path locally with `scripts/sync-contract-artifacts --check`,
+  `go test ./tests/smoke -run TestSyncContractArtifactsCheckPassesForCurrentRepo`,
+  and `go test ./internal/contractsync ./internal/planui ./internal/ui`.
+- Revision `5` focused on the markdown reader regression exposed by human
+  screenshots: reran `pnpm --dir web check` plus
+  `scripts/ui-playwright-plan-smoke` after restoring inline-code flow,
+  preserving fenced code blocks, and adding browser assertions that prove both
+  inline code and fenced code keep the intended whitespace semantics.
 
 ## Review Summary
 
@@ -414,22 +423,42 @@ than treating the validation step as a substitute for candidate review.
   instead of "current-plan package paths".
 - `review-006-delta` passed clean after the narrow follow-up fixed that public
   contract wording.
+- When post-archive CI later failed because `schema/ui-resources/plan.schema.json`
+  had not been regenerated after that contract wording change, the candidate
+  was reopened again for a narrow finalize-fix slice.
+- `review-007-delta` passed clean after regenerating the contract artifacts and
+  verifying the exact `sync-contract-artifacts --check` failure path locally.
+- Revision `5` reopened after human interactive testing surfaced one more real
+  reader regression: global code styling was still breaking inline markdown
+  code flow inside checklist prose.
+- `review-008-delta` correctly requested changes because the first CSS repair
+  restored inline code flow but still risked collapsing fenced code blocks in
+  markdown readers, and the smoke did not yet prove the block-code half of the
+  contract.
+- `review-009-delta` passed clean after the follow-up restored preformatted
+  fenced code styling and extended the Playwright smoke to assert both inline
+  code and fenced code behavior explicitly.
 
 ## Archive Summary
 
-- Archived At: 2026-04-10T22:29:21+08:00
-- Revision: 3
+- Archived At: 2026-04-10T22:50:05+08:00
+- Revision: 5
 - The earlier revision `2` archive candidate was reopened with
   `harness reopen --mode finalize-fix` because additional Plan-page UX polish
   still needed repair.
-- Revision `3` is archive-ready and not yet archived.
+- The earlier revision `3` archive candidate was reopened with
+  `harness reopen --mode finalize-fix` because post-archive CI found stale
+  generated contract artifacts.
 - The earlier revision `1` archive candidate was reopened with
   `harness reopen --mode finalize-fix` because merge-handoff behavior still
   needed repair.
+- The earlier revision `4` archive candidate was reopened with
+  `harness reopen --mode finalize-fix` because human screenshot review exposed
+  a markdown-reader regression where inline code still rendered with block-like
+  wrapping behavior.
 - PR: [#134](https://github.com/catu-ai/easyharness/pull/134)
-- Ready: Revision `3` has a clean finalize review after `review-006-delta`,
-  and focused validation is green for the UX polish plus contract-wording
-  follow-up.
+- Ready: Revision `5` has a clean finalize review in `review-009-delta`, and
+  focused validation is green for the reader-style regression repair.
 - Merge Handoff: Archive the repaired candidate, refresh publish/CI/sync
   evidence on PR
   [#134](https://github.com/catu-ai/easyharness/pull/134), and return to
@@ -462,10 +491,15 @@ than treating the validation step as a substitute for candidate review.
   display as disabled reader checkboxes instead of raw `[ ]` and `[x]` text.
 - Corrected the public Plan contract wording so the `PlanResult.Artifacts`
   comment now matches current-plan behavior during archived merge handoff.
+- Regenerated the checked-in plan schema so contract-sync checks stay aligned
+  with the updated current-plan wording in CI.
+- Corrected the markdown reader styling so inline code stays readable inside
+  flowing prose and checklist items without breaking fenced code blocks.
 - Added focused validation for the new resource and browser flow, including
   archived-current-plan coverage, stronger heading-navigation assertions, fresh
-  Playwright screenshots, and binary-content rejection ahead of preview
-  allowlisting.
+  Playwright screenshots, binary-content rejection ahead of preview
+  allowlisting, and explicit browser assertions for both inline-code and
+  fenced-code rendering.
 
 ### Not Delivered
 

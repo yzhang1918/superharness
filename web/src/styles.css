@@ -59,12 +59,12 @@ pre {
 }
 
 code {
-  display: block;
-  margin-top: 0.38rem;
+  display: inline;
+  margin: 0;
   font-size: 0.79rem;
   color: #ce9178;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: normal;
+  word-break: normal;
 }
 
 .app-shell {
@@ -690,6 +690,13 @@ body.is-resizing-workbench .workbench-divider::before {
   color: var(--text-strong);
 }
 
+.stack-list code {
+  display: block;
+  margin-top: 0.38rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .kv-list {
   margin: 0;
 }
@@ -1136,6 +1143,8 @@ body.is-resizing-workbench .workbench-divider::before {
   margin: 0;
   font-size: 0.78rem;
   color: #d7ba7d;
+  white-space: normal;
+  word-break: normal;
 }
 
 .plan-reader pre,
@@ -1153,6 +1162,8 @@ body.is-resizing-workbench .workbench-divider::before {
 .plan-reader pre code {
   display: block;
   color: inherit;
+  white-space: inherit;
+  word-break: normal;
 }
 
 .plan-reader table {
