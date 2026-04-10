@@ -71,6 +71,59 @@ func TestStatusPlanNodeForTrackedLightweightPlan(t *testing.T) {
 	if result.Artifacts == nil || !strings.Contains(result.Artifacts.PlanPath, relPath) {
 		t.Fatalf("unexpected artifacts: %#v", result.Artifacts)
 	}
+	if result.Artifacts.SupplementsPath != "" {
+		t.Fatalf("expected no supplements path for markdown-only plan, got %#v", result.Artifacts)
+	}
+}
+
+func TestStatusSurfacesSupplementsDirectoryForCurrentPlanPackage(t *testing.T) {
+	root := t.TempDir()
+	relPath := "docs/plans/active/2026-03-18-status-plan.md"
+	writePlan(t, root, relPath, func(content string) string {
+		return content
+	})
+	supplementPath := filepath.Join(root, "docs/plans/active/supplements/2026-03-18-status-plan/spec.md")
+	if err := os.MkdirAll(filepath.Dir(supplementPath), 0o755); err != nil {
+		t.Fatalf("mkdir supplements dir: %v", err)
+	}
+	if err := os.WriteFile(supplementPath, []byte("# spec draft\n"), 0o644); err != nil {
+		t.Fatalf("write supplements file: %v", err)
+	}
+
+	result := status.Service{Workdir: root}.Read()
+	if !result.OK {
+		t.Fatalf("expected OK status result, got %#v", result)
+	}
+	if result.Artifacts == nil || !strings.Contains(result.Artifacts.SupplementsPath, "docs/plans/active/supplements/2026-03-18-status-plan") {
+		t.Fatalf("unexpected supplements artifacts: %#v", result.Artifacts)
+	}
+}
+
+func TestStatusSurfacesSupplementsDirectoryForArchivedPlanPackage(t *testing.T) {
+	root := t.TempDir()
+	relPath := "docs/plans/archived/2026-03-18-status-plan.md"
+	writePlan(t, root, relPath, func(content string) string {
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, relPath)
+	writeState(t, root, "2026-03-18-status-plan", map[string]any{
+		"revision": 1,
+	})
+	supplementPath := filepath.Join(root, "docs/plans/archived/supplements/2026-03-18-status-plan/spec.md")
+	if err := os.MkdirAll(filepath.Dir(supplementPath), 0o755); err != nil {
+		t.Fatalf("mkdir archived supplements dir: %v", err)
+	}
+	if err := os.WriteFile(supplementPath, []byte("# archived spec draft\n"), 0o644); err != nil {
+		t.Fatalf("write archived supplements file: %v", err)
+	}
+
+	result := status.Service{Workdir: root}.Read()
+	if !result.OK {
+		t.Fatalf("expected OK status result, got %#v", result)
+	}
+	if result.Artifacts == nil || !strings.Contains(result.Artifacts.SupplementsPath, "docs/plans/archived/supplements/2026-03-18-status-plan") {
+		t.Fatalf("unexpected archived supplements artifacts: %#v", result.Artifacts)
+	}
 }
 
 func TestStatusLightweightPublishPromptsForBreadcrumb(t *testing.T) {
@@ -92,6 +145,9 @@ func TestStatusLightweightPublishPromptsForBreadcrumb(t *testing.T) {
 	if len(result.NextAction) == 0 || !strings.Contains(result.NextAction[0].Description, "repo-visible breadcrumb") {
 		t.Fatalf("expected breadcrumb guidance first, got %#v", result.NextAction)
 	}
+	if result.Artifacts == nil || result.Artifacts.SupplementsPath != "" {
+		t.Fatalf("expected no lightweight supplements path when no supplements directory exists, got %#v", result.Artifacts)
+	}
 	foundCommitPush := false
 	for _, action := range result.NextAction {
 		if strings.Contains(action.Description, "Commit and push the tracked plan change created by archiving") {
@@ -104,6 +160,34 @@ func TestStatusLightweightPublishPromptsForBreadcrumb(t *testing.T) {
 	}
 	if !strings.Contains(result.Summary, "repo-visible breadcrumb") {
 		t.Fatalf("expected summary to mention breadcrumb, got %q", result.Summary)
+	}
+}
+
+func TestStatusLightweightArchivedPlanSurfacesSupplementsDirectory(t *testing.T) {
+	root := t.TempDir()
+	relPath := ".local/harness/plans/archived/2026-03-18-status-lightweight.md"
+	writePlan(t, root, relPath, func(content string) string {
+		content = strings.Replace(content, "source_refs: []", "source_refs: []\nworkflow_profile: lightweight", 1)
+		return completeAllSteps(content, true)
+	})
+	writeCurrentPlan(t, root, relPath)
+	writeState(t, root, "2026-03-18-status-lightweight", map[string]any{
+		"revision": 1,
+	})
+	supplementPath := filepath.Join(root, ".local/harness/plans/archived/supplements/2026-03-18-status-lightweight/spec.md")
+	if err := os.MkdirAll(filepath.Dir(supplementPath), 0o755); err != nil {
+		t.Fatalf("mkdir lightweight supplements dir: %v", err)
+	}
+	if err := os.WriteFile(supplementPath, []byte("# lightweight archived spec draft\n"), 0o644); err != nil {
+		t.Fatalf("write lightweight supplements file: %v", err)
+	}
+
+	result := status.Service{Workdir: root}.Read()
+	if !result.OK {
+		t.Fatalf("expected OK status result, got %#v", result)
+	}
+	if result.Artifacts == nil || !strings.Contains(result.Artifacts.SupplementsPath, ".local/harness/plans/archived/supplements/2026-03-18-status-lightweight") {
+		t.Fatalf("unexpected lightweight archived supplements artifacts: %#v", result.Artifacts)
 	}
 }
 

@@ -3,6 +3,7 @@ package status
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -146,6 +147,14 @@ func (s Service) read(acquireLock bool) Result {
 			PlanPath:       planPath,
 			LocalStatePath: statePath,
 		},
+	}
+	supplementsPath := plan.SupplementsDirForPlanPath(planPath)
+	if info, err := os.Stat(supplementsPath); err == nil && info.IsDir() {
+		result.Artifacts.SupplementsPath = supplementsPath
+	} else if err != nil && !os.IsNotExist(err) {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("unable to inspect supplements path %s: %v", supplementsPath, err))
+	} else if err == nil && !info.IsDir() {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("supplements path is not a directory: %s", supplementsPath))
 	}
 
 	reviewCtx, reviewWarnings := loadReviewContext(s.Workdir, planStem, doc, state)

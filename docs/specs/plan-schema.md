@@ -4,12 +4,14 @@
 
 This document defines the normative v0.2 plan contract for `easyharness`.
 
-In v0.2, standard and lightweight plans share one markdown schema. Active plans
-for both profiles live in tracked markdown under `docs/plans/active/`.
-Lightweight diverges only at archive time, when the archived snapshot moves
-into command-owned local storage. Runtime lifecycle, milestone timestamps,
-review rounds, evidence history, and resolved node state live in
-`.local/harness/`.
+In v0.2, standard and lightweight plans share one markdown schema, but the
+durable planning unit is a markdown-led plan package rather than a lone file.
+Active plans for both profiles live in tracked markdown under
+`docs/plans/active/`, and may carry approval-scoped companion material under a
+matching `supplements/<plan-stem>/` directory. Lightweight diverges only at
+archive time, when the archived snapshot moves into command-owned local
+storage. Runtime lifecycle, milestone timestamps, review rounds, evidence
+history, and resolved node state live in `.local/harness/`.
 
 ## Directory Layout
 
@@ -18,12 +20,23 @@ Tracked plan locations live in:
 - `docs/plans/active/`
 - `docs/plans/archived/`
 
+Tracked plan package companion locations live in:
+
+- `docs/plans/active/supplements/<plan-stem>/`
+- `docs/plans/archived/supplements/<plan-stem>/`
+
 Lightweight local archived snapshots live in:
 
 - `.local/harness/plans/archived/<plan-stem>.md`
+- `.local/harness/plans/archived/supplements/<plan-stem>/`
 
 There is no local active lightweight plan path in v0.2. Both `standard` and
 `lightweight` active plans live under `docs/plans/active/`.
+
+The markdown file remains the canonical plan path for status resolution,
+current-plan pointers, and most command artifacts. When a matching
+`supplements/<plan-stem>/` directory exists, it is part of the same approved
+plan package and must move with the markdown plan during archive and reopen.
 
 Command-owned local artifacts live under:
 
@@ -33,7 +46,13 @@ Command-owned local artifacts live under:
 - `.local/harness/plans/<plan-stem>/evidence/`
 
 Tracked plans remain durable repository history for active work and standard
-archives. Lightweight archived snapshots are command-owned local execution
+archives. Their optional `supplements/` directories are execution input during
+active work and cold-backup context after archive, not a durable dependency
+surface that later execution should keep relying on. Before archive, any
+normative or reusable material that the repository must still depend on should
+be absorbed into formal durable locations such as `docs/specs/`, code, tests,
+or other tracked docs. The markdown plan remains the default reading
+entrypoint. Lightweight archived snapshots are command-owned local execution
 artifacts. `.local` is still disposable execution support and trajectory;
 lightweight workflow use must therefore leave a small repo-visible breadcrumb
 outside the local archive path, as defined by the CLI and agent guidance
@@ -52,6 +71,39 @@ The source-of-truth split is:
 Skills and agent prompts should point operators back to this schema, the state
 model, and CLI help instead of duplicating the contract.
 
+## Plan Package Semantics
+
+Each tracked or archived markdown plan may own an optional companion directory
+at `supplements/<plan-stem>/` under the same active or archived root.
+
+Rules:
+
+- approval covers the markdown plan and its matching supplements directory as
+  one plan package
+- bulky but durable execution detail that should survive context compaction may
+  live in supplements, such as spec drafts, formulas, design notes, or other
+  structured reasoning that is too large or awkward for the main markdown
+- supplements are a staging area for approved execution detail, not the final
+  durable home for repository-facing normative content; before archive, anything
+  the repository should keep depending on must be absorbed into formal tracked
+  locations
+- supplements are not free-form scratch space; they share the same governance
+  boundary as the markdown plan
+- the markdown file stays concise and remains the main review and archive
+  entrypoint even when supplements exist
+- `harness plan lint` validates the markdown file directly and also rejects
+  invalid companion placement, such as a plan markdown stored under a
+  `supplements/` subtree or a supplements path that is not a directory
+
+Execution-time update rules:
+
+- after approval, agents may update execution-facing closeout, review notes,
+  and supplement absorption tracking without reopening approval
+- agents must not silently change approved intent, scope, acceptance criteria,
+  or key design constraints in either the markdown plan or supplements
+- if a package change would alter the approved intent, reuse the normal plan
+  update or reopen approval boundary instead of drifting the package silently
+
 ## File Naming
 
 Each plan file name is its durable identifier.
@@ -68,6 +120,7 @@ Where:
 The file stem is the durable identifier used by command-owned local state:
 
 - `.local/harness/plans/<plan-stem>/...`
+- matching `supplements/<plan-stem>/` package directories
 
 ## Frontmatter
 
@@ -189,6 +242,11 @@ Every plan must contain these sections in order:
 - `### Not Delivered`
 - `### Follow-Up Issues`
 
+The markdown plan does not need a dedicated `Supplements` top-level section.
+When supplements exist, keep the package discoverable by naming the directory
+with the plan stem and by mentioning important supplement absorption in the
+existing archive-facing summaries.
+
 ## Acceptance Criteria
 
 - every acceptance criterion must be a markdown checkbox
@@ -243,6 +301,9 @@ Rules:
   step is too small or low risk to justify a separate step-closeout review
 - if `Step Acceptance Criteria` exists, every entry must be a markdown checkbox
 - archived plans require all step-local acceptance checkboxes to be checked
+- when discovery detail is too bulky for `Details`, move that material into the
+  matching `supplements/<plan-stem>/` package directory rather than burying it
+  only in chat history
 
 ## Placeholder Policy
 
@@ -295,6 +356,9 @@ Use these two surfaces deliberately:
 - `## Outcome Summary > Follow-Up Issues`
   - the durable handoff note recorded at archive time for deferred items that
     remain intentionally out of scope
+- `## Archive Summary` / `## Outcome Summary`
+  - the place to summarize supplement absorption, such as which draft files
+    became formal specs, code, tests, or other durable repository artifacts
 
 Archive readiness rules:
 
@@ -319,6 +383,8 @@ The lightweight profile is eligible only when all of these are true:
     behavior, state transitions, or command semantics
 - the controller can explain the lightweight choice in one small repo-visible
   breadcrumb such as a PR body note
+- the plan can stay clear and reviewable without depending on supplements as a
+  default authoring pattern
 
 The lightweight profile is not eligible when any of these are true:
 
@@ -330,6 +396,12 @@ The lightweight profile is not eligible when any of these are true:
   for a tracked archive record
 - the controller is unsure whether the slice is truly low-risk
 
+Lightweight plans should normally avoid `supplements/`. If a lightweight plan
+temporarily needs one, keep it minimal, treat it with the same approval
+governance as the markdown plan, and ensure archive writes it only to
+`.local/harness/plans/archived/supplements/<plan-stem>/` rather than treating
+it as durable tracked history.
+
 When there is any doubt, escalate to the standard tracked-plan workflow.
 
 ## Active Plan Rules
@@ -337,6 +409,7 @@ When there is any doubt, escalate to the standard tracked-plan workflow.
 An active plan must satisfy all of these:
 
 - the file lives under `docs/plans/active/`
+- the file does not live inside `docs/plans/active/supplements/`
 - lightweight does not create a separate local active-plan location
 - the required frontmatter fields are present
 - any optional `workflow_profile` field is compatible with the path:
@@ -347,6 +420,11 @@ An active plan must satisfy all of these:
   placeholders
 - reopen update markers are allowed only while the plan is active again after
   a reopen
+- when a matching `docs/plans/active/supplements/<plan-stem>/` directory
+  exists, it is part of the same approved package
+- when the active plan uses `workflow_profile: lightweight`, supplements are
+  supported but should be exceptional rather than the default way to carry plan
+  detail
 
 ## Archived Plan Rules
 
@@ -359,6 +437,7 @@ An archived plan must satisfy all of these:
   - tracked archived plans must omit `workflow_profile`
   - local archived plans require `workflow_profile: lightweight`
 - every acceptance criterion is checked
+- the markdown plan does not live inside an archived `supplements/` subtree
 - every step is `Done: [x]`
 - every step-local acceptance checkbox is checked when present
 - no completed step still contains:
@@ -369,6 +448,15 @@ An archived plan must satisfy all of these:
   - `UPDATE_REQUIRED_AFTER_REOPEN`
 - if `Deferred Items` contains real items, `Follow-Up Issues` must not be
   `NONE`
+- when a matching archived `supplements/<plan-stem>/` directory exists, it is
+  retained only as cold-backup context rather than becoming the primary reading
+  entrypoint or a durable correctness dependency
+- archive-time correctness must not depend on archived supplements continuing to
+  exist; content that still matters after archive must already be absorbed into
+  formal tracked locations outside the supplements tree
+- when the archived plan is `lightweight`, any supplements snapshot lives only
+  under `.local/harness/plans/archived/supplements/<plan-stem>/` and must not
+  be treated as tracked repository history
 
 ### Required Archive Summary Contents
 
@@ -379,6 +467,15 @@ The `Archive Summary` section must include:
 - `- PR: <URL or NONE>`
 - `- Ready: <why this candidate is ready to wait for merge approval>`
 - `- Merge Handoff: <handoff note for the archived candidate>`
+
+When supplements existed during execution, the archive-facing summaries should
+also note the important absorption result at a human-readable level, such as:
+
+- which supplement drafts became formal specs or code
+- which supplement files remain only as archived backup context
+
+Those summaries should make it clear that archive-time correctness no longer
+depends on the supplements remaining available verbatim.
 
 `Revision` is command-owned runtime history that must be stamped into the
 tracked archive summary. It is no longer tracked as frontmatter.
@@ -392,6 +489,8 @@ active:
   - `docs/plans/archived/` -> `docs/plans/active/` for `standard`
   - `.local/harness/plans/archived/` -> `docs/plans/active/` for
     `lightweight`
+- move the matching `supplements/<plan-stem>/` directory with the markdown
+  plan when it exists
 - preserve prior archive-time wording
 - prepend `UPDATE_REQUIRED_AFTER_REOPEN` markers to reopen-sensitive summaries
 - clear stale review and evidence facts that belonged to the invalidated
@@ -429,7 +528,9 @@ Mode-specific rules:
   - `docs/plans/active/`
   - `docs/plans/archived/`
   - `.local/harness/plans/archived/`
+- plan markdown stored under a `supplements/` subtree
 - plans whose path and `workflow_profile` disagree
+- supplements paths that are present but are not directories
 - archived plans with unchecked acceptance criteria, incomplete steps, or
   unchecked step-local acceptance criteria
 - archived plans that still contain active-plan or reopen update placeholders

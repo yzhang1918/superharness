@@ -512,6 +512,10 @@ func validatePathRules(ctx *lintContext) []LintIssue {
 	default:
 		issues = append(issues, LintIssue{Path: "path", Message: "plan must live under docs/plans or .local/harness/plans in an active or archived location"})
 	}
+	relativeWithinRoot := relativePathWithinPlanRoot(ctx.path)
+	if strings.HasPrefix(relativeWithinRoot, SupplementsDirName+"/") {
+		issues = append(issues, LintIssue{Path: "path", Message: "plan markdown must not live inside a supplements directory"})
+	}
 
 	if filenameErr := validatePlanFilename(filepath.Base(ctx.path)); filenameErr != nil {
 		issues = append(issues, LintIssue{Path: "path", Message: filenameErr.Error()})
@@ -537,7 +541,62 @@ func validatePathRules(ctx *lintContext) []LintIssue {
 			issues = append(issues, LintIssue{Path: "frontmatter.workflow_profile", Message: "tracked active plans must omit workflow_profile unless they explicitly use lightweight"})
 		}
 	}
+	issues = append(issues, validateSupplementsRules(ctx)...)
 	return issues
+}
+
+func validateSupplementsRules(ctx *lintContext) []LintIssue {
+	supplementsPath := SupplementsDirForPlanPath(ctx.path)
+	for _, root := range candidateSupplementsRoots(ctx.path) {
+		info, err := os.Stat(root)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return []LintIssue{{Path: "supplements", Message: err.Error()}}
+		}
+		if !info.IsDir() {
+			return []LintIssue{{
+				Path:    "supplements",
+				Message: fmt.Sprintf("supplements parent path must be a directory when present: %s", filepath.ToSlash(filepath.Clean(root))),
+			}}
+		}
+	}
+	info, err := os.Stat(supplementsPath)
+	if err != nil && !os.IsNotExist(err) {
+		return []LintIssue{{Path: "supplements", Message: err.Error()}}
+	}
+	if err == nil && !info.IsDir() {
+		return []LintIssue{{Path: "supplements", Message: "supplements path must be a directory when present"}}
+	}
+	if err == nil {
+		cleanPlan := filepath.ToSlash(filepath.Clean(ctx.path))
+		cleanSupplements := filepath.ToSlash(filepath.Clean(supplementsPath))
+		planStem := strings.TrimSuffix(filepath.Base(cleanPlan), filepath.Ext(cleanPlan))
+		if filepath.Base(cleanSupplements) != planStem {
+			return []LintIssue{{Path: "supplements", Message: "supplements directory name must match the markdown plan stem"}}
+		}
+	}
+	for _, alternate := range AlternateSupplementsDirsForPlanPath(ctx.path) {
+		if _, err := os.Stat(alternate); err == nil {
+			return []LintIssue{{
+				Path:    "supplements",
+				Message: fmt.Sprintf("supplements for this plan stem must live only under the matching root; conflicting path present at %s", filepath.ToSlash(filepath.Clean(alternate))),
+			}}
+		} else if err != nil && !os.IsNotExist(err) {
+			return []LintIssue{{Path: "supplements", Message: err.Error()}}
+		}
+	}
+
+	return nil
+}
+
+func candidateSupplementsRoots(path string) []string {
+	roots := []string{filepath.Dir(SupplementsDirForPlanPath(path))}
+	for _, alternate := range AlternateSupplementsDirsForPlanPath(path) {
+		roots = append(roots, filepath.Dir(alternate))
+	}
+	return slices.Compact(roots)
 }
 
 func validateArchivedRules(ctx *lintContext) []LintIssue {

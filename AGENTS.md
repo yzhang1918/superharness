@@ -80,7 +80,9 @@ Keep easyharness-specific guidance outside the managed markers.
 
 The default harness split in this repository is:
 
-- tracked plan in `docs/plans/`: scope, durable step closeout, archive-ready summaries
+- tracked plan in `docs/plans/`: markdown-led plan packages, durable step
+  closeout, archive-ready summaries, and any matching `supplements/`
+  companion directories
 - `.local/harness/plans/archived/`: archived lightweight plan snapshots
 - `.local/harness/`: disposable runtime state, review artifacts, evidence artifacts, and trajectory
 - `docs/specs/`: normative harness contracts

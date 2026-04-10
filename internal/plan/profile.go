@@ -9,6 +9,7 @@ import (
 const (
 	WorkflowProfileStandard    = "standard"
 	WorkflowProfileLightweight = "lightweight"
+	SupplementsDirName         = "supplements"
 )
 
 func normalizeWorkflowProfile(value string) string {
@@ -71,4 +72,62 @@ func ArchivedPathFor(workdir, planStem, currentPath string, profile string) stri
 
 func ActivePathFor(workdir, planStem, currentPath string, profile string) string {
 	return filepath.Join(workdir, "docs", "plans", "active", filepath.Base(currentPath))
+}
+
+func SupplementsDirForPlanPath(path string) string {
+	clean := filepath.Clean(path)
+	dir := filepath.Dir(clean)
+	stem := strings.TrimSuffix(filepath.Base(clean), filepath.Ext(clean))
+	return filepath.Join(dir, SupplementsDirName, stem)
+}
+
+func AlternateSupplementsDirsForPlanPath(path string) []string {
+	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	clean := filepath.ToSlash(filepath.Clean(path))
+	prefix := ""
+	for _, marker := range []string{"/docs/plans/active/", "/docs/plans/archived/", "/.local/harness/plans/archived/"} {
+		if idx := strings.Index(clean, marker); idx >= 0 {
+			prefix = clean[:idx]
+			break
+		}
+	}
+	base := filepath.FromSlash(prefix)
+	candidates := []string{
+		filepath.Join(base, "docs", "plans", "active", SupplementsDirName, stem),
+		filepath.Join(base, "docs", "plans", "archived", SupplementsDirName, stem),
+		filepath.Join(base, ".local", "harness", "plans", "archived", SupplementsDirName, stem),
+	}
+
+	expected := filepath.Clean(SupplementsDirForPlanPath(path))
+	filtered := make([]string, 0, len(candidates)-1)
+	for _, candidate := range candidates {
+		if filepath.Clean(candidate) == expected {
+			continue
+		}
+		filtered = append(filtered, candidate)
+	}
+	return filtered
+}
+
+func relativePathWithinPlanRoot(path string) string {
+	clean := filepath.ToSlash(filepath.Clean(path))
+	for _, marker := range []string{"/docs/plans/active/", "/docs/plans/archived/", "/.local/harness/plans/archived/"} {
+		if idx := strings.Index(clean, marker); idx >= 0 {
+			return strings.TrimPrefix(clean[idx+len(marker):], "/")
+		}
+	}
+	for _, marker := range []string{"docs/plans/active/", "docs/plans/archived/", ".local/harness/plans/archived/"} {
+		if strings.HasPrefix(clean, marker) {
+			return strings.TrimPrefix(clean, marker)
+		}
+	}
+	return ""
+}
+
+func ArchivedSupplementsDirFor(workdir, planStem, currentPath string, profile string) string {
+	return SupplementsDirForPlanPath(ArchivedPathFor(workdir, planStem, currentPath, profile))
+}
+
+func ActiveSupplementsDirFor(workdir, planStem, currentPath string, profile string) string {
+	return SupplementsDirForPlanPath(ActivePathFor(workdir, planStem, currentPath, profile))
 }
