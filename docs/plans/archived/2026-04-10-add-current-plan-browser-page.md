@@ -390,6 +390,17 @@ than treating the validation step as a substitute for candidate review.
   `scripts/ui-playwright-plan-smoke` after restoring inline-code flow,
   preserving fenced code blocks, and adding browser assertions that prove both
   inline code and fenced code keep the intended whitespace semantics.
+- Revision `6` focused on remote-sync recovery after PR
+  [#134](https://github.com/catu-ai/easyharness/pull/134) became conflicting:
+  merged `origin/main`, reran `pnpm --dir web check` and `pnpm --dir web build`,
+  reran `scripts/ui-playwright-plan-smoke` and
+  `scripts/ui-playwright-review-smoke`, and reran focused Go coverage with
+  `go test ./internal/reviewui ./internal/ui ./internal/lifecycle -count=1`,
+  `go test ./tests/smoke -run TestSyncContractArtifactsCheckPassesForCurrentRepo -count=1`,
+  and `go test ./tests/smoke -run TestInstallDevHarness -count=1 -timeout=5m`.
+- Fresh browser artifacts for the remote-sync repair were captured under
+  `output/playwright/harness-ui-plan-smoke-61037-1775833269056966000-29658/`
+  and `output/playwright/ruis-61045-524/`.
 
 ## Review Summary
 
@@ -438,11 +449,17 @@ than treating the validation step as a substitute for candidate review.
 - `review-009-delta` passed clean after the follow-up restored preformatted
   fenced code styling and extended the Playwright smoke to assert both inline
   code and fenced code behavior explicitly.
+- Revision `6` reopened because remote `main` advanced after the candidate had
+  already reached `await_merge`, and PR
+  [#134](https://github.com/catu-ai/easyharness/pull/134) became conflicting.
+- `review-010-delta` passed clean after merging `origin/main`, resolving the
+  shared UI-file conflicts, and proving that the Plan reader fixes still
+  coexist with the newer Review UI/worklog surface from `main`.
 
 ## Archive Summary
 
-- Archived At: 2026-04-10T22:50:05+08:00
-- Revision: 5
+- Archived At: 2026-04-10T23:16:37+08:00
+- Revision: 6
 - The earlier revision `2` archive candidate was reopened with
   `harness reopen --mode finalize-fix` because additional Plan-page UX polish
   still needed repair.
@@ -456,9 +473,13 @@ than treating the validation step as a substitute for candidate review.
   `harness reopen --mode finalize-fix` because human screenshot review exposed
   a markdown-reader regression where inline code still rendered with block-like
   wrapping behavior.
+- The earlier revision `5` archive candidate was reopened with
+  `harness reopen --mode finalize-fix` because `main` advanced and PR
+  [#134](https://github.com/catu-ai/easyharness/pull/134) became conflicting.
 - PR: [#134](https://github.com/catu-ai/easyharness/pull/134)
-- Ready: Revision `5` has a clean finalize review in `review-009-delta`, and
-  focused validation is green for the reader-style regression repair.
+- Ready: Revision `6` has a clean finalize review in `review-010-delta`, and
+  focused validation is green for the remote-sync merge plus shared-UI
+  conflict-resolution repair.
 - Merge Handoff: Archive the repaired candidate, refresh publish/CI/sync
   evidence on PR
   [#134](https://github.com/catu-ai/easyharness/pull/134), and return to
@@ -495,6 +516,9 @@ than treating the validation step as a substitute for candidate review.
   with the updated current-plan wording in CI.
 - Corrected the markdown reader styling so inline code stays readable inside
   flowing prose and checklist items without breaking fenced code blocks.
+- Merged the latest `origin/main` into the candidate and resolved shared
+  frontend conflicts so the Plan page behavior continues to work alongside the
+  newer Review UI/worklog capabilities added on `main`.
 - Added focused validation for the new resource and browser flow, including
   archived-current-plan coverage, stronger heading-navigation assertions, fresh
   Playwright screenshots, binary-content rejection ahead of preview
