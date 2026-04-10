@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
 
 import {
@@ -6,7 +7,7 @@ import {
   formatValue,
   humanizeLabel,
   pickDefaultTimelineEvent,
-  reviewAggregateFindingSource,
+  reviewAggregateFindingLabels,
   reviewArtifactKey,
   reviewArtifactLabel,
   reviewArtifactText,
@@ -20,6 +21,7 @@ import {
   reviewRoundCompactMeta,
   reviewRoundCompactStatusLabel,
   reviewRoundListLabel,
+  reviewRawSubmissionText,
   reviewRoundStatusLabel,
   reviewRoundStatusTone,
   reviewRoundSubtitle,
@@ -37,6 +39,7 @@ import type {
   ReviewFinding,
   ReviewRound,
   ReviewReviewer,
+  ReviewWorklog,
   TimelineEvent,
 } from "./types";
 import {
@@ -51,18 +54,175 @@ import {
   WorkbenchFrame,
 } from "./workbench";
 
-function ReviewFindingCard(props: { finding: ReviewFinding; provenance?: string | null }) {
-  const { finding, provenance } = props;
+function ReviewFindingCard(props: { finding: ReviewFinding; provenance?: string | null; provenanceLabels?: string[] }) {
+  const { finding, provenance, provenanceLabels = [] } = props;
   return (
     <article class="review-finding">
       <div class="review-finding-head">
         <strong>{finding.title}</strong>
         <StatusBadge tone={reviewFindingBadgeTone(finding.severity)}>{humanizeLabel(finding.severity)}</StatusBadge>
       </div>
+      {provenanceLabels.length > 0 ? (
+        <div class="review-finding-provenance">
+          {provenanceLabels.map((label) => (
+            <span key={label} class="provenance-pill">
+              {label}
+            </span>
+          ))}
+        </div>
+      ) : null}
       {provenance ? <div class="review-finding-meta">from {provenance}</div> : null}
       <p>{finding.details}</p>
       {Array.isArray(finding.locations) && finding.locations.length > 0 ? <div class="review-finding-locations">{finding.locations.join("\n")}</div> : null}
     </article>
+  );
+}
+
+function ReviewCollapsibleSection(props: {
+  title: string;
+  meta?: ComponentChildren;
+  defaultOpen?: boolean;
+  children: ComponentChildren;
+}) {
+  const { title, meta, defaultOpen = true, children } = props;
+  return (
+    <details class="review-collapsible" open={defaultOpen}>
+      <summary class="review-collapsible-summary">
+        <span class="review-collapsible-title">
+          <span class="review-collapsible-caret" aria-hidden="true">
+            ▾
+          </span>
+          <span>{title}</span>
+        </span>
+        {meta ? <span class="review-collapsible-meta">{meta}</span> : null}
+      </summary>
+      <div class="review-collapsible-body">{children}</div>
+    </details>
+  );
+}
+
+function RawSubmissionOverlay(props: {
+  title: string;
+  value: unknown;
+  onClose: () => void;
+}) {
+  const { title, value, onClose } = props;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div class="raw-json-overlay" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
+      <div class="raw-json-dialog" onClick={(event) => event.stopPropagation()}>
+        <div class="raw-json-header">
+          <div>
+            <div class="inspector-title">{title}</div>
+            <div class="inspector-subtitle">Raw reviewer submission payload</div>
+          </div>
+          <button type="button" class="secondary-button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <pre class="inspector-json raw-json-pre">{reviewRawSubmissionText(value)}</pre>
+      </div>
+    </div>
+  );
+}
+
+function ArtifactInspector(props: { artifact: ReviewArtifact }) {
+  const { artifact } = props;
+  return (
+    <div class="artifact-panel">
+      <div class="artifact-meta">
+        <StatusBadge tone={artifact.status === "available" ? "good" : artifact.status === "invalid" ? "danger" : "warning"}>
+          {humanizeLabel(artifact.status || "unknown")}
+        </StatusBadge>
+        {artifact.path ? <span class="muted">{artifact.path}</span> : null}
+      </div>
+      {artifact.summary ? <p class="artifact-summary">{artifact.summary}</p> : null}
+      <pre class="inspector-json">{reviewArtifactText(artifact)}</pre>
+    </div>
+  );
+}
+
+function RoundArtifactsOverlay(props: {
+  title: string;
+  artifacts: ReviewArtifact[];
+  metadata: Array<[string, unknown]>;
+  selectedArtifactKey: string | null;
+  onSelectArtifact: (key: string) => void;
+  onClose: () => void;
+}) {
+  const { title, artifacts, metadata, selectedArtifactKey, onSelectArtifact, onClose } = props;
+  const selectedArtifact =
+    artifacts.find((artifact, index) => reviewArtifactKey(artifact, index) === selectedArtifactKey) ?? artifacts[0] ?? null;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div class="raw-json-overlay" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
+      <div class="raw-json-dialog artifact-overlay-dialog" onClick={(event) => event.stopPropagation()}>
+        <div class="raw-json-header">
+          <div>
+            <div class="inspector-title">{title}</div>
+            <div class="inspector-subtitle">Round artifacts and supporting metadata</div>
+          </div>
+          <button type="button" class="secondary-button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <div class="artifact-overlay-body">
+          {artifacts.length > 0 ? (
+            <>
+              <InspectorTabs ariaLabel="Round artifacts">
+                {artifacts.map((artifact, index) => {
+                  const artifactKey = reviewArtifactKey(artifact, index);
+                  return (
+                    <InspectorTab key={artifactKey} selected={selectedArtifactKey === artifactKey} onSelect={() => onSelectArtifact(artifactKey)}>
+                      {reviewArtifactLabel(artifact)}
+                    </InspectorTab>
+                  );
+                })}
+              </InspectorTabs>
+              {selectedArtifact ? <ArtifactInspector artifact={selectedArtifact} /> : null}
+            </>
+          ) : (
+            <EmptyState>No round artifacts available.</EmptyState>
+          )}
+
+          {metadata.length > 0 ? (
+            <section class="content-section content-section-secondary artifact-overlay-section">
+              <div class="section-head">
+                <h2>Round metadata</h2>
+              </div>
+              <dl class="kv-list">
+                {metadata.map(([key, value]) => (
+                  <div key={key}>
+                    <dt>{key}</dt>
+                    <dd>{formatValue(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -401,7 +561,7 @@ export function ReviewWorkspace(props: {
   const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
   const [selectedDetailTab, setSelectedDetailTab] = useState<string>("summary");
   const [selectedArtifactKey, setSelectedArtifactKey] = useState<string | null>(null);
-  const [supportExpanded, setSupportExpanded] = useState(false);
+  const [showArtifacts, setShowArtifacts] = useState(false);
 
   const selectedRound = useMemo(() => {
     if (rounds.length === 0) return null;
@@ -418,14 +578,6 @@ export function ReviewWorkspace(props: {
     if (reviewers.length === 0 || selectedDetailTab === "summary") return null;
     return reviewers.find((reviewer) => reviewer.slot === selectedDetailTab) ?? null;
   }, [reviewers, selectedDetailTab]);
-  const selectedArtifact = useMemo(() => {
-    if (supportArtifacts.length === 0) return null;
-    if (selectedArtifactKey) {
-      const found = supportArtifacts.find((artifact, index) => reviewArtifactKey(artifact, index) === selectedArtifactKey);
-      if (found) return found;
-    }
-    return supportArtifacts[0];
-  }, [supportArtifacts, selectedArtifactKey]);
 
   const blockingFindings = Array.isArray(selectedRound?.blocking_findings) ? selectedRound.blocking_findings ?? [] : [];
   const nonBlockingFindings = Array.isArray(selectedRound?.non_blocking_findings) ? selectedRound.non_blocking_findings ?? [] : [];
@@ -441,7 +593,7 @@ export function ReviewWorkspace(props: {
 
   useEffect(() => {
     setSelectedDetailTab("summary");
-    setSupportExpanded(false);
+    setShowArtifacts(false);
   }, [selectedRound?.round_id]);
 
   useEffect(() => {
@@ -513,6 +665,11 @@ export function ReviewWorkspace(props: {
             subtitle={reviewRoundListLabel(selectedRound)}
             meta={
               <>
+                {supportArtifacts.length > 0 || artifacts.length > 0 ? (
+                  <button type="button" class="subtle-button" onClick={() => setShowArtifacts(true)}>
+                    Artifacts
+                  </button>
+                ) : null}
                 <StatusBadge tone={reviewRoundStatusTone(selectedRound)}>{reviewRoundStatusLabel(selectedRound)}</StatusBadge>
                 <span>{formatTimestamp(selectedRound.aggregated_at || selectedRound.updated_at || selectedRound.created_at || "")}</span>
               </>
@@ -582,7 +739,11 @@ export function ReviewWorkspace(props: {
                 {blockingFindings.length > 0 ? (
                   <div class="review-finding-list">
                     {blockingFindings.map((finding, index) => (
-                      <ReviewFindingCard key={reviewFindingKey(finding, index)} finding={finding} provenance={reviewAggregateFindingSource(finding as ReviewAggregateFinding)} />
+                      <ReviewFindingCard
+                        key={reviewFindingKey(finding, index)}
+                        finding={finding}
+                        provenanceLabels={reviewAggregateFindingLabels(finding as ReviewAggregateFinding)}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -598,7 +759,11 @@ export function ReviewWorkspace(props: {
                 {nonBlockingFindings.length > 0 ? (
                   <div class="review-finding-list">
                     {nonBlockingFindings.map((finding, index) => (
-                      <ReviewFindingCard key={reviewFindingKey(finding, index)} finding={finding} provenance={reviewAggregateFindingSource(finding as ReviewAggregateFinding)} />
+                      <ReviewFindingCard
+                        key={reviewFindingKey(finding, index)}
+                        finding={finding}
+                        provenanceLabels={reviewAggregateFindingLabels(finding as ReviewAggregateFinding)}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -617,67 +782,21 @@ export function ReviewWorkspace(props: {
             <EmptyState>No reviewer slots are available for this round.</EmptyState>
           )}
 
-          {supportArtifacts.length > 0 || artifacts.length > 0 ? (
-            <section class="supporting-section">
-              <button
-                type="button"
-                class={`supporting-toggle${supportExpanded ? " is-open" : ""}`}
-                onClick={() => setSupportExpanded((current) => !current)}
-                aria-expanded={supportExpanded}
-              >
-                <span>Supporting evidence</span>
-                <span class="muted">{supportArtifacts.length + artifacts.length}</span>
-              </button>
-              {supportExpanded ? (
-                <div class="supporting-stack">
-                  <section class="content-section content-section-secondary">
-                    <div class="section-head">
-                      <h2>Artifact payloads</h2>
-                      <span class="muted">{supportArtifacts.length}</span>
-                    </div>
-                    {supportArtifacts.length > 0 ? (
-                      <>
-                        <InspectorTabs ariaLabel="Supporting artifacts">
-                          {supportArtifacts.map((artifact, index) => {
-                            const artifactKey = reviewArtifactKey(artifact, index);
-                            return (
-                              <InspectorTab key={artifactKey} selected={selectedArtifactKey === artifactKey} onSelect={() => setSelectedArtifactKey(artifactKey)}>
-                                {reviewArtifactLabel(artifact)}
-                              </InspectorTab>
-                            );
-                          })}
-                        </InspectorTabs>
-                        {selectedArtifact ? <ArtifactInspector artifact={selectedArtifact} /> : null}
-                      </>
-                    ) : (
-                      <EmptyState>No supporting artifacts available for this round.</EmptyState>
-                    )}
-                  </section>
-
-                  {artifacts.length > 0 ? (
-                    <section class="content-section content-section-secondary">
-                      <div class="section-head">
-                        <h2>Round metadata</h2>
-                        <span class="muted">{artifacts.length}</span>
-                      </div>
-                      <dl class="kv-list">
-                        {artifacts.map(([key, value]) => (
-                          <div key={key}>
-                            <dt>{key}</dt>
-                            <dd>{formatValue(value)}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </section>
-                  ) : null}
-                </div>
-              ) : null}
-            </section>
-          ) : null}
         </div>
       ) : (
         <EmptyState>{summary || "No review rounds recorded yet for the current plan."}</EmptyState>
       )}
+
+      {selectedRound && showArtifacts ? (
+        <RoundArtifactsOverlay
+          title={`${reviewRoundTitle(selectedRound)} artifacts`}
+          artifacts={supportArtifacts}
+          metadata={artifacts}
+          selectedArtifactKey={selectedArtifactKey}
+          onSelectArtifact={setSelectedArtifactKey}
+          onClose={() => setShowArtifacts(false)}
+        />
+      ) : null}
     </WorkbenchFrame>
   );
 }
@@ -689,12 +808,31 @@ function ReviewerInspector(props: {
   warningCount: number;
 }) {
   const { reviewer, selectedRound, blockingFindings, warningCount } = props;
+  const [showRawSubmission, setShowRawSubmission] = useState(false);
+  const worklog: ReviewWorklog | null = reviewer.worklog ?? null;
+  const checkedAreas = Array.isArray(worklog?.checked_areas) ? worklog?.checked_areas ?? [] : [];
+  const openQuestions = Array.isArray(worklog?.open_questions) ? worklog?.open_questions ?? [] : [];
+  const candidateFindings = Array.isArray(worklog?.candidate_findings) ? worklog?.candidate_findings ?? [] : [];
+  const reviewKind = worklog?.review_kind?.trim() || selectedRound.kind?.trim() || "";
+  const anchorSHA = selectedRound.anchor_sha?.trim() || worklog?.anchor_sha?.trim() || "";
+  const hasRawSubmission = reviewer.raw_submission !== undefined;
+  const findings = Array.isArray(reviewer.findings) ? reviewer.findings ?? [] : [];
+  const fullPlanReadLabel =
+    worklog?.full_plan_read === true ? "Confirmed" : worklog?.full_plan_read === false ? "Not yet confirmed" : "Unknown";
+
   return (
     <div class="review-tab-panel">
       <section class="content-section">
         <div class="section-head">
           <h2>{reviewReviewerLabel(reviewer)}</h2>
-          <StatusBadge tone={reviewReviewerStatusTone(reviewer)}>{reviewReviewerStatusLabel(reviewer)}</StatusBadge>
+          <div class="section-head-actions">
+            {hasRawSubmission ? (
+              <button type="button" class="subtle-button" onClick={() => setShowRawSubmission(true)}>
+                Raw JSON
+              </button>
+            ) : null}
+            <StatusBadge tone={reviewReviewerStatusTone(reviewer)}>{reviewReviewerStatusLabel(reviewer)}</StatusBadge>
+          </div>
         </div>
         <section class="summary-metrics review-summary-metrics" aria-label="Reviewer context">
           <div class="summary-metric">
@@ -716,27 +854,23 @@ function ReviewerInspector(props: {
         </section>
       </section>
 
-      <section class="content-section fold-section">
+      <section class="content-section">
         <div class="section-head">
           <h2>Assigned task</h2>
-          <span class="muted">{reviewer.instructions?.trim() ? "available" : "missing"}</span>
         </div>
         {reviewer.instructions?.trim() ? <p class="detail-copy">{reviewer.instructions}</p> : <EmptyState>Instructions are unavailable for this reviewer slot.</EmptyState>}
       </section>
 
-      <section class="content-section fold-section">
+      <section class="content-section">
         <div class="section-head">
           <h2>Returned result</h2>
-          <span class="muted">
-            {reviewer.summary?.trim() ? `${Array.isArray(reviewer.findings) ? reviewer.findings.length : 0} finding(s)` : reviewReviewerStatusLabel(reviewer)}
-          </span>
         </div>
         {reviewer.summary?.trim() ? (
           <>
             <p class="detail-copy">{reviewer.summary}</p>
             <div class="review-finding-list">
-              {Array.isArray(reviewer.findings) && reviewer.findings.length > 0 ? (
-                reviewer.findings.map((finding, index) => <ReviewFindingCard key={reviewFindingKey(finding, index)} finding={finding} />)
+              {findings.length > 0 ? (
+                findings.map((finding, index) => <ReviewFindingCard key={reviewFindingKey(finding, index)} finding={finding} />)
               ) : (
                 <EmptyState>No findings recorded for this reviewer.</EmptyState>
               )}
@@ -745,6 +879,76 @@ function ReviewerInspector(props: {
         ) : (
           <EmptyState>This reviewer has not submitted a result yet.</EmptyState>
         )}
+      </section>
+
+      <section class="content-section review-process-section">
+        <div class="section-head">
+          <h2>Review process</h2>
+        </div>
+        <ReviewCollapsibleSection
+          title="Review context"
+          defaultOpen={false}
+          meta={reviewKind ? humanizeLabel(reviewKind) : reviewReviewerStatusLabel(reviewer)}
+        >
+          <dl class="kv-list">
+            <div>
+              <dt>Review kind</dt>
+              <dd>{reviewKind ? humanizeLabel(reviewKind) : "Unknown"}</dd>
+            </div>
+            <div>
+              <dt>Anchor</dt>
+              <dd>{anchorSHA || "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Full plan read</dt>
+              <dd>{fullPlanReadLabel}</dd>
+            </div>
+            <div>
+              <dt>Submitted</dt>
+              <dd>{reviewer.submitted_at ? formatTimestamp(reviewer.submitted_at) : "Not submitted"}</dd>
+            </div>
+          </dl>
+        </ReviewCollapsibleSection>
+
+        <ReviewCollapsibleSection title="Covered areas" defaultOpen={false} meta={`${checkedAreas.length} item(s)`}>
+          {checkedAreas.length > 0 ? (
+            <ul class="compact-list">
+              {checkedAreas.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState>No covered areas recorded yet.</EmptyState>
+          )}
+        </ReviewCollapsibleSection>
+
+        <ReviewCollapsibleSection title="Open questions" defaultOpen={openQuestions.length > 0} meta={`${openQuestions.length} item(s)`}>
+          {openQuestions.length > 0 ? (
+            <ul class="compact-list">
+              {openQuestions.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState>No open questions recorded.</EmptyState>
+          )}
+        </ReviewCollapsibleSection>
+
+        <ReviewCollapsibleSection
+          title="Candidate findings"
+          defaultOpen={candidateFindings.length > 0}
+          meta={`${candidateFindings.length} item(s)`}
+        >
+          {candidateFindings.length > 0 ? (
+            <ul class="compact-list">
+              {candidateFindings.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState>No candidate findings recorded.</EmptyState>
+          )}
+        </ReviewCollapsibleSection>
       </section>
 
       {Array.isArray(reviewer.warnings) && reviewer.warnings.length > 0 ? (
@@ -762,22 +966,10 @@ function ReviewerInspector(props: {
           </div>
         </section>
       ) : null}
-    </div>
-  );
-}
 
-function ArtifactInspector(props: { artifact: ReviewArtifact }) {
-  const { artifact } = props;
-  return (
-    <div class="artifact-panel">
-      <div class="artifact-meta">
-        <StatusBadge tone={artifact.status === "available" ? "good" : artifact.status === "invalid" ? "danger" : "warning"}>
-          {humanizeLabel(artifact.status || "unknown")}
-        </StatusBadge>
-        {artifact.path ? <span class="muted">{artifact.path}</span> : null}
-      </div>
-      {artifact.summary ? <p class="artifact-summary">{artifact.summary}</p> : null}
-      <pre class="inspector-json">{reviewArtifactText(artifact)}</pre>
+      {showRawSubmission ? (
+        <RawSubmissionOverlay title={`${reviewReviewerLabel(reviewer)} raw submission`} value={reviewer.raw_submission} onClose={() => setShowRawSubmission(false)} />
+      ) : null}
     </div>
   );
 }

@@ -33,6 +33,7 @@ type Submission = contracts.ReviewSubmission
 type Aggregate = contracts.ReviewAggregate
 type ReviewFinding = contracts.ReviewFinding
 type AggregateFinding = contracts.ReviewAggregateFinding
+type ReviewerWorklog = contracts.ReviewWorklogView
 
 func (s Service) Read() Result {
 	planPath, err := plan.DetectCurrentPath(s.Workdir)
@@ -298,6 +299,7 @@ func (s Service) readRound(planStem, roundID, activeRoundID string) Round {
 
 	if manifest != nil {
 		round.Kind = manifest.Kind
+		round.AnchorSHA = manifest.AnchorSHA
 		round.Step = manifest.Step
 		round.Revision = manifest.Revision
 		round.ReviewTitle = manifest.ReviewTitle
@@ -451,9 +453,13 @@ func (s Service) readReviewers(roundDir string, manifest *Manifest, ledger *Ledg
 		if reviewer.Name != "" {
 			artifactLabel = fmt.Sprintf("Submission: %s", reviewer.Name)
 		}
+		reviewerWarnings := make([]string, 0, 4)
 		submissionArtifact, submission, submissionWarning := readJSONArtifact[Submission](artifactLabel, artifactPath, validateSubmissionArtifact)
 		if submissionArtifact.Status != "" {
 			artifacts = append(artifacts, submissionArtifact)
+		}
+		if len(submissionArtifact.Content) > 0 {
+			reviewer.RawSubmission = append(json.RawMessage(nil), submissionArtifact.Content...)
 		}
 		if submission != nil {
 			if reviewer.Name == "" {
@@ -461,6 +467,8 @@ func (s Service) readReviewers(roundDir string, manifest *Manifest, ledger *Ledg
 			}
 			reviewer.Summary = submission.Summary
 			reviewer.Findings = submission.Findings
+			worklog, worklogWarnings := normalizeReviewerWorklog(*submission)
+			reviewer.Worklog = worklog
 			if reviewer.SubmittedAt == "" {
 				reviewer.SubmittedAt = submission.SubmittedAt
 			}
@@ -471,11 +479,11 @@ func (s Service) readReviewers(roundDir string, manifest *Manifest, ledger *Ledg
 					reviewer.Status = "pending"
 				}
 			}
+			reviewerWarnings = append(reviewerWarnings, worklogWarnings...)
 		} else if reviewer.Status == "" || ledgerClaimedSubmitted {
 			reviewer.Status = "pending"
 		}
 
-		reviewerWarnings := make([]string, 0, 2)
 		if ledgerStatusWarning != "" {
 			reviewerWarnings = append(reviewerWarnings, ledgerStatusWarning)
 		}
@@ -506,6 +514,121 @@ func reviewerDisplayName(reviewer Reviewer) string {
 
 func submissionLooksSubmitted(submission Submission) bool {
 	return strings.TrimSpace(submission.SubmittedAt) != ""
+}
+
+func normalizeReviewerWorklog(submission Submission) (*ReviewerWorklog, []string) {
+	if len(submission.ExtraFields) == 0 {
+		return nil, nil
+	}
+
+	worklog := &ReviewerWorklog{}
+	hasValue := false
+	warnings := []string{}
+
+	if raw := submission.ExtraFields["worklog"]; len(raw) > 0 {
+		payload := map[string]json.RawMessage{}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			warnings = append(warnings, "Reviewer worklog payload is malformed, so progressive notes are shown conservatively.")
+		} else {
+			if value, ok, warning := parseOptionalBoolField(payload, "full_plan_read"); warning != "" {
+				warnings = append(warnings, warning)
+			} else if ok {
+				worklog.FullPlanRead = value
+				hasValue = true
+			}
+			if values, ok, warning := parseOptionalStringListField(payload, "checked_areas"); warning != "" {
+				warnings = append(warnings, warning)
+			} else if ok {
+				worklog.CheckedAreas = values
+				hasValue = true
+			}
+			if values, ok, warning := parseOptionalStringListField(payload, "open_questions"); warning != "" {
+				warnings = append(warnings, warning)
+			} else if ok {
+				worklog.OpenQuestions = values
+				hasValue = true
+			}
+			if values, ok, warning := parseOptionalStringListField(payload, "candidate_findings"); warning != "" {
+				warnings = append(warnings, warning)
+			} else if ok {
+				worklog.CandidateFindings = values
+				hasValue = true
+			}
+		}
+	}
+
+	if raw := submission.ExtraFields["coverage"]; len(raw) > 0 {
+		payload := map[string]json.RawMessage{}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			warnings = append(warnings, "Reviewer coverage payload is malformed, so anchor context is shown conservatively.")
+		} else {
+			if value, ok, warning := parseOptionalStringField(payload, "review_kind"); warning != "" {
+				warnings = append(warnings, warning)
+			} else if ok {
+				worklog.ReviewKind = value
+				hasValue = true
+			}
+			if value, ok, warning := parseOptionalStringField(payload, "anchor_sha"); warning != "" {
+				warnings = append(warnings, warning)
+			} else if ok {
+				worklog.AnchorSHA = value
+				hasValue = true
+			}
+		}
+	}
+
+	if !hasValue {
+		return nil, dedupeStrings(warnings)
+	}
+	return worklog, dedupeStrings(warnings)
+}
+
+func parseOptionalBoolField(payload map[string]json.RawMessage, key string) (*bool, bool, string) {
+	raw, ok := payload[key]
+	if !ok || len(raw) == 0 {
+		return nil, false, ""
+	}
+	var value bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, false, fmt.Sprintf("Reviewer worklog field %q is malformed and was omitted.", key)
+	}
+	return &value, true, ""
+}
+
+func parseOptionalStringField(payload map[string]json.RawMessage, key string) (string, bool, string) {
+	raw, ok := payload[key]
+	if !ok || len(raw) == 0 {
+		return "", false, ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", false, fmt.Sprintf("Reviewer worklog field %q is malformed and was omitted.", key)
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false, ""
+	}
+	return value, true, ""
+}
+
+func parseOptionalStringListField(payload map[string]json.RawMessage, key string) ([]string, bool, string) {
+	raw, ok := payload[key]
+	if !ok || len(raw) == 0 {
+		return nil, false, ""
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, false, fmt.Sprintf("Reviewer worklog field %q is malformed and was omitted.", key)
+	}
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized, true, ""
 }
 
 func normalizeSlotStatus(status string) string {

@@ -190,13 +190,13 @@ func TestNewHandlerServesReviewJSON(t *testing.T) {
 	manifestPath := filepath.Join(reviewDir, "manifest.json")
 	ledgerPath := filepath.Join(reviewDir, "ledger.json")
 	submissionPath := filepath.Join(reviewDir, "submissions", "ux.json")
-	if err := os.WriteFile(manifestPath, []byte(`{"round_id":"review-002-full","kind":"full","revision":2,"review_title":"Finalize review","plan_path":"docs/plans/active/2026-04-02-ui-review-plan.md","plan_stem":"2026-04-02-ui-review-plan","created_at":"2026-04-02T12:00:00Z","ledger_path":"`+ledgerPath+`","aggregate_path":"`+filepath.Join(reviewDir, "aggregate.json")+`","submissions_dir":"`+filepath.Join(reviewDir, "submissions")+`","dimensions":[{"name":"UX","slot":"ux","instructions":"Check the interface hierarchy.","submission_path":"`+submissionPath+`"}]}`), 0o644); err != nil {
+	if err := os.WriteFile(manifestPath, []byte(`{"round_id":"review-002-full","kind":"delta","anchor_sha":"abc123def","revision":2,"review_title":"Finalize review","plan_path":"docs/plans/active/2026-04-02-ui-review-plan.md","plan_stem":"2026-04-02-ui-review-plan","created_at":"2026-04-02T12:00:00Z","ledger_path":"`+ledgerPath+`","aggregate_path":"`+filepath.Join(reviewDir, "aggregate.json")+`","submissions_dir":"`+filepath.Join(reviewDir, "submissions")+`","dimensions":[{"name":"UX","slot":"ux","instructions":"Check the interface hierarchy.","submission_path":"`+submissionPath+`"}]}`), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 	if err := os.WriteFile(ledgerPath, []byte(`{"round_id":"review-002-full","kind":"full","updated_at":"2026-04-02T12:10:00Z","slots":[{"name":"UX","slot":"ux","status":"submitted","submitted_at":"2026-04-02T12:08:00Z","submission_path":"`+submissionPath+`"}]}`), 0o644); err != nil {
 		t.Fatalf("write ledger: %v", err)
 	}
-	if err := os.WriteFile(submissionPath, []byte(`{"round_id":"review-002-full","slot":"ux","dimension":"UX","submitted_at":"2026-04-02T12:08:00Z","summary":"Hierarchy is clear.","findings":[]}`), 0o644); err != nil {
+	if err := os.WriteFile(submissionPath, []byte(`{"round_id":"review-002-full","slot":"ux","dimension":"UX","submitted_at":"2026-04-02T12:08:00Z","summary":"Hierarchy is clear.","findings":[],"worklog":{"full_plan_read":true,"checked_areas":["web/src/pages.tsx"],"open_questions":["Should the review summary stay compact?"],"candidate_findings":["Hierarchy polish"]},"coverage":{"review_kind":"delta","anchor_sha":"abc123def"}}`), 0o644); err != nil {
 		t.Fatalf("write submission: %v", err)
 	}
 
@@ -219,9 +219,16 @@ func TestNewHandlerServesReviewJSON(t *testing.T) {
 		Rounds   []struct {
 			RoundID   string `json:"round_id"`
 			Status    string `json:"status"`
+			AnchorSHA string `json:"anchor_sha"`
 			Reviewers []struct {
-				Instructions string `json:"instructions"`
-				Summary      string `json:"summary"`
+				Instructions  string          `json:"instructions"`
+				Summary       string          `json:"summary"`
+				RawSubmission json.RawMessage `json:"raw_submission"`
+				Worklog       struct {
+					ReviewKind string   `json:"review_kind"`
+					AnchorSHA  string   `json:"anchor_sha"`
+					Checked    []string `json:"checked_areas"`
+				} `json:"worklog"`
 			} `json:"reviewers"`
 		} `json:"rounds"`
 	}
@@ -239,6 +246,108 @@ func TestNewHandlerServesReviewJSON(t *testing.T) {
 	}
 	if len(payload.Rounds[0].Reviewers) != 1 || payload.Rounds[0].Reviewers[0].Instructions == "" || payload.Rounds[0].Reviewers[0].Summary == "" {
 		t.Fatalf("expected reviewer content, got %#v", payload.Rounds[0].Reviewers)
+	}
+	if payload.Rounds[0].AnchorSHA != "abc123def" {
+		t.Fatalf("expected round anchor SHA, got %#v", payload.Rounds[0])
+	}
+	if payload.Rounds[0].Reviewers[0].Worklog.ReviewKind != "delta" || payload.Rounds[0].Reviewers[0].Worklog.AnchorSHA != "abc123def" {
+		t.Fatalf("expected reviewer worklog context, got %#v", payload.Rounds[0].Reviewers[0].Worklog)
+	}
+	if len(payload.Rounds[0].Reviewers[0].Worklog.Checked) != 1 || payload.Rounds[0].Reviewers[0].Worklog.Checked[0] != "web/src/pages.tsx" {
+		t.Fatalf("expected reviewer checked areas, got %#v", payload.Rounds[0].Reviewers[0].Worklog)
+	}
+	if len(payload.Rounds[0].Reviewers[0].RawSubmission) == 0 || !strings.Contains(string(payload.Rounds[0].Reviewers[0].RawSubmission), "Hierarchy polish") {
+		t.Fatalf("expected raw submission payload, got %#v", string(payload.Rounds[0].Reviewers[0].RawSubmission))
+	}
+}
+
+func TestNewHandlerServesReviewJSONWithMalformedWorklogWarnings(t *testing.T) {
+	workdir := t.TempDir()
+	relPlanPath := "docs/plans/active/2026-04-10-ui-review-malformed-worklog.md"
+	path := filepath.Join(workdir, filepath.FromSlash(relPlanPath))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir plan dir: %v", err)
+	}
+	rendered, err := plan.RenderTemplate(plan.TemplateOptions{Title: "UI Review Malformed Worklog"})
+	if err != nil {
+		t.Fatalf("render plan: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	if _, err := runstate.SaveCurrentPlan(workdir, relPlanPath); err != nil {
+		t.Fatalf("save current plan: %v", err)
+	}
+	if _, err := runstate.SaveState(workdir, "2026-04-10-ui-review-malformed-worklog", &runstate.State{
+		Revision: 1,
+		ActiveReviewRound: &runstate.ReviewRound{
+			RoundID:    "review-001-delta",
+			Kind:       "delta",
+			Revision:   1,
+			Aggregated: false,
+		},
+	}); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	reviewDir := filepath.Join(workdir, ".local", "harness", "plans", "2026-04-10-ui-review-malformed-worklog", "reviews", "review-001-delta")
+	if err := os.MkdirAll(filepath.Join(reviewDir, "submissions"), 0o755); err != nil {
+		t.Fatalf("mkdir review dir: %v", err)
+	}
+	manifestPath := filepath.Join(reviewDir, "manifest.json")
+	ledgerPath := filepath.Join(reviewDir, "ledger.json")
+	submissionPath := filepath.Join(reviewDir, "submissions", "risk.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"round_id":"review-001-delta","kind":"delta","anchor_sha":"abc123def","revision":1,"review_title":"Malformed worklog review","plan_path":"`+relPlanPath+`","plan_stem":"2026-04-10-ui-review-malformed-worklog","created_at":"2026-04-10T12:00:00Z","ledger_path":"`+ledgerPath+`","aggregate_path":"`+filepath.Join(reviewDir, "aggregate.json")+`","submissions_dir":"`+filepath.Join(reviewDir, "submissions")+`","dimensions":[{"name":"Risk","slot":"risk","instructions":"Check degraded worklog handling.","submission_path":"`+submissionPath+`"}]}`), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(ledgerPath, []byte(`{"round_id":"review-001-delta","kind":"delta","updated_at":"2026-04-10T12:10:00Z","slots":[{"name":"Risk","slot":"risk","status":"submitted","submitted_at":"2026-04-10T12:08:00Z","submission_path":"`+submissionPath+`"}]}`), 0o644); err != nil {
+		t.Fatalf("write ledger: %v", err)
+	}
+	if err := os.WriteFile(submissionPath, []byte(`{"round_id":"review-001-delta","slot":"risk","dimension":"Risk","submitted_at":"2026-04-10T12:08:00Z","summary":"Malformed worklog fields should not crash the review API.","findings":[],"worklog":{"full_plan_read":"yes","checked_areas":["web/src/pages.tsx"],"open_questions":"still investigating","candidate_findings":["Candidate trail"]},"coverage":{"review_kind":7,"anchor_sha":"abc123def"}}`), 0o644); err != nil {
+		t.Fatalf("write submission: %v", err)
+	}
+
+	handler, err := NewHandler(workdir)
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/review", nil)
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+
+	var payload struct {
+		OK     bool `json:"ok"`
+		Rounds []struct {
+			Reviewers []struct {
+				Warnings []string `json:"warnings"`
+				Worklog  struct {
+					AnchorSHA  string   `json:"anchor_sha"`
+					ReviewKind string   `json:"review_kind"`
+					Checked    []string `json:"checked_areas"`
+				} `json:"worklog"`
+			} `json:"reviewers"`
+		} `json:"rounds"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v\n%s", err, recorder.Body.String())
+	}
+	if !payload.OK || len(payload.Rounds) != 1 || len(payload.Rounds[0].Reviewers) != 1 {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	reviewer := payload.Rounds[0].Reviewers[0]
+	if reviewer.Worklog.AnchorSHA != "abc123def" || reviewer.Worklog.ReviewKind != "" {
+		t.Fatalf("expected partial worklog recovery, got %#v", reviewer.Worklog)
+	}
+	if len(reviewer.Worklog.Checked) != 1 || reviewer.Worklog.Checked[0] != "web/src/pages.tsx" {
+		t.Fatalf("expected checked areas to survive, got %#v", reviewer.Worklog)
+	}
+	if len(reviewer.Warnings) == 0 || !strings.Contains(strings.Join(reviewer.Warnings, " "), "malformed") {
+		t.Fatalf("expected malformed worklog warnings, got %#v", reviewer.Warnings)
 	}
 }
 

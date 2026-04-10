@@ -389,6 +389,17 @@ export function reviewAggregateFindingSource(finding: ReviewAggregateFinding): s
   return null;
 }
 
+export function reviewAggregateFindingLabels(finding: ReviewAggregateFinding): string[] {
+  const labels: string[] = [];
+  const dimension = finding.dimension?.trim() ? humanizeLabel(finding.dimension) : "";
+  const slot = finding.slot?.trim() ? humanizeLabel(finding.slot) : "";
+  if (dimension) labels.push(dimension);
+  if (slot && slot.toLowerCase() !== dimension.toLowerCase()) {
+    labels.push(`slot ${slot}`);
+  }
+  return labels;
+}
+
 export function reviewArtifactLabel(artifact: ReviewArtifact): string {
   return artifact.label?.trim() || "Artifact";
 }
@@ -403,6 +414,11 @@ export function reviewArtifactText(artifact: ReviewArtifact | null): string {
   if (!artifact) return "";
   if (artifact.content_type === "text" && typeof artifact.content === "string") return artifact.content;
   return jsonStringify(artifact.content ?? { status: artifact.status, summary: artifact.summary, path: artifact.path });
+}
+
+export function reviewRawSubmissionText(value: unknown): string {
+  if (typeof value === "string") return value;
+  return jsonStringify(value);
 }
 
 export function formatReviewError(result: ReviewResult | null, statusCode?: number): string {

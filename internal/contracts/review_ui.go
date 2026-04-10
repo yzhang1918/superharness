@@ -53,6 +53,9 @@ type ReviewRoundView struct {
 	// Kind is the review kind for the round.
 	Kind string `json:"kind,omitempty"`
 
+	// AnchorSHA is the delta-review anchor commit when one is available.
+	AnchorSHA string `json:"anchor_sha,omitempty"`
+
 	// Step is the tracked plan step number when the round is step-scoped.
 	Step *int `json:"step,omitempty"`
 
@@ -139,8 +142,43 @@ type ReviewSlotView struct {
 	// Findings lists the slot-level review findings when one was submitted.
 	Findings []ReviewFinding `json:"findings,omitempty"`
 
+	// Worklog contains normalized progressive reviewer-worklog fields derived
+	// from the submission payload when available.
+	Worklog *ReviewWorklogView `json:"worklog,omitempty"`
+
+	// RawSubmission preserves the raw reviewer submission payload for secondary
+	// UI inspection.
+	RawSubmission json.RawMessage `json:"raw_submission,omitempty"`
+
 	// Warnings lists non-fatal degraded-state notes for this slot.
 	Warnings []string `json:"warnings,omitempty"`
+}
+
+// ReviewWorklogView contains normalized reviewer-progress fields derived from
+// the richer submission payload.
+type ReviewWorklogView struct {
+	// ReviewKind is the reviewer-reported kind from the coverage payload when
+	// available.
+	ReviewKind string `json:"review_kind,omitempty"`
+
+	// AnchorSHA is the reviewer-reported anchor SHA from the coverage payload
+	// when available.
+	AnchorSHA string `json:"anchor_sha,omitempty"`
+
+	// FullPlanRead reports whether the reviewer marked the full active plan as
+	// read.
+	FullPlanRead *bool `json:"full_plan_read,omitempty"`
+
+	// CheckedAreas lists the files, checkpoints, or areas the reviewer says it
+	// already covered.
+	CheckedAreas []string `json:"checked_areas,omitempty"`
+
+	// OpenQuestions lists unresolved review trails still in flight.
+	OpenQuestions []string `json:"open_questions,omitempty"`
+
+	// CandidateFindings lists provisional findings captured during review before
+	// they were finalized into the canonical findings payload.
+	CandidateFindings []string `json:"candidate_findings,omitempty"`
 }
 
 // ReviewArtifactView is one raw supporting artifact view for a review round.

@@ -101,6 +101,15 @@ export type ReviewAggregateFinding = ReviewFinding & {
   dimension?: string;
 };
 
+export type ReviewWorklog = {
+  review_kind?: string;
+  anchor_sha?: string;
+  full_plan_read?: boolean | null;
+  checked_areas?: string[] | null;
+  open_questions?: string[] | null;
+  candidate_findings?: string[] | null;
+};
+
 export type ReviewReviewer = {
   name?: string;
   slot: string;
@@ -110,12 +119,15 @@ export type ReviewReviewer = {
   submitted_at?: string;
   summary?: string;
   findings?: ReviewFinding[] | null;
+  worklog?: ReviewWorklog | null;
+  raw_submission?: unknown;
   warnings?: string[] | null;
 };
 
 export type ReviewRound = {
   round_id: string;
   kind?: string;
+  anchor_sha?: string;
   step?: number;
   revision?: number;
   review_title?: string;

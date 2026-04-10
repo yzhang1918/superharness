@@ -218,6 +218,10 @@
           "type": "string",
           "description": "Kind is the review kind for the round."
         },
+        "anchor_sha": {
+          "type": "string",
+          "description": "AnchorSHA is the delta-review anchor commit when one is available."
+        },
         "step": {
           "type": "integer",
           "description": "Step is the tracked plan step number when the round is step-scoped."
@@ -350,6 +354,13 @@
           "type": "array",
           "description": "Findings lists the slot-level review findings when one was submitted."
         },
+        "worklog": {
+          "$ref": "#/$defs/ReviewWorklogView",
+          "description": "Worklog contains normalized progressive reviewer-worklog fields derived from the submission payload when available."
+        },
+        "raw_submission": {
+          "description": "RawSubmission preserves the raw reviewer submission payload for secondary UI inspection."
+        },
         "warnings": {
           "items": {
             "type": "string"
@@ -364,6 +375,46 @@
         "slot"
       ],
       "description": "ReviewSlotView is one reviewer-centric view of a manifest slot plus any submission that was returned for that slot."
+    },
+    "ReviewWorklogView": {
+      "properties": {
+        "review_kind": {
+          "type": "string",
+          "description": "ReviewKind is the reviewer-reported kind from the coverage payload when available."
+        },
+        "anchor_sha": {
+          "type": "string",
+          "description": "AnchorSHA is the reviewer-reported anchor SHA from the coverage payload when available."
+        },
+        "full_plan_read": {
+          "type": "boolean",
+          "description": "FullPlanRead reports whether the reviewer marked the full active plan as read."
+        },
+        "checked_areas": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "CheckedAreas lists the files, checkpoints, or areas the reviewer says it already covered."
+        },
+        "open_questions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "OpenQuestions lists unresolved review trails still in flight."
+        },
+        "candidate_findings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "CandidateFindings lists provisional findings captured during review before they were finalized into the canonical findings payload."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ReviewWorklogView contains normalized reviewer-progress fields derived from the richer submission payload."
     }
   },
   "title": "Review UI resource",

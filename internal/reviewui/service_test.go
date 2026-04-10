@@ -531,6 +531,201 @@ func TestServiceReadPreservesAggregateFindings(t *testing.T) {
 	}
 }
 
+func TestServiceReadNormalizesReviewerWorklogAndRawSubmission(t *testing.T) {
+	workdir := t.TempDir()
+	relPlanPath, planStem := seedActivePlan(t, workdir, "2026-04-10-review-ui-progressive-worklog.md", "Review UI Progressive Worklog")
+	saveReviewState(t, workdir, planStem, relPlanPath, 2, "review-002-delta")
+
+	writeReviewRoundFixture(t, workdir, planStem, "review-002-delta", map[string]any{
+		"round_id":        "review-002-delta",
+		"kind":            "delta",
+		"anchor_sha":      "abc123def",
+		"step":            2,
+		"revision":        2,
+		"review_title":    "Step 2 closeout",
+		"plan_path":       relPlanPath,
+		"plan_stem":       planStem,
+		"created_at":      "2026-04-10T01:00:00Z",
+		"ledger_path":     roundArtifactPath(workdir, planStem, "review-002-delta", "ledger.json"),
+		"aggregate_path":  roundArtifactPath(workdir, planStem, "review-002-delta", "aggregate.json"),
+		"submissions_dir": filepath.Join(workdir, ".local", "harness", "plans", planStem, "reviews", "review-002-delta", "submissions"),
+		"dimensions": []map[string]any{
+			{
+				"name":            "Correctness",
+				"slot":            "correctness",
+				"instructions":    "Check delta correctness and related risks.",
+				"submission_path": roundArtifactPath(workdir, planStem, "review-002-delta", filepath.Join("submissions", "correctness", "submission.json")),
+			},
+		},
+	}, map[string]any{
+		"round_id":   "review-002-delta",
+		"kind":       "delta",
+		"updated_at": "2026-04-10T01:10:00Z",
+		"slots": []map[string]any{
+			{
+				"name":            "Correctness",
+				"slot":            "correctness",
+				"status":          "submitted",
+				"submitted_at":    "2026-04-10T01:09:00Z",
+				"submission_path": roundArtifactPath(workdir, planStem, "review-002-delta", filepath.Join("submissions", "correctness", "submission.json")),
+			},
+		},
+	}, nil, map[string]map[string]any{
+		"correctness": {
+			"round_id":     "review-002-delta",
+			"slot":         "correctness",
+			"dimension":    "Correctness",
+			"submitted_at": "2026-04-10T01:09:00Z",
+			"summary":      "One possible follow-up remains.",
+			"findings": []map[string]any{
+				{
+					"severity": "minor",
+					"title":    "Polish follow-up",
+					"details":  "UI wording could still be tightened.",
+				},
+			},
+			"worklog": map[string]any{
+				"full_plan_read":     true,
+				"checked_areas":      []string{"docs/plans/active/2026-04-10-reviewer-worklog-ui-and-aggregate-provenance.md", "web/src/pages.tsx"},
+				"open_questions":     []string{"Should the summary page stay unchanged?"},
+				"candidate_findings": []string{"Polish follow-up"},
+			},
+			"coverage": map[string]any{
+				"review_kind": "delta",
+				"anchor_sha":  "abc123def",
+			},
+		},
+	})
+
+	result := Service{Workdir: workdir}.Read()
+	if !result.OK {
+		t.Fatalf("expected review read to succeed, got %#v", result)
+	}
+	if len(result.Rounds) != 1 {
+		t.Fatalf("expected one round, got %#v", result.Rounds)
+	}
+
+	round := result.Rounds[0]
+	if round.AnchorSHA != "abc123def" {
+		t.Fatalf("expected round anchor SHA to survive, got %#v", round)
+	}
+	if len(round.Reviewers) != 1 {
+		t.Fatalf("expected one reviewer, got %#v", round.Reviewers)
+	}
+
+	reviewer := round.Reviewers[0]
+	if reviewer.Worklog == nil {
+		t.Fatalf("expected normalized reviewer worklog, got %#v", reviewer)
+	}
+	if reviewer.Worklog.FullPlanRead == nil || !*reviewer.Worklog.FullPlanRead {
+		t.Fatalf("expected full_plan_read=true, got %#v", reviewer.Worklog)
+	}
+	if len(reviewer.Worklog.CheckedAreas) != 2 || reviewer.Worklog.CheckedAreas[0] != "docs/plans/active/2026-04-10-reviewer-worklog-ui-and-aggregate-provenance.md" {
+		t.Fatalf("expected checked areas to survive, got %#v", reviewer.Worklog)
+	}
+	if len(reviewer.Worklog.OpenQuestions) != 1 || reviewer.Worklog.OpenQuestions[0] != "Should the summary page stay unchanged?" {
+		t.Fatalf("expected open questions to survive, got %#v", reviewer.Worklog)
+	}
+	if len(reviewer.Worklog.CandidateFindings) != 1 || reviewer.Worklog.CandidateFindings[0] != "Polish follow-up" {
+		t.Fatalf("expected candidate findings to survive, got %#v", reviewer.Worklog)
+	}
+	if len(reviewer.RawSubmission) == 0 || !strings.Contains(string(reviewer.RawSubmission), `"anchor_sha":"abc123def"`) {
+		t.Fatalf("expected raw submission payload to remain available, got %#v", reviewer.RawSubmission)
+	}
+}
+
+func TestServiceReadDegradesMalformedReviewerWorklogFieldsConservatively(t *testing.T) {
+	workdir := t.TempDir()
+	relPlanPath, planStem := seedActivePlan(t, workdir, "2026-04-10-review-ui-malformed-worklog.md", "Review UI Malformed Worklog")
+	saveReviewState(t, workdir, planStem, relPlanPath, 1, "review-001-delta")
+
+	writeReviewRoundFixture(t, workdir, planStem, "review-001-delta", map[string]any{
+		"round_id":        "review-001-delta",
+		"kind":            "delta",
+		"anchor_sha":      "anchor-sha",
+		"step":            1,
+		"revision":        1,
+		"review_title":    "Malformed worklog round",
+		"plan_path":       relPlanPath,
+		"plan_stem":       planStem,
+		"created_at":      "2026-04-10T01:00:00Z",
+		"ledger_path":     roundArtifactPath(workdir, planStem, "review-001-delta", "ledger.json"),
+		"aggregate_path":  roundArtifactPath(workdir, planStem, "review-001-delta", "aggregate.json"),
+		"submissions_dir": filepath.Join(workdir, ".local", "harness", "plans", planStem, "reviews", "review-001-delta", "submissions"),
+		"dimensions": []map[string]any{
+			{
+				"name":            "Risk",
+				"slot":            "risk",
+				"instructions":    "Check degraded worklog handling.",
+				"submission_path": roundArtifactPath(workdir, planStem, "review-001-delta", filepath.Join("submissions", "risk", "submission.json")),
+			},
+		},
+	}, map[string]any{
+		"round_id":   "review-001-delta",
+		"kind":       "delta",
+		"updated_at": "2026-04-10T01:10:00Z",
+		"slots": []map[string]any{
+			{
+				"name":            "Risk",
+				"slot":            "risk",
+				"status":          "submitted",
+				"submitted_at":    "2026-04-10T01:09:00Z",
+				"submission_path": roundArtifactPath(workdir, planStem, "review-001-delta", filepath.Join("submissions", "risk", "submission.json")),
+			},
+		},
+	}, nil, map[string]map[string]any{
+		"risk": {
+			"round_id":     "review-001-delta",
+			"slot":         "risk",
+			"dimension":    "Risk",
+			"submitted_at": "2026-04-10T01:09:00Z",
+			"summary":      "Malformed worklog fields should degrade conservatively.",
+			"findings":     []any{},
+			"worklog": map[string]any{
+				"full_plan_read":     "yes",
+				"checked_areas":      []string{"web/src/pages.tsx"},
+				"open_questions":     "still investigating",
+				"candidate_findings": []string{"Candidate trail"},
+			},
+			"coverage": map[string]any{
+				"review_kind": 7,
+				"anchor_sha":  "worklog-anchor",
+			},
+		},
+	})
+
+	result := Service{Workdir: workdir}.Read()
+	if !result.OK {
+		t.Fatalf("expected review read to succeed, got %#v", result)
+	}
+	if len(result.Rounds) != 1 || len(result.Rounds[0].Reviewers) != 1 {
+		t.Fatalf("expected one round with one reviewer, got %#v", result.Rounds)
+	}
+
+	reviewer := result.Rounds[0].Reviewers[0]
+	if reviewer.Worklog == nil {
+		t.Fatalf("expected partially recovered worklog, got %#v", reviewer)
+	}
+	if reviewer.Worklog.FullPlanRead != nil {
+		t.Fatalf("expected malformed boolean field to be omitted, got %#v", reviewer.Worklog)
+	}
+	if reviewer.Worklog.ReviewKind != "" {
+		t.Fatalf("expected malformed review_kind to be omitted, got %#v", reviewer.Worklog)
+	}
+	if reviewer.Worklog.AnchorSHA != "worklog-anchor" {
+		t.Fatalf("expected valid anchor_sha to survive, got %#v", reviewer.Worklog)
+	}
+	if len(reviewer.Worklog.CheckedAreas) != 1 || reviewer.Worklog.CheckedAreas[0] != "web/src/pages.tsx" {
+		t.Fatalf("expected valid checked_areas to survive, got %#v", reviewer.Worklog)
+	}
+	if len(reviewer.Worklog.CandidateFindings) != 1 || reviewer.Worklog.CandidateFindings[0] != "Candidate trail" {
+		t.Fatalf("expected valid candidate_findings to survive, got %#v", reviewer.Worklog)
+	}
+	if len(reviewer.Warnings) == 0 || !strings.Contains(strings.Join(reviewer.Warnings, " "), "malformed") {
+		t.Fatalf("expected malformed worklog warnings, got %#v", reviewer.Warnings)
+	}
+}
+
 func TestServiceReadRecoversSubmissionOnlyDamagedRounds(t *testing.T) {
 	workdir := t.TempDir()
 	relPlanPath, planStem := seedActivePlan(t, workdir, "2026-04-02-review-ui-submissions-only.md", "Review UI Submission Recovery")
