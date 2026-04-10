@@ -3,7 +3,7 @@ template_version: 0.2.0
 created_at: "2026-04-10T09:43:51+08:00"
 source_type: direct_request
 source_refs:
-  - chat://current-session
+    - chat://current-session
 ---
 
 # Repair Global Fallback Replacement And Health Checks
@@ -47,14 +47,14 @@ introduced on 2026-04-08.
 
 ## Acceptance Criteria
 
-- [ ] `scripts/install-dev-harness --global` replaces the global fallback via a
+- [x] `scripts/install-dev-harness --global` replaces the global fallback via a
       new file object rather than an in-place overwrite, and the final fallback
       path passes a direct runnable health check.
-- [ ] Ordinary `scripts/install-dev-harness` keeps an existing healthy global
+- [x] Ordinary `scripts/install-dev-harness` keeps an existing healthy global
       fallback untouched.
-- [ ] Ordinary `scripts/install-dev-harness` repairs an existing invalid global
+- [x] Ordinary `scripts/install-dev-harness` repairs an existing invalid global
       fallback so the wrapper works again from a non-easyharness repository.
-- [ ] Installer smoke coverage demonstrates the atomic replacement path, the
+- [x] Installer smoke coverage demonstrates the atomic replacement path, the
       invalid-fallback self-heal path, and the healthy-fallback preservation
       path.
 
@@ -192,25 +192,61 @@ symlink targets before the final rename and adds
 
 ## Validation Summary
 
-PENDING_UNTIL_ARCHIVE
+- `bash -n scripts/install-dev-harness`
+- `go test ./tests/smoke -run TestInstallDevHarnessGlobalRefreshReplacesFallbackFileObject -count=1`
+- `go test ./tests/smoke -run TestInstallDevHarnessRepairsInvalidExistingGlobalFallback -count=1`
+- `go test ./tests/smoke -run TestInstallDevHarnessRepairsBrokenSymlinkGlobalFallback -count=1`
+- `go test ./tests/smoke -run TestInstallDevHarnessRepairsDirectorySymlinkGlobalFallback -count=1`
+- `go test ./tests/smoke -run TestInstallDevHarnessNormalInstallDoesNotReplaceExistingGlobalFallback -count=1`
+- Real repro validation:
+  - `scripts/install-dev-harness --global`
+  - `harness --version` from `/Users/yaozhang/Workspace/HEJI`
+    returned the global fallback path successfully after the replacement fix.
 
 ## Review Summary
 
-PENDING_UNTIL_ARCHIVE
+- `review-001-delta` found one blocking correctness issue: ordinary installs
+  skipped self-healing for broken fallback symlinks.
+- `review-002-delta` found one blocking correctness issue: directory-symlink
+  fallbacks were not replaced cleanly.
+- `review-003-delta` passed cleanly after the symlink fixes.
+- `review-004-full` found two blocking finalize issues: stale README/plan
+  wording about fallback updates and missing file-object preservation proof for
+  healthy fallbacks.
+- `review-005-full` passed cleanly after the README/plan clarification and the
+  healthy-fallback inode assertion.
 
 ## Archive Summary
 
-PENDING_UNTIL_ARCHIVE
+- Archived At: 2026-04-10T10:23:21+08:00
+- Revision: 1
+- PR: to be created immediately after archive from branch
+  `codex/repair-global-fallback-file-replacement`
+- Ready: finalize review `review-005-full` passed cleanly and the candidate is
+  ready to archive, publish, and wait for merge approval once publish/CI/sync
+  evidence is recorded.
+- Merge Handoff: archive the plan, push the branch, open the PR, record
+  publish/CI/sync evidence, and then wait for merge approval.
 
 ## Outcome Summary
 
 ### Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Replaced global fallback refresh with same-directory temp-file replacement,
+  final-path health checking, and direct verification of the installed fallback
+  binary.
+- Added ordinary-install self-healing for invalid fallback paths, including
+  broken symlinks and symlinks to directories.
+- Expanded installer smoke coverage for inode replacement, invalid fallback
+  repair, symlink repair, directory-symlink repair, and healthy-fallback
+  preservation via unchanged inode checks.
+- Updated README guidance and tracked plan notes to distinguish explicit
+  `--global` refresh of healthy fallbacks from ordinary-install repair of
+  invalid ones.
 
 ### Not Delivered
 
-PENDING_UNTIL_ARCHIVE
+None.
 
 ### Follow-Up Issues
 
