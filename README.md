@@ -58,8 +58,10 @@ By default the installer:
 - uses `~/.local/bin` by default
 - keeps parallel worktrees isolated by dispatching to the current worktree's
   `.local/bin/harness`
-- only updates the outside-source-tree fallback when you install with
+- only refreshes a healthy outside-source-tree fallback when you install with
   `--global`
+- self-heals an invalid outside-source-tree fallback during a normal install so
+  unrelated repositories stop dispatching to a broken fallback binary
 
 Useful options:
 

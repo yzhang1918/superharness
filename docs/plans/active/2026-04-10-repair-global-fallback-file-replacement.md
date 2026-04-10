@@ -151,8 +151,9 @@ repairs passed
 `go test ./tests/smoke -run TestInstallDevHarnessRepairsBrokenSymlinkGlobalFallback -count=1`,
 `go test ./tests/smoke -run TestInstallDevHarnessRepairsDirectorySymlinkGlobalFallback -count=1`,
 and a focused regression run over the fallback-repair smoke subset.
-No README change was needed because the user-facing install contract stayed the
-same; the repair only changes how the fallback file is replaced and validated.
+Updated `README.md` to clarify the final contract: healthy outside-source-tree
+fallbacks still only refresh on `--global`, while ordinary installs now
+self-heal invalid fallback paths.
 
 #### Review Notes
 

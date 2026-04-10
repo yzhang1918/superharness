@@ -662,6 +662,7 @@ func TestInstallDevHarnessNormalInstallDoesNotReplaceExistingGlobalFallback(t *t
 
 	globalFallback := filepath.Join(homeDir, ".local", "share", "easyharness", "dev", "harness")
 	writeFixtureFile(t, globalFallback, "#!/bin/sh\nprintf 'global-from-first\\n'\n", 0o755)
+	initialInode := fileInode(t, globalFallback)
 
 	secondInstall := runCommand(
 		t,
@@ -679,6 +680,9 @@ func TestInstallDevHarnessNormalInstallDoesNotReplaceExistingGlobalFallback(t *t
 	}
 
 	support.RequireContains(t, secondInstall.Stdout, "Global fallback binary remains at "+globalFallback)
+	if refreshedInode := fileInode(t, globalFallback); refreshedInode != initialInode {
+		t.Fatalf("expected healthy global fallback inode to remain %d, got %d", initialInode, refreshedInode)
+	}
 
 	wrapperPath := filepath.Join(installDir, "harness")
 	wrapperResult := runCommand(
