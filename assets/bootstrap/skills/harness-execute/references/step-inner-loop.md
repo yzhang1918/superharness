@@ -17,9 +17,11 @@ The inner loop is how you finish one plan step cleanly.
    later `delta` review has a real git anchor.
 7. Run `harness status` before step closeout so the next action reflects the
    current step, any active review, and any warning-driven follow-up.
-8. If the slice is ready for review, run step-closeout review now. Use `delta`
-   by default from the latest anchor commit, but use `full` when a narrower
-   review would be misleading or the slice needs a broader pass.
+8. If the slice is ready for review, first run the `Pre-Review` scan in
+   [controller-truth-surfaces.md](controller-truth-surfaces.md), then start
+   step-closeout review. Use `delta` by default from the latest anchor commit,
+   but use `full` when a narrower review would be misleading or the slice
+   needs a broader pass.
 9. If no step-closeout review is needed, record
    `NO_STEP_REVIEW_NEEDED: <reason>` in `Review Notes` before marking the step
    done.

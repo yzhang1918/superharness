@@ -44,6 +44,8 @@ plan intent, or contract meaning warrants it.
 
 ## Routine Start Rules
 
+- Before starting a review round, run the `Pre-Review` scan from
+  [controller-truth-surfaces.md](controller-truth-surfaces.md).
 - After a completed step becomes reviewable, start a step-bound review before
   treating the step as durably done, unless the step will instead record
   `NO_STEP_REVIEW_NEEDED: <reason>` in `Review Notes`.
@@ -152,7 +154,9 @@ round to use the same set.
    might be useful later.
 8. If a reviewer finished without a valid submission, respawn a clean reviewer
    for that slot immediately.
-9. Only after every expected reviewer slot has a valid submission and every
+9. Before aggregation, run the `Pre-Aggregate` scan from
+   [controller-truth-surfaces.md](controller-truth-surfaces.md).
+10. Only after every expected reviewer slot has a valid submission and every
    reviewer agent is closed, run:
 
    ```bash

@@ -19,18 +19,21 @@ merge.
      `harness reopen --mode new-step` when the change deserves a new step, and
      then return to `harness-execute`.
    - If the plan is still executing, stay in `harness-execute`.
-3. Verify the PR still looks merge-ready.
-4. Merge the PR.
-5. Prefer `Merge commit` unless the human explicitly asks for a different
+3. Re-read the `Pre-Land` scan in
+   [../harness-execute/references/controller-truth-surfaces.md](../harness-execute/references/controller-truth-surfaces.md)
+   so merge readiness, CI truth, and required bookkeeping are freshly checked.
+4. Verify the PR still looks merge-ready.
+5. Merge the PR.
+6. Prefer `Merge commit` unless the human explicitly asks for a different
    strategy.
-6. Run:
+7. Run:
 
    ```bash
    harness land --pr <url> [--commit <sha>]
    ```
 
    This records merge confirmation and enters required post-merge bookkeeping.
-7. Finish the required post-merge bookkeeping before leaving `land`.
+8. Finish the required post-merge bookkeeping before leaving `land`.
    - Add a final PR comment when the permanent PR record still needs a durable
      merge closeout note or follow-up handoff after the merge.
    - The minimum PR comment content is:
@@ -42,8 +45,8 @@ merge.
    - If a linked issue is only partially addressed, intentionally deferred, or
      still needs later work, do not close it silently; add or update the issue
      with a follow-up reference to the merged PR and the remaining work.
-8. Finish local cleanup, branch sync, and any final remote follow-up.
-9. Run:
+9. Finish local cleanup, branch sync, and any final remote follow-up.
+10. Run:
 
    ```bash
    harness land complete
@@ -54,7 +57,7 @@ merge.
    candidate pointer, and
    records the last landed archived plan so `harness status` returns to `idle`
    with the landed context preserved in artifacts.
-10. Sync local `main`, delete the feature branch if appropriate, and leave the
+11. Sync local `main`, delete the feature branch if appropriate, and leave the
     worktree clean.
 
 ## Do Not

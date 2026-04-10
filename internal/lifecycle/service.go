@@ -209,7 +209,9 @@ func (s Service) Archive() Result {
 
 	nextActions := []NextAction{
 		{Command: nil, Description: "Commit and push the tracked plan change created by archiving before treating the candidate as truly waiting for merge approval."},
-		{Command: nil, Description: "Wait for human merge approval or merge manually from the PR once checks are green."},
+		{Command: nil, Description: "Open or update the PR and record publish evidence for the archived candidate while it remains in `execution/finalize/publish`."},
+		{Command: nil, Description: "Record CI and sync evidence before expecting the candidate to advance to `execution/finalize/await_merge`."},
+		{Command: nil, Description: "Wait for explicit human merge approval only after status reaches `execution/finalize/await_merge`; green checks alone do not authorize merge."},
 		{Command: nil, Description: "If new feedback or remote changes invalidate the archived candidate, reopen with `harness reopen --mode finalize-fix` for narrow repair or `harness reopen --mode new-step` when the change deserves a new unfinished step."},
 	}
 	if doc.UsesLightweightProfile() {

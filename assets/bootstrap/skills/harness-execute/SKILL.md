@@ -34,6 +34,16 @@ Routine review progression is controller-owned. Once the approved plan reaches
 an ordinary step-closeout or finalize-review boundary, the controller should
 start that review flow without asking the human to micromanage it.
 
+Before high-risk transitions, run a short controller self-check instead of
+trusting momentum. Use the phase-based checklist in
+[controller-truth-surfaces.md](references/controller-truth-surfaces.md) at
+these moments:
+
+- before starting a review round
+- before aggregating a review round
+- before archiving
+- before merge-sensitive publish or land handoff work
+
 For `delta` review, use a real git commit anchor. The detailed controller
 dispatch fields, anchor guidance, and reviewer-resume rules live in
 [review-orchestration.md](references/review-orchestration.md).
@@ -109,6 +119,8 @@ when it is genuinely impractical, and record the reason in the step's
   remote-sync work becomes relevant.
 - Read [closeout-and-archive.md](references/closeout-and-archive.md) before any
   archive attempt.
+- Read [controller-truth-surfaces.md](references/controller-truth-surfaces.md)
+  whenever you are about to cross a high-risk controller boundary.
 
 ## Exit Criteria
 

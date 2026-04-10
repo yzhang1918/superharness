@@ -63,6 +63,18 @@ func TestArchiveMovesPlanAndUpdatesPointers(t *testing.T) {
 	if result.Artifacts == nil || result.Artifacts.FromSupplementsPath != "" || result.Artifacts.ToSupplementsPath != "" {
 		t.Fatalf("expected no supplements artifacts for markdown-only archive, got %#v", result.Artifacts)
 	}
+	if !containsActionDescription(result.NextAction, "Wait for explicit human merge approval only after status reaches `execution/finalize/await_merge`") {
+		t.Fatalf("expected explicit human-approval archive guidance, got %#v", result.NextAction)
+	}
+	if !containsActionDescription(result.NextAction, "record publish evidence for the archived candidate while it remains in `execution/finalize/publish`") {
+		t.Fatalf("expected publish-phase archive guidance, got %#v", result.NextAction)
+	}
+	if !containsActionDescription(result.NextAction, "Record CI and sync evidence before expecting the candidate to advance to `execution/finalize/await_merge`") {
+		t.Fatalf("expected CI/sync archive guidance, got %#v", result.NextAction)
+	}
+	if containsActionDescription(result.NextAction, "merge manually from the PR once checks are green") {
+		t.Fatalf("unexpected archive guidance that permits merge before approval: %#v", result.NextAction)
+	}
 	state, _, err := runstate.LoadState(root, "2026-03-18-archive-smoke")
 	if err != nil {
 		t.Fatalf("load state: %v", err)

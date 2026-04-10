@@ -24,7 +24,10 @@ but record the observed external facts through `harness evidence submit`:
    `harness evidence submit --kind ci`
 6. refresh remote readiness and record it with
    `harness evidence submit --kind sync`
-7. only then treat the candidate as ready to enter
+7. once those remote facts exist, run the `Pre-Land` scan from
+   [controller-truth-surfaces.md](controller-truth-surfaces.md) before treating
+   the archived candidate as genuinely merge-ready
+8. only then treat the candidate as ready to enter
    `execution/finalize/await_merge`
 
 ## Remote Freshness
