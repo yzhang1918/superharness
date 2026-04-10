@@ -145,6 +145,9 @@ replace_file_atomically() {
   rm -f "${tmp}"
   cp "${src}" "${tmp}"
   chmod 755 "${tmp}"
+  if [[ -L "${dst}" ]]; then
+    rm -f "${dst}"
+  fi
   mv -f "${tmp}" "${dst}"
 }
 

@@ -335,6 +335,71 @@ func TestInstallDevHarnessRepairsBrokenSymlinkGlobalFallback(t *testing.T) {
 	support.RequireContains(t, versionResult.Stdout, "mode: dev")
 }
 
+func TestInstallDevHarnessRepairsDirectorySymlinkGlobalFallback(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("installer smoke tests require a POSIX shell")
+	}
+
+	repoRoot := copyInstallerFixture(t)
+	tempHome := t.TempDir()
+	globalFallback := filepath.Join(tempHome, ".local", "share", "easyharness", "dev", "harness")
+	symlinkTargetDir := filepath.Join(tempHome, "fallback-dir")
+	if err := os.MkdirAll(filepath.Dir(globalFallback), 0o755); err != nil {
+		t.Fatalf("mkdir global fallback dir: %v", err)
+	}
+	if err := os.MkdirAll(symlinkTargetDir, 0o755); err != nil {
+		t.Fatalf("mkdir symlink target dir: %v", err)
+	}
+	if err := os.Symlink(symlinkTargetDir, globalFallback); err != nil {
+		t.Fatalf("create directory fallback symlink: %v", err)
+	}
+
+	result := runCommand(
+		t,
+		repoRoot,
+		installerEnv(t, map[string]string{
+			"HOME": tempHome,
+			"PATH": installerPath(t, filepath.Join(tempHome, ".local", "bin")),
+		}),
+		"/bin/bash",
+		filepath.Join(repoRoot, "scripts", "install-dev-harness"),
+	)
+	if result.ExitCode != 0 {
+		t.Fatalf("install-dev-harness failed with exit %d\nstdout:\n%s\nstderr:\n%s", result.ExitCode, result.Stdout, result.Stderr)
+	}
+	support.RequireContains(t, result.Stdout, "Repaired invalid global fallback binary at "+globalFallback)
+
+	info, err := os.Lstat(globalFallback)
+	if err != nil {
+		t.Fatalf("lstat repaired directory-symlink fallback: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("expected repaired fallback to replace the directory symlink")
+	}
+
+	targetEntries, err := os.ReadDir(symlinkTargetDir)
+	if err != nil {
+		t.Fatalf("read repaired symlink target dir: %v", err)
+	}
+	if len(targetEntries) != 0 {
+		t.Fatalf("expected repaired directory-symlink target dir to stay empty, found %d entries", len(targetEntries))
+	}
+
+	versionResult := runCommand(
+		t,
+		t.TempDir(),
+		envWithOverrides(t, map[string]string{
+			"PATH": installerPath(t),
+		}),
+		globalFallback,
+		"--version",
+	)
+	if versionResult.ExitCode != 0 {
+		t.Fatalf("repaired directory-symlink fallback version failed with exit %d\nstdout:\n%s\nstderr:\n%s", versionResult.ExitCode, versionResult.Stdout, versionResult.Stderr)
+	}
+	support.RequireContains(t, versionResult.Stdout, "mode: dev")
+}
+
 func TestInstallDevHarnessVerifiesPATHResolvedWrapperWhenInstallDirIsAlreadyOnPATH(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("installer smoke tests require a POSIX shell")
