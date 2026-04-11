@@ -1,6 +1,6 @@
 ---
 template_version: 0.2.0
-created_at: 2026-04-11T21:26:48+08:00
+created_at: "2026-04-11T21:26:48+08:00"
 source_type: issue
 source_refs:
     - '#37'
@@ -305,26 +305,53 @@ branch-level finalize review is the trustworthy review surface.
 
 ## Validation Summary
 
-PENDING_UNTIL_ARCHIVE
+- Added deterministic repo-level resilience coverage in
+  `tests/resilience/` for malformed current-plan pointers, malformed
+  review/evidence artifacts, and archive/reopen rollback-family failures.
+- Added deterministic repo-level concurrency coverage in
+  `tests/e2e/runstate_concurrency_test.go` for archive, reopen, evidence, and
+  status interleavings across revisions.
+- Validated with `go test ./tests/resilience -count=1`,
+  `go test ./tests/e2e -count=1`, and `go test ./... -count=1`.
 
 ## Review Summary
 
-PENDING_UNTIL_ARCHIVE
+- Finalize review `review-001-full` passed with no blocking or non-blocking
+  findings across the `correctness`, `tests`, and `docs_consistency` slots.
+- Reviewer submissions confirmed that the new repo-level tests, coverage note,
+  and tracked plan state agree on the intended issue-closure scope for `#37`
+  and `#56`.
 
 ## Archive Summary
 
-PENDING_UNTIL_ARCHIVE
+- Archived At: 2026-04-11T21:51:24+08:00
+- Revision: 1
+- PR: NONE
+- Ready: The candidate now covers the deterministic resilience and runstate
+  interleavings needed to close `#37` and `#56`, and the full repository test
+  suite passed before archive.
+- Merge Handoff: Commit and push the archived plan move, then record publish,
+  CI, and sync evidence for the archived candidate before treating it as truly
+  waiting for merge approval.
 
 ## Outcome Summary
 
 ### Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Added `tests/resilience/` coverage for malformed current-plan pointers,
+  degraded artifact reads, and archive/reopen rollback-family safety cases.
+- Added a deterministic `tests/e2e/runstate_concurrency_test.go` scenario that
+  proves stale evidence stays revision-scoped after reopen and that lock
+  contention fails clearly for `status` and `evidence submit`.
+- Updated `docs/testing/e2e-transition-coverage.md` so resilience and broader
+  runstate follow-up no longer appear as an ambiguous deferred gap.
 
 ### Not Delivered
 
-PENDING_UNTIL_ARCHIVE
+NONE.
 
 ### Follow-Up Issues
 
-NONE
+- `#36` remains the explicit follow-up for fuzz or property-style coverage on
+  parsing-heavy paths such as plan linting, review artifacts, and evidence
+  payload decoding.
