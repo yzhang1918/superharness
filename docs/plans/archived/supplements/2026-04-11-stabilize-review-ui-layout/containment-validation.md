@@ -11,13 +11,13 @@ the clean `origin/main` sync merge.
 ## Browser Evidence
 
 - Explorer row screenshot:
-  `docs/plans/active/supplements/2026-04-11-stabilize-review-ui-layout/review-explorer-row-220.png`
+  `docs/plans/archived/supplements/2026-04-11-stabilize-review-ui-layout/review-explorer-row-220.png`
 - Header metadata screenshot:
-  `docs/plans/active/supplements/2026-04-11-stabilize-review-ui-layout/review-header-meta.png`
+  `docs/plans/archived/supplements/2026-04-11-stabilize-review-ui-layout/review-header-meta.png`
 - Revision-2 review smoke overview:
-  `docs/plans/active/supplements/2026-04-11-stabilize-review-ui-layout/review-smoke-rev2-initial.png`
+  `docs/plans/archived/supplements/2026-04-11-stabilize-review-ui-layout/review-smoke-rev2-initial.png`
 - Revision-2 review smoke active-row capture:
-  `docs/plans/active/supplements/2026-04-11-stabilize-review-ui-layout/review-smoke-rev2-row-active.png`
+  `docs/plans/archived/supplements/2026-04-11-stabilize-review-ui-layout/review-smoke-rev2-row-active.png`
 
 The 220px containment screenshots were captured from the rebuilt embedded
 `harness ui` binary with `harness-ui:explorer-width:review=220` in browser

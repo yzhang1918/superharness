@@ -122,7 +122,7 @@ review `review-002-delta` then exposed that the saved explorer evidence path
 was still carrying an older screenshot and that the longer `submitted` copy was
 using too much space; the repair compacted the metadata label to `a/b` and
 refreshed the tracked supplement screenshot
-`docs/plans/active/supplements/2026-04-11-stabilize-review-ui-layout/review-explorer-row-220.png`
+`docs/plans/archived/supplements/2026-04-11-stabilize-review-ui-layout/review-explorer-row-220.png`
 from the rebuilt UI.
 Delta review `review-003-delta` then caught one more real containment gap: the
 row's outer button still had `scrollWidth > clientWidth` because
@@ -132,7 +132,7 @@ measurement now shows the button, main column, row, and subtitle all fully
 contained while the long title text alone truncates by ellipsis. The exact
 candidate commit, screenshot paths, and width measurements are now durably
 recorded in
-`docs/plans/active/supplements/2026-04-11-stabilize-review-ui-layout/containment-validation.md`.
+`docs/plans/archived/supplements/2026-04-11-stabilize-review-ui-layout/containment-validation.md`.
 
 #### Review Notes
 
@@ -182,9 +182,9 @@ be proved first with a narrow failing unit test. After `review-001-full`
 requested stronger evidence for populated review data, the repair loop used the
 current worktree's real review round to capture browser evidence at the minimum
 review explorer width in
-`docs/plans/active/supplements/2026-04-11-stabilize-review-ui-layout/review-explorer-row-220.png`
+`docs/plans/archived/supplements/2026-04-11-stabilize-review-ui-layout/review-explorer-row-220.png`
 and
-`docs/plans/active/supplements/2026-04-11-stabilize-review-ui-layout/review-header-meta.png`.
+`docs/plans/archived/supplements/2026-04-11-stabilize-review-ui-layout/review-header-meta.png`.
 
 #### Review Notes
 
@@ -224,8 +224,6 @@ does not benefit from a synthetic intermediate review boundary.
 
 ## Validation Summary
 
-UPDATE_REQUIRED_AFTER_REOPEN
-
 - Revision 2 reopens the archived candidate only for a clean `origin/main`
   sync repair after publish evidence showed revision 1 was stale against the
   merge base.
@@ -236,7 +234,7 @@ UPDATE_REQUIRED_AFTER_REOPEN
   selected row container, title row, and subtitle row all stayed contained
   while the long title text alone truncated by ellipsis.
 - Tracked browser evidence now lives under
-  `docs/plans/active/supplements/2026-04-11-stabilize-review-ui-layout/`,
+  `docs/plans/archived/supplements/2026-04-11-stabilize-review-ui-layout/`,
   including `review-explorer-row-220.png`, `review-header-meta.png`,
   `review-smoke-rev2-initial.png`, `review-smoke-rev2-row-active.png`, and the
   exact measurements recorded in `containment-validation.md`.
@@ -250,8 +248,6 @@ UPDATE_REQUIRED_AFTER_REOPEN
 
 ## Review Summary
 
-UPDATE_REQUIRED_AFTER_REOPEN
-
 - Revision 2 reopens the previously archived candidate only because publish
   handoff recorded `sync_status=stale`; the repair itself is a clean merge of
   `origin/main` plus fresh validation before a new finalize review.
@@ -264,29 +260,32 @@ UPDATE_REQUIRED_AFTER_REOPEN
 - `review-006-delta` passed cleanly after the tracked evidence repair, and the
   required archive-gate `review-007-full` then passed with one non-blocking
   note about stale plan wording that this archive closeout resolves.
+- Reopened revision-2 review `review-008-full` then caught the stale
+  review-smoke selector and the need for a fresh current-head validation
+  record after the clean `origin/main` merge.
+- Delta follow-up `review-009-delta` narrowed the remaining blocker to the
+  validation anchor itself, and `review-010-delta` passed cleanly once the
+  docs-only closeout tied the smoke result to validated code head `4f1757a`.
 
 ## Archive Summary
 
-UPDATE_REQUIRED_AFTER_REOPEN
-
+- Archived At: 2026-04-12T00:41:16+08:00
+- Revision: 2
 - Revision 1 archived at `2026-04-12T00:16:38+08:00`, then reopened as
   revision 2 solely because publish handoff recorded `sync_status=stale`
   against `origin/main`.
 - PR: Existing PR [#147](https://github.com/catu-ai/easyharness/pull/147)
   remains open for the revision-2 repair candidate.
-- Ready: Not yet. Revision 2 has merged `origin/main` cleanly and refreshed
-  local validation, but it still needs a fresh finalize review and rearchive
-  before merge handoff can resume.
-- Merge Handoff: After the repaired revision-2 candidate passes finalize
-  review, rearchive the plan, push the refreshed branch to PR `#147`, and
-  record updated publish, CI, and sync evidence until `harness status` reaches
+- Ready: Revision 2 has now merged `origin/main` cleanly, refreshed local and
+  browser validation, passed follow-up finalize review in `review-010-delta`,
+  and is ready to rearchive for merge handoff.
+- Merge Handoff: Push the refreshed branch to PR `#147`, and record updated
+  publish, CI, and sync evidence until `harness status` reaches
   `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
 ### Delivered
-
-UPDATE_REQUIRED_AFTER_REOPEN
 
 - Reflowed review explorer items so the title owns the first line while the
   second line carries compact `Step x · a/b · STATUS` metadata.
@@ -297,10 +296,12 @@ UPDATE_REQUIRED_AFTER_REOPEN
   beneath `Artifacts` and the status badge.
 - Rebuilt the embedded UI bundle and recorded durable tracked evidence for the
   final narrow-width browser validation.
+- Reopened the archived candidate only for a clean `origin/main` sync repair,
+  updated `scripts/ui-playwright-review-smoke` to follow the surviving status
+  text affordance, and recorded revision-2 browser evidence in the tracked
+  supplement.
 
 ### Not Delivered
-
-UPDATE_REQUIRED_AFTER_REOPEN
 
 - No broader review explorer redesign was attempted beyond the agreed layout
   polish.
@@ -308,8 +309,6 @@ UPDATE_REQUIRED_AFTER_REOPEN
   lightweight slice.
 
 ### Follow-Up Issues
-
-UPDATE_REQUIRED_AFTER_REOPEN
 
 - [#146](https://github.com/catu-ai/easyharness/issues/146) tracks the deferred
   broader review UI polish and stronger populated-review browser fixture
