@@ -56,20 +56,20 @@ ordering regressions or hidden scope creep.
 
 ## Acceptance Criteria
 
-- [ ] `#57` is satisfiable through a narrow implementation that keeps distinct
+- [x] `#57` is satisfiable through a narrow implementation that keeps distinct
       review and state mutation semantics while removing duplicated dual-lock
       orchestration from review command code.
-- [ ] The dual-lock review paths use one shared entrypoint that fixes the
+- [x] The dual-lock review paths use one shared entrypoint that fixes the
       acquisition order and keeps contention failures fail-fast and
       understandable without silently widening lock scope.
-- [ ] `review submit` continues to operate without a state mutation lock, and
+- [x] `review submit` continues to operate without a state mutation lock, and
       tests make that boundary explicit so later refactors do not accidentally
       serialize it behind `state.json` writes.
-- [ ] Tracked specs and nearby code comments describe `state.json` as the
+- [x] Tracked specs and nearby code comments describe `state.json` as the
       plan-local control-plane artifact it is today and explain the narrow
       review/state coordination contract without implying a future-wide lock
       merge.
-- [ ] Focused automated tests cover the shared review-path locking contract and
+- [x] Focused automated tests cover the shared review-path locking contract and
       prove that the refactor does not introduce new contention failures,
       deadlock-prone ordering drift, or behavior regressions for normal review
       flows.
@@ -261,26 +261,74 @@ round would be redundant.
 
 ## Validation Summary
 
-PENDING_UNTIL_ARCHIVE
+Validated the narrowed lock contract with focused package tests:
+`go test ./internal/review ./internal/cli -count=1`.
+
+The review-focused suite now covers review-versus-state lock preference when
+both locks are held, plus the boundary that keeps `review submit` off
+state-mutation locking at both the service and CLI wrapper layers.
 
 ## Review Summary
 
-PENDING_UNTIL_ARCHIVE
+Finalize review proceeded in three rounds:
+
+- `review-001-full` found one important docs/runtime mismatch: `review submit`
+  still acquired the state lock indirectly through a locked pre-submit status
+  snapshot in the CLI wrapper.
+- `review-002-delta` rechecked the narrow repair that switched that snapshot to
+  the unlocked status path and passed with no findings.
+- `review-003-full` reran full finalize review for revision `1` and passed with
+  no findings, restoring archive readiness for the candidate.
 
 ## Archive Summary
 
-PENDING_UNTIL_ARCHIVE
+- Archived At: 2026-04-12T00:00:34+08:00
+- Revision: 1
+The archived candidate closes `#57` by keeping the existing split between
+review, state, and timeline mutation surfaces while making the review/state
+interaction explicit and harder to regress.
+
+Durable closeout now lives in tracked specs plus focused regression tests:
+
+- `docs/specs/state-model.md` and `docs/specs/cli-contract.md` explain the
+  current control-plane role of `state.json`, the separate timeline lock, and
+  the fixed review-then-state acquisition order for dual-lock review paths.
+- `internal/review/service.go` centralizes the dual-lock orchestration for
+  `review start` and `review aggregate`.
+- `internal/review/service_test.go` and `internal/cli/app_test.go` pin the
+  intended lock boundaries, including the repaired CLI `review submit` path.
+- PR: NONE. The candidate has not been pushed or opened as a PR yet.
+- Ready: The branch is archive-ready locally after the repaired CLI boundary,
+  the clean `review-003-full` finalize review, and focused
+  `go test ./internal/review ./internal/cli -count=1` validation.
+- Merge Handoff: Archive the plan, commit the archive move and closeout notes,
+  push `codex/issue-57-lock-coordination`, open or update the PR, and record
+  publish, CI, and sync evidence before treating the candidate as waiting for
+  merge approval.
 
 ## Outcome Summary
 
 ### Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Closed `#57` with a narrow implementation instead of a broader lock-model
+  redesign.
+- Kept `review submit` outside the plan-local state lock path in actual runtime
+  behavior, not just in service-level code or docs wording.
+- Added focused regression coverage for lock-order preference, state-lock
+  contention, and the repaired CLI wrapper behavior.
+- Left the review/state/timeline split explicit and documented so future work
+  can evolve from a truthful baseline.
 
 ### Not Delivered
 
-PENDING_UNTIL_ARCHIVE
+- No broader convergence to a single plan-local mutation lock primitive.
+- No general lock-orchestration cleanup outside the current review start,
+  review submit, and review aggregate surfaces.
 
 ### Follow-Up Issues
 
-NONE
+- No new GitHub follow-up issue was created in this slice. Any future decision
+  to unify review and state locking should begin as a separate design request
+  rather than being treated as unresolved debt inside `#57`.
+- Timeline-lock cleanup likewise remains intentionally out of scope unless a
+  later request broadens the concurrency model beyond this issue.
