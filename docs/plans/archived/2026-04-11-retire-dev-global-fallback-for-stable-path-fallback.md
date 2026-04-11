@@ -243,17 +243,24 @@ Fresh full finalize review is now pending for that repaired candidate.
   installs.
 - `review-004-delta` passed cleanly after adding that retired-path absence
   assertion to the normal-install smoke.
+- `review-005-full` requested two blocking findings: reject repo-local dev
+  binaries as out-of-tree PATH fallbacks and prove both managed-wrapper
+  signatures are skipped during that fallback scan.
+- `review-006-full` passed cleanly after constraining out-of-tree fallback to
+  release-mode PATH candidates and expanding the managed-wrapper smoke to cover
+  both marker-based and legacy wrapper signatures.
 
 ## Archive Summary
 
+- Archived At: 2026-04-12T00:01:01+08:00
+- Revision: 1
 - PR: pending creation after archive closeout.
-- Ready: awaiting a fresh passing full finalize review for revision `1`, after
-  which the candidate should be archive-ready.
-- Merge Handoff: rerun full finalize review, archive the active plan, commit
-  the archive move and closeout summaries, push branch
-  `codex/retire-dev-global-fallback-path`, open or update the PR, and record
-  publish/CI/sync evidence until `harness status` reaches
-  `execution/finalize/await_merge`.
+- Ready: `review-006-full` passed for revision `1`; the candidate is
+  archive-ready.
+- Merge Handoff: archive the active plan, commit the archive move and closeout
+  summaries, push branch `codex/retire-dev-global-fallback-path`, open or
+  update the PR, and record publish/CI/sync evidence until `harness status`
+  reaches `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
