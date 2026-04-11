@@ -431,6 +431,20 @@ func (s Service) planSkillsInstall(targetDir string) ([]plannedWrite, []CommandE
 
 	for skillName, files := range canonical {
 		targetRoot := filepath.Join(targetDir, skillName)
+		if _, ok := installed[skillName]; !ok {
+			existingFiles, existingErr := walkFiles(targetRoot)
+			if existingErr != nil && !os.IsNotExist(existingErr) {
+				errs = append(errs, CommandError{Path: pathLabel(s.Workdir, targetRoot), Message: existingErr.Error()})
+				continue
+			}
+			if len(existingFiles) > 0 {
+				errs = append(errs, CommandError{
+					Path:    pathLabel(s.Workdir, targetRoot),
+					Message: "target skill directory already exists and is not recognized as easyharness-managed",
+				})
+				continue
+			}
+		}
 		if state, ok := installed[skillName]; ok && !state.Managed {
 			legacyManaged, legacyErr := isLegacyManagedSkill(targetRoot, skillName, files)
 			if legacyErr != nil {
@@ -931,33 +945,51 @@ func isLegacyManagedSkill(root, skillName string, canonicalFiles map[string]stri
 		}
 	}
 
-	skillPath := filepath.Join(root, "SKILL.md")
-	data, err := os.ReadFile(skillPath)
-	if err != nil {
-		return false, err
+	for rel, canonicalContent := range canonicalFiles {
+		targetPath := filepath.Join(root, filepath.FromSlash(rel))
+		existing, readErr := os.ReadFile(targetPath)
+		if readErr != nil {
+			return false, readErr
+		}
+		expected := canonicalContent
+		if rel == "SKILL.md" {
+			expected, err = stripManagedSkillMetadata(canonicalContent)
+			if err != nil {
+				return false, err
+			}
+		}
+		if normalizeSkillContent(string(existing)) != normalizeSkillContent(expected) {
+			return false, nil
+		}
 	}
-	rawFrontmatter, _, err := splitFrontmatter(string(data))
+	return true, nil
+}
+
+func stripManagedSkillMetadata(content string) (string, error) {
+	rawFrontmatter, body, err := splitFrontmatter(content)
 	if err != nil {
-		return false, nil
+		return "", err
 	}
 	var frontmatter skillFrontmatter
 	if err := yaml.Unmarshal([]byte(rawFrontmatter), &frontmatter); err != nil {
-		return false, nil
+		return "", err
 	}
-	if strings.TrimSpace(frontmatter.Name) != skillName {
-		return false, nil
+	if frontmatter.Metadata != nil {
+		delete(frontmatter.Metadata, skillMetadataManaged)
+		delete(frontmatter.Metadata, skillMetadataVersion)
+		if len(frontmatter.Metadata) == 0 {
+			frontmatter.Metadata = nil
+		}
 	}
-	if frontmatter.Metadata != nil && strings.TrimSpace(frontmatter.Metadata[skillMetadataManaged]) == "true" {
-		return true, nil
-	}
-
-	canonicalRawFrontmatter, _, err := splitFrontmatter(canonicalFiles["SKILL.md"])
+	renderedFrontmatter, err := yaml.Marshal(frontmatter)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	var canonicalFrontmatter skillFrontmatter
-	if err := yaml.Unmarshal([]byte(canonicalRawFrontmatter), &canonicalFrontmatter); err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(frontmatter.Description) == strings.TrimSpace(canonicalFrontmatter.Description), nil
+	return "---\n" + string(renderedFrontmatter) + "---\n\n" + strings.TrimLeft(body, "\n"), nil
+}
+
+func normalizeSkillContent(content string) string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	content = strings.ReplaceAll(content, "\r", "\n")
+	return strings.TrimSpace(content)
 }

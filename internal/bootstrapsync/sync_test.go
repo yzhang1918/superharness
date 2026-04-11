@@ -3,6 +3,7 @@ package bootstrapsync
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -12,38 +13,10 @@ import (
 func TestSyncRefreshesManagedOutputsFromBootstrapAssets(t *testing.T) {
 	root := t.TempDir()
 
-	agents := strings.Join([]string{
-		"# AGENTS.md",
-		"",
-		"Repo-specific intro.",
-		"",
-		"<!-- easyharness:begin -->",
-		"stale managed content",
-		"<!-- easyharness:end -->",
-		"",
-		"Repo-specific footer.",
-		"",
-	}, "\n")
-	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(agents), 0o644); err != nil {
-		t.Fatalf("write AGENTS.md: %v", err)
+	if _, err := Sync(root); err != nil {
+		t.Fatalf("initial sync: %v", err)
 	}
-
-	skillPath := filepath.Join(root, ".agents/skills/harness-discovery/SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
-		t.Fatalf("mkdir skill dir: %v", err)
-	}
-	staleSkill := strings.Join([]string{
-		"---",
-		"name: harness-discovery",
-		"description: Run interactive, Socratic pre-implementation discovery for medium/large or ambiguous work in a harness-driven repository by clarifying goals, constraints, tradeoffs, and workflow direction before planning or execution. Use this whenever the next move is unclear, the user needs help choosing an approach, or archived work may need to reopen.",
-		"---",
-		"",
-		"# Stale",
-		"",
-	}, "\n")
-	if err := os.WriteFile(skillPath, []byte(staleSkill), 0o644); err != nil {
-		t.Fatalf("write stale skill: %v", err)
-	}
+	rewriteLegacyManagedOutputs(t, root, "harness-discovery")
 
 	if _, err := Sync(root); err != nil {
 		t.Fatalf("sync: %v", err)
@@ -64,6 +37,7 @@ func TestSyncRefreshesManagedOutputsFromBootstrapAssets(t *testing.T) {
 		t.Fatalf("expected versioned managed block marker, got:\n%s", rendered)
 	}
 
+	skillPath := filepath.Join(root, ".agents/skills/harness-discovery/SKILL.md")
 	skillData, err := os.ReadFile(skillPath)
 	if err != nil {
 		t.Fatalf("read skill: %v", err)
@@ -76,25 +50,10 @@ func TestSyncRefreshesManagedOutputsFromBootstrapAssets(t *testing.T) {
 func TestCheckReportsDriftWhenManagedOutputsAreStale(t *testing.T) {
 	root := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("# AGENTS.md\n\nstale\n"), 0o644); err != nil {
-		t.Fatalf("write AGENTS.md: %v", err)
+	if _, err := Sync(root); err != nil {
+		t.Fatalf("initial sync: %v", err)
 	}
-	skillPath := filepath.Join(root, ".agents/skills/harness-reviewer/SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
-		t.Fatalf("mkdir skill dir: %v", err)
-	}
-	staleSkill := strings.Join([]string{
-		"---",
-		"name: harness-reviewer",
-		"description: Use when acting as a dedicated reviewer subagent for one assigned harness review slot in an existing review round and you need to inspect the change, write structured findings, and submit them through `harness review submit`. This skill is only for reviewer subagents, not for the controller agent.",
-		"---",
-		"",
-		"# Stale",
-		"",
-	}, "\n")
-	if err := os.WriteFile(skillPath, []byte(staleSkill), 0o644); err != nil {
-		t.Fatalf("write stale skill: %v", err)
-	}
+	rewriteLegacyManagedOutputs(t, root, "harness-reviewer")
 
 	result, err := Check(root)
 	if err == nil {
@@ -201,5 +160,31 @@ func TestSyncRemovesStaleManagedSkillPackages(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected delete action in sync result, got %#v", result.Actions)
+	}
+}
+
+func rewriteLegacyManagedOutputs(t *testing.T, root, skillName string) {
+	t.Helper()
+
+	agentsPath := filepath.Join(root, "AGENTS.md")
+	agentsData, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	legacyAgents := strings.Replace(string(agentsData), `<!-- easyharness:begin version="dev" -->`, "<!-- easyharness:begin -->", 1)
+	legacyAgents = strings.Replace(legacyAgents, "# AGENTS.md", "# AGENTS.md\n\nRepo-specific intro.", 1)
+	legacyAgents = strings.TrimRight(legacyAgents, "\n") + "\n\nRepo-specific footer.\n"
+	if err := os.WriteFile(agentsPath, []byte(legacyAgents), 0o644); err != nil {
+		t.Fatalf("write legacy AGENTS.md: %v", err)
+	}
+
+	skillPath := filepath.Join(root, ".agents/skills", skillName, "SKILL.md")
+	skillData, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("read managed skill: %v", err)
+	}
+	legacySkill := regexp.MustCompile(`(?ms)\nmetadata:\n(?:  easyharness-managed: "true"\n  easyharness-version: [^\n]+\n)`).ReplaceAllString(string(skillData), "\n")
+	if err := os.WriteFile(skillPath, []byte(legacySkill), 0o644); err != nil {
+		t.Fatalf("write legacy skill: %v", err)
 	}
 }

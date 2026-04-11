@@ -190,3 +190,115 @@ func TestInstallInstructionsDryRunDoesNotWrite(t *testing.T) {
 		t.Fatalf("expected dry-run to avoid writing AGENTS.md, err=%v", err)
 	}
 }
+
+func TestInstallSkillsRejectsExistingUnmanagedDirectoryWithoutSkillFile(t *testing.T) {
+	root := t.TempDir()
+	conflictFile := filepath.Join(root, ".agents/skills/harness-discovery/custom.txt")
+	if err := os.MkdirAll(filepath.Dir(conflictFile), 0o755); err != nil {
+		t.Fatalf("mkdir unmanaged dir: %v", err)
+	}
+	if err := os.WriteFile(conflictFile, []byte("custom"), 0o644); err != nil {
+		t.Fatalf("write unmanaged file: %v", err)
+	}
+
+	result := testService(root).InstallSkills(Options{})
+	if result.OK {
+		t.Fatalf("expected unmanaged-directory conflict, got %#v", result)
+	}
+}
+
+func TestSkillsUserScopeUsesCodexHomeAndUninstallsManagedPackages(t *testing.T) {
+	root := t.TempDir()
+	svc := testService(root)
+
+	installResult := svc.InstallSkills(Options{Scope: ScopeUser})
+	if !installResult.OK {
+		t.Fatalf("user-scope install failed: %#v", installResult)
+	}
+	userSkill := filepath.Join(root, "home/.codex/skills/harness-discovery/SKILL.md")
+	if _, err := os.Stat(userSkill); err != nil {
+		t.Fatalf("expected user-scope skill install, err=%v", err)
+	}
+
+	uninstallResult := svc.UninstallSkills(Options{Scope: ScopeUser})
+	if !uninstallResult.OK {
+		t.Fatalf("user-scope uninstall failed: %#v", uninstallResult)
+	}
+	if _, err := os.Stat(userSkill); !os.IsNotExist(err) {
+		t.Fatalf("expected managed user-scope skill removal, err=%v", err)
+	}
+}
+
+func TestInstructionsUserScopeUsesCodexHomeAndUninstallsManagedBlock(t *testing.T) {
+	root := t.TempDir()
+	svc := testService(root)
+
+	installResult := svc.InstallInstructions(Options{Scope: ScopeUser})
+	if !installResult.OK {
+		t.Fatalf("user-scope instructions install failed: %#v", installResult)
+	}
+	userAgents := filepath.Join(root, "home/.codex/AGENTS.md")
+	data, err := os.ReadFile(userAgents)
+	if err != nil {
+		t.Fatalf("read user-scope AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(data), `<!-- easyharness:begin version="v9.9.9" -->`) {
+		t.Fatalf("expected versioned managed block, got:\n%s", data)
+	}
+
+	uninstallResult := svc.UninstallInstructions(Options{Scope: ScopeUser})
+	if !uninstallResult.OK {
+		t.Fatalf("user-scope instructions uninstall failed: %#v", uninstallResult)
+	}
+	if _, err := os.Stat(userAgents); !os.IsNotExist(err) {
+		t.Fatalf("expected managed user-scope instructions removal, err=%v", err)
+	}
+}
+
+func TestInitSupportsExplicitOverrideTargetsForUnknownAgents(t *testing.T) {
+	root := t.TempDir()
+	result := testService(root).Init(Options{
+		Agent:            "claude",
+		SkillsDir:        ".claude/skills",
+		InstructionsFile: "CLAUDE.md",
+	})
+	if !result.OK {
+		t.Fatalf("expected explicit override init success, got %#v", result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "CLAUDE.md")); err != nil {
+		t.Fatalf("expected explicit instructions file, err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".claude/skills/harness-discovery/SKILL.md")); err != nil {
+		t.Fatalf("expected explicit skills dir install, err=%v", err)
+	}
+}
+
+func TestInitRefreshesVersionMarkersAcrossVersionChanges(t *testing.T) {
+	root := t.TempDir()
+	first := testService(root)
+	if result := first.Init(Options{}); !result.OK {
+		t.Fatalf("initial init failed: %#v", result)
+	}
+
+	second := testService(root)
+	second.Version = versioninfo.Info{Version: "v10.0.0", Mode: "release"}
+	if result := second.Init(Options{}); !result.OK {
+		t.Fatalf("refresh init failed: %#v", result)
+	}
+
+	agentsData, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read AGENTS.md after refresh: %v", err)
+	}
+	if !strings.Contains(string(agentsData), `<!-- easyharness:begin version="v10.0.0" -->`) {
+		t.Fatalf("expected refreshed block version marker, got:\n%s", agentsData)
+	}
+
+	skillData, err := os.ReadFile(filepath.Join(root, ".agents/skills/harness-discovery/SKILL.md"))
+	if err != nil {
+		t.Fatalf("read skill after refresh: %v", err)
+	}
+	if !strings.Contains(string(skillData), "easyharness-version: v10.0.0") {
+		t.Fatalf("expected refreshed skill metadata version, got:\n%s", skillData)
+	}
+}

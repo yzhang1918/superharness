@@ -337,21 +337,21 @@ func TestSkillsInstallRecoversAfterApplyWriteFailure(t *testing.T) {
 
 func TestInitRecoversAfterMidFlightFailure(t *testing.T) {
 	workspace := support.NewWorkspace(t)
+	initial := support.Run(t, workspace.Root, "init")
+	support.RequireSuccess(t, initial)
+	support.RequireNoStderr(t, initial)
+
 	blockedSkillPath := workspace.Path(".agents/skills/harness-discovery/SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(blockedSkillPath), 0o755); err != nil {
-		t.Fatalf("mkdir blocked skill dir: %v", err)
+	skillData, err := os.ReadFile(blockedSkillPath)
+	if err != nil {
+		t.Fatalf("read managed skill: %v", err)
 	}
-	staleSkill := strings.Join([]string{
-		"---",
-		"name: harness-discovery",
-		"description: Run interactive, Socratic pre-implementation discovery for medium/large or ambiguous work in a harness-driven repository by clarifying goals, constraints, tradeoffs, and workflow direction before planning or execution. Use this whenever the next move is unclear, the user needs help choosing an approach, or archived work may need to reopen.",
-		"---",
-		"",
-		"# Stale",
-		"",
-	}, "\n")
-	if err := os.WriteFile(blockedSkillPath, []byte(staleSkill), 0o400); err != nil {
-		t.Fatalf("write blocked skill file: %v", err)
+	staleSkill := strings.Replace(string(skillData), "easyharness-version:", "easyharness-version: stale-", 1)
+	if err := os.WriteFile(blockedSkillPath, []byte(staleSkill), 0o644); err != nil {
+		t.Fatalf("write stale managed skill file: %v", err)
+	}
+	if err := os.Chmod(blockedSkillPath, 0o400); err != nil {
+		t.Fatalf("chmod blocked skill file: %v", err)
 	}
 
 	failed := support.Run(t, workspace.Root, "init")
