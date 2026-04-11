@@ -176,6 +176,50 @@ func TestUninstallInstructionsDeletesFileWhenOnlyManagedContentRemains(t *testin
 	}
 }
 
+func TestUninstallInstructionsPreservesUserContentAroundManagedBlock(t *testing.T) {
+	root := t.TempDir()
+	svc := testService(root)
+	if result := svc.InstallInstructions(Options{}); !result.OK {
+		t.Fatalf("install instructions failed: %#v", result)
+	}
+
+	agentsPath := filepath.Join(root, "AGENTS.md")
+	installed, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("read installed AGENTS.md: %v", err)
+	}
+	customized := strings.Join([]string{
+		"# AGENTS.md",
+		"",
+		"User-owned intro.",
+		"",
+		strings.TrimSpace(string(installed)),
+		"",
+		"User-owned footer.",
+		"",
+	}, "\n")
+	if err := os.WriteFile(agentsPath, []byte(customized), 0o644); err != nil {
+		t.Fatalf("write mixed-content AGENTS.md: %v", err)
+	}
+
+	result := svc.UninstallInstructions(Options{})
+	if !result.OK {
+		t.Fatalf("expected uninstall instructions success, got %#v", result)
+	}
+
+	rendered, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("read preserved AGENTS.md: %v", err)
+	}
+	body := string(rendered)
+	if !strings.Contains(body, "User-owned intro.") || !strings.Contains(body, "User-owned footer.") {
+		t.Fatalf("expected user content to survive, got:\n%s", body)
+	}
+	if strings.Contains(body, "<!-- easyharness:begin") || strings.Contains(body, "<!-- easyharness:end -->") {
+		t.Fatalf("expected managed block removal, got:\n%s", body)
+	}
+}
+
 func TestInstallInstructionsDryRunDoesNotWrite(t *testing.T) {
 	root := t.TempDir()
 

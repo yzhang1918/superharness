@@ -441,8 +441,51 @@ func TestInitSupportsExplicitOverrideTargetsViaCLI(t *testing.T) {
 	if !payload.OK || payload.Command != "init" || payload.Resource != "bootstrap" {
 		t.Fatalf("unexpected init override payload: %#v", payload)
 	}
-	support.RequireFileExists(t, workspace.Path("CLAUDE.md"))
-	support.RequireFileExists(t, workspace.Path(".claude/skills/harness-discovery/SKILL.md"))
+	instructionsPath := workspace.Path("CLAUDE.md")
+	skillPath := workspace.Path(".claude/skills/harness-discovery/SKILL.md")
+	support.RequireFileExists(t, instructionsPath)
+	support.RequireFileExists(t, skillPath)
+
+	instructionsData, err := os.ReadFile(instructionsPath)
+	if err != nil {
+		t.Fatalf("read custom instructions file: %v", err)
+	}
+	support.RequireContains(t, string(instructionsData), `<!-- easyharness:begin version="`)
+
+	skillData, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("read custom skill file: %v", err)
+	}
+	support.RequireContains(t, string(skillData), "easyharness-version:")
+
+	staleInstructions := strings.Replace(string(instructionsData), `<!-- easyharness:begin version="`, `<!-- easyharness:begin version="stale-`, 1)
+	if err := os.WriteFile(instructionsPath, []byte(staleInstructions), 0o644); err != nil {
+		t.Fatalf("write stale custom instructions file: %v", err)
+	}
+	staleSkill := strings.Replace(string(skillData), "easyharness-version:", "easyharness-version: stale-", 1)
+	if err := os.WriteFile(skillPath, []byte(staleSkill), 0o644); err != nil {
+		t.Fatalf("write stale custom skill file: %v", err)
+	}
+
+	refresh := support.Run(t, workspace.Root, "init", "--agent", "claude", "--dir", ".claude/skills", "--file", "CLAUDE.md")
+	support.RequireSuccess(t, refresh)
+	support.RequireNoStderr(t, refresh)
+
+	refreshedInstructions, err := os.ReadFile(instructionsPath)
+	if err != nil {
+		t.Fatalf("read refreshed custom instructions file: %v", err)
+	}
+	if strings.Contains(string(refreshedInstructions), `version="stale-`) {
+		t.Fatalf("expected custom instructions refresh to replace stale version marker, got:\n%s", refreshedInstructions)
+	}
+
+	refreshedSkill, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("read refreshed custom skill file: %v", err)
+	}
+	if strings.Contains(string(refreshedSkill), "easyharness-version: stale-") {
+		t.Fatalf("expected custom skill refresh to replace stale version marker, got:\n%s", refreshedSkill)
+	}
 }
 
 func TestSkillsAndInstructionsInstallSupportUserScopeViaCLI(t *testing.T) {

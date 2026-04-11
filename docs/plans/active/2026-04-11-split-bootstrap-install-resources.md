@@ -325,17 +325,19 @@ candidate level.
   non-blocking finding about missing binary-level smoke coverage for user-scope
   and explicit override paths.
 - `review-003-delta` passed after adding binary-level smoke coverage for
-  `harness init` explicit overrides plus user-scope resource installs. One
-  non-blocking residual remains: there is still no binary-level explicit
-  override smoke case on `harness skills install` or
-  `harness instructions install` themselves.
+  `harness init` explicit overrides plus user-scope resource installs.
 
 ## Archive Summary
 
-Archived as a merge-ready candidate after one full finalize review and two
-narrow delta follow-ups. The final candidate has no blocking review findings
-and only one documented non-blocking smoke-coverage gap outside the core
-ownership/version contract addressed by this slice.
+PR: Branch-local candidate is ready for publish handoff; no PR metadata was
+recorded during this local execution loop.
+
+Ready: The candidate reached a passing finalize review state after one full
+review and two narrow delta follow-ups, with no blocking findings remaining.
+
+Merge Handoff: After archive, refresh publish/CI/sync evidence and then wait
+for human merge approval once the archived candidate has current publish, CI,
+and sync evidence recorded.
 
 ## Outcome Summary
 
@@ -360,4 +362,7 @@ None within the approved scope.
 
 ### Follow-Up Issues
 
-NONE
+- Deferred roadmap items remain intentionally out of scope for this slice:
+  native multi-agent profile packs beyond explicit override hooks,
+  marketplace-style skill distribution, and richer inspection commands such as
+  `harness skills doctor` or `harness instructions show`.
