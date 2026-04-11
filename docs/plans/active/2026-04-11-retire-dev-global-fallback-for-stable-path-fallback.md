@@ -163,6 +163,11 @@ targets before candidate selection, and extended smoke coverage to prove both
 symlink-alias skipping and skipping other managed wrappers already on `PATH`.
 Revalidated with `bash -n scripts/install-dev-harness`,
 `gofmt -w tests/smoke/install_dev_harness_test.go`, and
+`go test ./tests/smoke -run InstallDevHarness -count=1`. After finalize
+`review-003-full` raised one remaining tests finding, added an explicit smoke
+assertion that ordinary installs leave the retired
+`~/.local/share/easyharness/dev/harness` path absent and reran
+`gofmt -w tests/smoke/install_dev_harness_test.go` plus
 `go test ./tests/smoke -run InstallDevHarness -count=1`.
 
 #### Review Notes
@@ -174,7 +179,10 @@ wrappers already on `PATH`. The repair resolves wrapper candidates to their
 real paths before self/managed-wrapper checks and adds focused smoke coverage
 for both the symlink-alias path and the separate managed-wrapper-skip branch.
 `review-002-delta` then passed cleanly with no remaining correctness or test
-findings for the repair.
+findings for the repair. Finalize `review-003-full` later requested one tests
+finding because the suite no longer proved the retired dev-owned global
+fallback path stayed absent during ordinary installs; the repair added that
+assertion and a fresh finalize delta review is now pending.
 
 ## Validation Strategy
 

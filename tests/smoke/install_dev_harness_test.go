@@ -61,9 +61,11 @@ func TestInstallDevHarnessDefaultsToUserLocalBin(t *testing.T) {
 	}
 
 	expectedWrapper := filepath.Join(tempHome, ".local", "bin", "harness")
+	retiredGlobalFallback := filepath.Join(tempHome, ".local", "share", "easyharness", "dev", "harness")
 	support.RequireContains(t, result.Stdout, "Installed harness wrapper at "+expectedWrapper)
 	support.RequireFileExists(t, expectedWrapper)
 	support.RequireFileMissing(t, filepath.Join(firstPathDir, "harness"))
+	support.RequireFileMissing(t, retiredGlobalFallback)
 
 	info, err := os.Lstat(expectedWrapper)
 	if err != nil {
