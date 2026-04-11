@@ -186,6 +186,20 @@ inputs that do not already live in a more specific artifact:
 - `reopen`
 - `land`
 
+The mutation surfaces around those runtime artifacts stay split on purpose:
+
+- `.state-mutation.lock` serializes rewrites of plan-local `state.json`
+- `.review-mutation.lock` serializes review-artifact mutation such as round
+  creation, submission, ledger updates, and aggregation
+- `.timeline-mutation.lock` serializes appends to the plan-local
+  `events.jsonl` index
+
+When a review command mutates both review artifacts and `state.json`, it should
+acquire the review mutation lock before the state mutation lock. Commands that
+only submit reviewer output should stay on the review-artifact path and should
+not acquire the state mutation lock just because the round also has local
+state.
+
 ## High-Level Resolution Order
 
 1. If merge has been confirmed and the required post-merge bookkeeping is still

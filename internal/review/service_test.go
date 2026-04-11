@@ -536,6 +536,42 @@ func TestSubmitStoresSubmissionAndUpdatesLedger(t *testing.T) {
 	}
 }
 
+func TestSubmitDoesNotRequireStateMutationLock(t *testing.T) {
+	root := t.TempDir()
+	planStem := "2026-03-18-review-contract"
+	writeExecutingPlan(t, root, "docs/plans/active/"+planStem+".md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind:      "delta",
+		AnchorSHA: "anchor-sha",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+
+	release, err := runstate.AcquireStateMutationLock(root, planStem)
+	if err != nil {
+		t.Fatalf("acquire state lock: %v", err)
+	}
+	defer release()
+
+	result := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSON(t, review.SubmissionInput{
+		Summary: "Looks good.",
+	}))
+	if !result.OK {
+		t.Fatalf("expected submit success while state lock is held, got %#v", result)
+	}
+}
+
 func TestSubmitRejectsUnknownFindingProperty(t *testing.T) {
 	root := t.TempDir()
 	writeExecutingPlan(t, root, "docs/plans/active/2026-03-18-review-contract.md")
@@ -1101,6 +1137,36 @@ func TestStartRejectsWhenStateMutationLockIsHeld(t *testing.T) {
 	assertStartError(t, result, "state")
 }
 
+func TestStartPrefersReviewMutationLockWhenBothLocksAreHeld(t *testing.T) {
+	root := t.TempDir()
+	planStem := "2026-03-18-review-contract"
+	writeExecutingPlan(t, root, "docs/plans/active/"+planStem+".md")
+	holdReviewMutationLock(t, root, planStem)
+	release, err := runstate.AcquireStateMutationLock(root, planStem)
+	if err != nil {
+		t.Fatalf("acquire state lock: %v", err)
+	}
+	defer release()
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	result := svc.Start(mustJSON(t, review.Spec{
+		Kind:      "delta",
+		AnchorSHA: "anchor-sha",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if result.OK {
+		t.Fatalf("expected start failure while both locks are held, got %#v", result)
+	}
+	assertStartError(t, result, "review")
+}
+
 func TestAggregateRejectsWhenReviewMutationLockIsHeld(t *testing.T) {
 	root := t.TempDir()
 	planStem := "2026-03-18-review-contract"
@@ -1183,6 +1249,48 @@ func TestAggregateRejectsWhenStateMutationLockIsHeld(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, ".local", "harness", "plans", planStem, "reviews", start.Artifacts.RoundID, "aggregate.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected no aggregate artifact while state lock is held, got %v", err)
 	}
+}
+
+func TestAggregatePrefersReviewMutationLockWhenBothLocksAreHeld(t *testing.T) {
+	root := t.TempDir()
+	planStem := "2026-03-18-review-contract"
+	writeExecutingPlan(t, root, "docs/plans/active/"+planStem+".md")
+
+	svc := review.Service{
+		Workdir: root,
+		Now: func() time.Time {
+			return time.Date(2026, 3, 18, 1, 0, 0, 0, time.UTC)
+		},
+	}
+	start := svc.Start(mustJSON(t, review.Spec{
+		Kind:      "delta",
+		AnchorSHA: "anchor-sha",
+		Dimensions: []review.Dimension{
+			{Name: "correctness", Instructions: "Check correctness."},
+		},
+	}))
+	if !start.OK {
+		t.Fatalf("start failed: %#v", start)
+	}
+	submit := svc.Submit(start.Artifacts.RoundID, "correctness", mustJSON(t, review.SubmissionInput{
+		Summary: "Looks good.",
+	}))
+	if !submit.OK {
+		t.Fatalf("submit failed: %#v", submit)
+	}
+
+	holdReviewMutationLock(t, root, planStem)
+	release, err := runstate.AcquireStateMutationLock(root, planStem)
+	if err != nil {
+		t.Fatalf("acquire state lock: %v", err)
+	}
+	defer release()
+
+	result := svc.Aggregate(start.Artifacts.RoundID)
+	if result.OK {
+		t.Fatalf("expected aggregate failure while both locks are held, got %#v", result)
+	}
+	assertAggregateError(t, result, "review")
 }
 
 func TestAggregateFullWithBlockingFindings(t *testing.T) {

@@ -475,6 +475,9 @@ Contract:
 - when `step` is omitted and the inferred binding would be finalize review,
   reject the request if earlier completed steps still lack review-complete
   closeout and direct the controller toward explicit `step=<i>` repair instead
+- when mutating both review artifacts and local state, acquire the review
+  mutation lock before the state mutation lock instead of inventing a separate
+  acquisition order for this command
 - update local `state.json` so `harness status` can surface the active round
 - return round metadata plus next actions for the controller agent
 
@@ -621,6 +624,8 @@ Contract:
   - `path/to/file.go#L1-L3`
 - store the structured reviewer artifact in the round's owned location
 - update the dispatch or audit ledger
+- stay on the review-artifact mutation path only; reviewer submission should
+  not acquire the plan-local state mutation lock
 - return a submission receipt plus clear next actions
 
 Recommended next action:
@@ -653,6 +658,9 @@ Contract:
   decision surface
 - write an aggregate artifact that captures the review decision surface and
   preserves any finding `locations` verbatim
+- when mutating both review artifacts and local state, acquire the review
+  mutation lock before the state mutation lock instead of inventing a separate
+  acquisition order for this command
 - update local `state.json` with the aggregate result, including whether the
   round passed or requested changes
 - allow later commands to recover that decision from the round aggregate

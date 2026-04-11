@@ -756,7 +756,7 @@ func (a *App) runReviewSubmit(args []string) int {
 		return 1
 	}
 	recordedAt := a.Now().Format(time.RFC3339)
-	beforeStatus := readStatusSnapshot(workdir)
+	beforeStatus := readUnlockedStatusSnapshot(workdir)
 	result := review.Service{
 		Workdir:     workdir,
 		Now:         a.Now,

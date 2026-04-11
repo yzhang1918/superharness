@@ -750,6 +750,45 @@ func TestReviewSubmitCommandAppendsTimelineEvent(t *testing.T) {
 	assertLastTimelineEventCommand(t, root, "review submit")
 }
 
+func TestReviewSubmitCommandDoesNotFailWhenStateMutationLockIsHeld(t *testing.T) {
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	app := cli.New(stdout, stderr)
+	root := t.TempDir()
+	app.Getwd = func() (string, error) { return root, nil }
+	app.Now = func() time.Time {
+		return time.Date(2026, 3, 18, 15, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	}
+
+	outputPath := filepath.Join(root, "docs/plans/active/2026-03-18-test-plan.md")
+	if exitCode := app.Run([]string{"plan", "template", "--title", "CLI Review Submit Lock Plan", "--output", outputPath}); exitCode != 0 {
+		t.Fatalf("template command failed with %d: %s", exitCode, stderr.String())
+	}
+	if exitCode := app.Run([]string{"execute", "start"}); exitCode != 0 {
+		t.Fatalf("execute start failed with %d: %s", exitCode, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	app.Stdin = bytes.NewBufferString(`{"kind":"delta","anchor_sha":"anchor-sha","dimensions":[{"name":"correctness","instructions":"Check the status and contracts."}]}`)
+	if exitCode := app.Run([]string{"review", "start"}); exitCode != 0 {
+		t.Fatalf("review start failed with %d: %s", exitCode, stderr.String())
+	}
+
+	release, err := runstate.AcquireStateMutationLock(root, "2026-03-18-test-plan")
+	if err != nil {
+		t.Fatalf("acquire state lock: %v", err)
+	}
+	defer release()
+
+	stdout.Reset()
+	stderr.Reset()
+	app.Stdin = bytes.NewBufferString(`{"summary":"Looks good","findings":[]}`)
+	if exitCode := app.Run([]string{"review", "submit", "--round", "review-001-delta", "--slot", "correctness"}); exitCode != 0 {
+		t.Fatalf("expected review submit success while state lock is held, got %d: %s", exitCode, stderr.String())
+	}
+}
+
 func TestReviewSubmitCommandReturnsSchemaValidationErrors(t *testing.T) {
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)

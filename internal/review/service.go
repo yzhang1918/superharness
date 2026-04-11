@@ -54,32 +54,30 @@ type SubmitArtifacts = contracts.ReviewSubmitArtifacts
 type AggregateResult = contracts.ReviewAggregateResult
 type AggregateArtifacts = contracts.ReviewAggregateArtifacts
 
+type reviewDualMutationLocks struct {
+	PlanPath string
+	release  func()
+}
+
+type reviewMutationLockFailure struct {
+	Summary string
+	Issue   CommandError
+}
+
 func (s Service) Start(specBytes []byte) StartResult {
-	lockedPlanPath, release, err := s.acquireReviewMutationLock()
-	if err == nil {
-		defer release()
-	} else {
+	locks, failure := s.acquireReviewAndStateMutationLocks()
+	if failure != nil {
 		return StartResult{
 			OK:      false,
 			Command: "review start",
-			Summary: "Another review state mutation is already in progress.",
-			Errors:  []CommandError{{Path: "review", Message: err.Error()}},
+			Summary: failure.Summary,
+			Errors:  []CommandError{failure.Issue},
 		}
 	}
-	planStem := strings.TrimSuffix(filepath.Base(lockedPlanPath), filepath.Ext(lockedPlanPath))
-	releaseState, err := runstate.AcquireStateMutationLock(s.Workdir, planStem)
-	if err != nil {
-		return StartResult{
-			OK:      false,
-			Command: "review start",
-			Summary: "Another local state mutation is already in progress.",
-			Errors:  []CommandError{{Path: "state", Message: err.Error()}},
-		}
-	}
-	defer releaseState()
+	defer locks.release()
 
 	now := s.now()
-	planPath, doc, planStem, relPlanPath, state, statePath, errResult := s.loadCurrentExecutingPlan(lockedPlanPath)
+	planPath, doc, planStem, relPlanPath, state, statePath, errResult := s.loadCurrentExecutingPlan(locks.PlanPath)
 	if errResult != nil {
 		return *errResult
 	}
@@ -420,30 +418,18 @@ func (s Service) Submit(roundID, slot string, inputBytes []byte) SubmitResult {
 }
 
 func (s Service) Aggregate(roundID string) AggregateResult {
-	lockedPlanPath, release, err := s.acquireReviewMutationLock()
-	if err == nil {
-		defer release()
-	} else {
+	locks, failure := s.acquireReviewAndStateMutationLocks()
+	if failure != nil {
 		return AggregateResult{
 			OK:      false,
 			Command: "review aggregate",
-			Summary: "Another review state mutation is already in progress.",
-			Errors:  []CommandError{{Path: "review", Message: err.Error()}},
+			Summary: failure.Summary,
+			Errors:  []CommandError{failure.Issue},
 		}
 	}
-	planStem := strings.TrimSuffix(filepath.Base(lockedPlanPath), filepath.Ext(lockedPlanPath))
-	releaseState, err := runstate.AcquireStateMutationLock(s.Workdir, planStem)
-	if err != nil {
-		return AggregateResult{
-			OK:      false,
-			Command: "review aggregate",
-			Summary: "Another local state mutation is already in progress.",
-			Errors:  []CommandError{{Path: "state", Message: err.Error()}},
-		}
-	}
-	defer releaseState()
+	defer locks.release()
 
-	_, _, planStem, _, state, statePath, errResult := s.loadCurrentExecutingPlan(lockedPlanPath)
+	_, _, planStem, _, state, statePath, errResult := s.loadCurrentExecutingPlan(locks.PlanPath)
 	if errResult != nil {
 		return AggregateResult{
 			OK:      false,
@@ -624,6 +610,35 @@ func (s Service) Aggregate(roundID string) AggregateResult {
 		issues = append(issues, restoreJSONFileSnapshot(manifest.Aggregate, previousAggregate, previousAggregateExists, "aggregate")...)
 		return issues
 	})
+}
+
+// review start and review aggregate both mutate review artifacts plus state.json.
+// Keep the review lock outermost so future edits cannot drift into a different
+// acquisition order than the rest of the review command family expects.
+func (s Service) acquireReviewAndStateMutationLocks() (*reviewDualMutationLocks, *reviewMutationLockFailure) {
+	planPath, releaseReview, err := s.acquireReviewMutationLock()
+	if err != nil {
+		return nil, &reviewMutationLockFailure{
+			Summary: "Another review state mutation is already in progress.",
+			Issue:   CommandError{Path: "review", Message: err.Error()},
+		}
+	}
+	planStem := strings.TrimSuffix(filepath.Base(planPath), filepath.Ext(planPath))
+	releaseState, err := runstate.AcquireStateMutationLock(s.Workdir, planStem)
+	if err != nil {
+		releaseReview()
+		return nil, &reviewMutationLockFailure{
+			Summary: "Another local state mutation is already in progress.",
+			Issue:   CommandError{Path: "state", Message: err.Error()},
+		}
+	}
+	return &reviewDualMutationLocks{
+		PlanPath: planPath,
+		release: func() {
+			releaseState()
+			releaseReview()
+		},
+	}, nil
 }
 
 func activeAggregateRoundError(state *runstate.State, roundID string) *AggregateResult {
