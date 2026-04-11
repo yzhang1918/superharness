@@ -296,6 +296,7 @@ separate isolated reviewer round here.
 - `go test ./internal/cli`
 - `go test ./tests/smoke -run 'TestRepositoryVersionFileUsesUnprefixedReleaseVersion|TestReadReleaseVersionOutputsVersionAndTag|TestReleaseWorkflowWiresHomebrewTapPublishing'`
 - `go test ./tests/smoke -run 'TestBuildReleaseProducesStableArchiveAndVersionedBinary|TestBuildReleaseHelpUsesStableExampleVersion|TestReleaseWorkflowWiresHomebrewTapPublishing|TestRepositoryVersionFileUsesUnprefixedReleaseVersion|TestReadReleaseVersionOutputsVersionAndTag'`
+- `go test ./tests/smoke -run 'TestReleaseDocsPresentStableOnboardingSurface|TestBuildReleaseProducesStableArchiveAndVersionedBinary|TestBuildReleaseHelpUsesStableExampleVersion|TestReleaseWorkflowWiresHomebrewTapPublishing|TestRepositoryVersionFileUsesUnprefixedReleaseVersion|TestReadReleaseVersionOutputsVersionAndTag'`
 - `scripts/read-release-version --tag`
 
 ## Review Summary
@@ -311,20 +312,35 @@ separate isolated reviewer round here.
   stable `v0.2.0` release-build path still lacked dedicated smoke coverage.
 - Finalize full review `review-004-full` passed after those repairs, with zero
   blocking and zero non-blocking findings.
+- Revision 2 reopened the archived candidate in `finalize-fix` mode because
+  sync evidence showed the branch was stale against `origin/main`. The repair
+  merged the latest `origin/main` cleanly, reran focused validation, and then
+  resumed finalize review.
+- Finalize full review `review-005-full` requested one blocking repair because
+  the rewritten docs surfaces still lacked a focused regression guard. That
+  led to the new docs smoke test.
+- Finalize full review `review-006-full` requested one blocking docs fix
+  because `docs/releasing.md` understated the fact that prerelease tags also
+  update the Homebrew tap when the token is configured.
+- Finalize full review `review-007-full` passed after those repairs, with one
+  non-blocking tests finding noting that the docs smoke test could later pin
+  the token-gated prerelease clause even more tightly if the repository wants
+  a stricter future guard.
 
 ## Archive Summary
 
-- Archived At: 2026-04-11T22:36:34+08:00
-- Revision: 1
+- Archived At: 2026-04-11T22:50:35+08:00
+- Revision: 2
 - PR: https://github.com/catu-ai/easyharness/pull/143
 - Ready: The candidate now presents `easyharness` as a product-first `0.2.0`
   release, keeps the rapid-iteration and steer-not-micromanage posture clear,
   moves detailed maintainer setup into `docs/development.md`, updates stable
-  release-facing examples, and passed finalize full review `review-004-full`.
-- Merge Handoff: Branch `codex/v0-2-release-story-onboarding` is pushed and PR
-  #143 is open. Record publish, CI, and sync evidence for the archived
-  candidate, then wait for explicit merge approval once status reaches
-  `execution/finalize/await_merge`.
+  release-facing examples, includes focused smoke coverage for the rewritten
+  docs surfaces, absorbs the latest `origin/main` cleanly in revision 2, and
+  passed finalize full review `review-007-full`.
+- Merge Handoff: Revision 2 is archived. Push the updated branch to refresh PR
+  #143, record fresh publish/CI/sync evidence for revision 2, and wait for
+  merge approval once status reaches `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
@@ -347,6 +363,10 @@ separate isolated reviewer round here.
 - Fixed finalize-review feedback by removing workstation-specific development
   doc paths and adding focused stable release-build smoke coverage plus stable
   example-string assertions.
+- Reopened the archived candidate in revision 2 to absorb the latest
+  `origin/main` cleanly, then added focused smoke coverage for the rewritten
+  README, development doc, and release guide plus the clarified prerelease tap
+  wording in `docs/releasing.md`.
 
 ### Not Delivered
 
@@ -362,4 +382,6 @@ separate isolated reviewer round here.
 - No new follow-up issue was created in this slice. The deferred items remain
   future packaging and policy work such as a separate public website or a
   longer-term compatibility story if the project later wants to formalize
-  those tradeoffs.
+  those tradeoffs. One non-blocking review note also remains available for
+  future tightening: the docs smoke test could pin the token-gated prerelease
+  clause even more explicitly if the team later wants an even stricter guard.

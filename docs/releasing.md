@@ -60,9 +60,10 @@ files look like they came from `2000-01-01 00:00`.
 - Archive entry timestamps are derived from the source commit time for the
   tagged revision, subject to ZIP's 2-second precision, rather than the
   wall-clock publish time.
-- The default Homebrew formula `easyharness` tracks the current public release
-  line. Stable tags become the default install path; prerelease tags remain
-  available through GitHub Releases when needed.
+- When the tap token is configured, tagged releases update the default
+  Homebrew formula `easyharness`, including prerelease tags. Stable tags make
+  the default tap formula stable again; prerelease tags can also move the tap
+  forward when maintainers choose to publish them.
 
 ## Homebrew Tap Publishing
 
