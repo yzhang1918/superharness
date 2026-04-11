@@ -157,11 +157,23 @@ precedence over stable PATH fallback, out-of-tree failure without a stable
 `--version` forwarding, and continued refusal to leave a source tree when the
 local binary is missing. Reinstalled the current worktree with
 `scripts/install-dev-harness` after the script change and reran
-`harness status`.
+`harness status`. After `review-001-full` requested changes, hardened the PATH
+fallback search so symlink aliases to managed wrappers resolve to their real
+targets before candidate selection, and extended smoke coverage to prove both
+symlink-alias skipping and skipping other managed wrappers already on `PATH`.
+Revalidated with `bash -n scripts/install-dev-harness`,
+`gofmt -w tests/smoke/install_dev_harness_test.go`, and
+`go test ./tests/smoke -run InstallDevHarness -count=1`.
 
 #### Review Notes
 
-PENDING_STEP_REVIEW
+`review-001-full` requested two blocking findings: symlinked aliases to the
+managed wrapper could recurse forever during out-of-tree PATH fallback, and
+the smoke suite did not exercise the separate branch that skips other managed
+wrappers already on `PATH`. The repair resolves wrapper candidates to their
+real paths before self/managed-wrapper checks and adds focused smoke coverage
+for both the symlink-alias path and the separate managed-wrapper-skip branch.
+Fresh delta review is still pending for the repair.
 
 ## Validation Strategy
 

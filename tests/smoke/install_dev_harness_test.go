@@ -2,6 +2,7 @@ package smoke_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/catu-ai/easyharness/tests/support"
 )
@@ -286,6 +288,105 @@ func TestInstallDevHarnessWrapperUsesStableHarnessOnPathOutsideWorktree(t *testi
 	)
 	if helpResult.ExitCode != 0 {
 		t.Fatalf("wrapper stable PATH fallback failed with exit %d\nstdout:\n%s\nstderr:\n%s", helpResult.ExitCode, helpResult.Stdout, helpResult.Stderr)
+	}
+
+	support.RequireContains(t, helpResult.Stdout, "stable fallback harness help")
+}
+
+func TestInstallDevHarnessWrapperSkipsOtherManagedWrappersOnPathOutsideWorktree(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("installer smoke tests require a POSIX shell")
+	}
+
+	repoRoot := copyInstallerFixture(t)
+	installDir := filepath.Join(t.TempDir(), "path-bin")
+	managedDir := t.TempDir()
+	stableDir, _ := newFakeStableHarness(t)
+	writeFixtureFile(t, filepath.Join(managedDir, "harness"), fakeManagedWrapperScript("unexpected managed wrapper"), 0o755)
+
+	result := runCommand(
+		t,
+		repoRoot,
+		installerEnv(t, map[string]string{
+			"HOME": t.TempDir(),
+			"PATH": installerPath(t, installDir, managedDir, stableDir),
+		}),
+		"/bin/bash",
+		filepath.Join(repoRoot, "scripts", "install-dev-harness"),
+		"--install-dir", installDir,
+	)
+	if result.ExitCode != 0 {
+		t.Fatalf("install-dev-harness failed with exit %d\nstdout:\n%s\nstderr:\n%s", result.ExitCode, result.Stdout, result.Stderr)
+	}
+
+	wrapperPath := filepath.Join(installDir, "harness")
+	otherProject := t.TempDir()
+	helpResult := runCommand(
+		t,
+		otherProject,
+		envWithOverrides(t, map[string]string{
+			"PATH": installerPath(t, installDir, managedDir, stableDir),
+		}),
+		wrapperPath,
+		"--help",
+	)
+	if helpResult.ExitCode != 0 {
+		t.Fatalf("wrapper with other managed wrapper on PATH failed with exit %d\nstdout:\n%s\nstderr:\n%s", helpResult.ExitCode, helpResult.Stdout, helpResult.Stderr)
+	}
+
+	support.RequireContains(t, helpResult.Stdout, "stable fallback harness help")
+	if strings.Contains(helpResult.CombinedOutput(), "unexpected managed wrapper") {
+		t.Fatalf("expected wrapper to skip other managed wrappers on PATH\nstdout:\n%s\nstderr:\n%s", helpResult.Stdout, helpResult.Stderr)
+	}
+}
+
+func TestInstallDevHarnessWrapperSkipsSymlinkAliasesOnPathOutsideWorktree(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("installer smoke tests require a POSIX shell")
+	}
+
+	repoRoot := copyInstallerFixture(t)
+	installDir := filepath.Join(t.TempDir(), "path-bin")
+	aliasOneDir := t.TempDir()
+	aliasTwoDir := t.TempDir()
+	stableDir, _ := newFakeStableHarness(t)
+
+	result := runCommand(
+		t,
+		repoRoot,
+		installerEnv(t, map[string]string{
+			"HOME": t.TempDir(),
+			"PATH": installerPath(t, installDir, stableDir),
+		}),
+		"/bin/bash",
+		filepath.Join(repoRoot, "scripts", "install-dev-harness"),
+		"--install-dir", installDir,
+	)
+	if result.ExitCode != 0 {
+		t.Fatalf("install-dev-harness failed with exit %d\nstdout:\n%s\nstderr:\n%s", result.ExitCode, result.Stdout, result.Stderr)
+	}
+
+	wrapperPath := filepath.Join(installDir, "harness")
+	if err := os.Symlink(wrapperPath, filepath.Join(aliasOneDir, "harness")); err != nil {
+		t.Fatalf("create first wrapper alias: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(aliasOneDir, "harness"), filepath.Join(aliasTwoDir, "harness")); err != nil {
+		t.Fatalf("create second wrapper alias: %v", err)
+	}
+
+	otherProject := t.TempDir()
+	helpResult := runCommandWithTimeout(
+		t,
+		5*time.Second,
+		otherProject,
+		envWithOverrides(t, map[string]string{
+			"PATH": installerPath(t, aliasOneDir, aliasTwoDir, installDir, stableDir),
+		}),
+		wrapperPath,
+		"--help",
+	)
+	if helpResult.ExitCode != 0 {
+		t.Fatalf("wrapper with symlink aliases on PATH failed with exit %d\nstdout:\n%s\nstderr:\n%s", helpResult.ExitCode, helpResult.Stdout, helpResult.Stderr)
 	}
 
 	support.RequireContains(t, helpResult.Stdout, "stable fallback harness help")
@@ -691,6 +792,12 @@ esac
 	return dir, path
 }
 
+func fakeManagedWrapperScript(marker string) string {
+	return "#!/bin/sh\n" +
+		"# easyharness-install-dev-wrapper\n" +
+		"printf '" + marker + "\\n'\n"
+}
+
 func writeFixtureFile(t *testing.T, path, contents string, mode os.FileMode) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(contents), mode); err != nil {
@@ -806,7 +913,25 @@ func installerPath(t *testing.T, extraDirs ...string) string {
 func runCommand(t *testing.T, workdir string, env []string, argv ...string) commandResult {
 	t.Helper()
 
-	cmd := exec.Command(argv[0], argv[1:]...)
+	return runCommandWithTimeout(t, 0, workdir, env, argv...)
+}
+
+func runCommandWithTimeout(t *testing.T, timeout time.Duration, workdir string, env []string, argv ...string) commandResult {
+	t.Helper()
+
+	var (
+		cmd    *exec.Cmd
+		cancel func()
+	)
+	if timeout > 0 {
+		var ctx context.Context
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		cmd = exec.CommandContext(ctx, argv[0], argv[1:]...)
+	} else {
+		cmd = exec.Command(argv[0], argv[1:]...)
+	}
+
 	cmd.Dir = workdir
 	cmd.Env = env
 
@@ -826,6 +951,9 @@ func runCommand(t *testing.T, workdir string, env []string, argv ...string) comm
 
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) {
+		if errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("run command %v timed out after %s\nstdout:\n%s\nstderr:\n%s", argv, timeout, stdout.String(), stderr.String())
+		}
 		t.Fatalf("run command %v: %v", argv, err)
 	}
 	result.ExitCode = exitErr.ExitCode()

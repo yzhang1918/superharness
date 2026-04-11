@@ -127,8 +127,7 @@ if [[ "${command_path}" == "${binary_path}" ]]; then
 fi
 
 wrapper_content() {
-  local template
-  template="$(cat <<'EOF'
+  cat <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -193,22 +192,54 @@ normalize_path() {
   printf '%s/%s\n' "${dir}" "${base}"
 }
 
+resolve_existing_path() {
+  local current="$1"
+  local hop_count=0
+
+  [[ -e "${current}" || -L "${current}" ]] || return 1
+
+  while [[ -L "${current}" ]]; do
+    local dir target
+    dir="$(cd "$(dirname "${current}")" 2>/dev/null && pwd -P)" || return 1
+    target="$(readlink "${current}")" || return 1
+    case "${target}" in
+      /*)
+        current="${target}"
+        ;;
+      *)
+        current="${dir}/${target}"
+        ;;
+    esac
+    hop_count=$((hop_count + 1))
+    if (( hop_count > 40 )); then
+      return 1
+    fi
+  done
+
+  [[ -e "${current}" ]] || return 1
+  normalize_path "${current}"
+}
+
 managed_easyharness_wrapper() {
   local path="$1"
-  [[ -f "${path}" && ! -L "${path}" ]] || return 1
+  local inspect_path
 
-  if grep -Fq '# easyharness-install-dev-wrapper' "${path}"; then
+  inspect_path="$(resolve_existing_path "${path}" 2>/dev/null || true)"
+  [[ -n "${inspect_path}" && -f "${inspect_path}" ]] || return 1
+
+  if grep -Fq '# easyharness-install-dev-wrapper' "${inspect_path}"; then
     return 0
   fi
 
-  grep -Fq 'find_repo_root()' "${path}" &&
-    grep -Fq 'cmd/harness/main.go' "${path}" &&
+  grep -Fq 'find_repo_root()' "${inspect_path}" &&
+    grep -Fq 'cmd/harness/main.go' "${inspect_path}" &&
     return 0
 }
 
 find_stable_harness_on_path() {
   local self_path="$1"
-  local dir candidate normalized_candidate
+  local self_real_path="$2"
+  local dir candidate normalized_candidate resolved_candidate
   IFS=':' read -r -a path_entries <<< "${PATH:-}"
   for dir in "${path_entries[@]}"; do
     [[ -z "${dir}" ]] && continue
@@ -216,7 +247,11 @@ find_stable_harness_on_path() {
     [[ -x "${candidate}" ]] || continue
 
     normalized_candidate="$(normalize_path "${candidate}" 2>/dev/null || true)"
+    resolved_candidate="$(resolve_existing_path "${candidate}" 2>/dev/null || true)"
     if [[ -n "${self_path}" && -n "${normalized_candidate}" && "${normalized_candidate}" == "${self_path}" ]]; then
+      continue
+    fi
+    if [[ -n "${self_real_path}" && -n "${resolved_candidate}" && "${resolved_candidate}" == "${self_real_path}" ]]; then
       continue
     fi
     if managed_easyharness_wrapper "${candidate}"; then
@@ -230,12 +265,25 @@ find_stable_harness_on_path() {
   return 1
 }
 
+set_wrapper_paths() {
+  local computed_path="" computed_real_path=""
+  computed_path="$(normalize_path "${BASH_SOURCE[0]}" 2>/dev/null || true)"
+  computed_real_path="$(resolve_existing_path "${BASH_SOURCE[0]}" 2>/dev/null || true)"
+  wrapper_path="${computed_path}"
+  wrapper_real_path="${computed_real_path}"
+}
+
+choose_out_of_tree_binary() {
+  local candidate=""
+  candidate="$(find_stable_harness_on_path "${wrapper_path:-}" "${wrapper_real_path:-}" 2>/dev/null || true)"
+  [[ -n "${candidate}" ]] || return 1
+  stable_binary_path="${candidate}"
+}
+
 wrapper_path=""
-if wrapper_path="$(normalize_path "${BASH_SOURCE[0]}")"; then
-  :
-else
-  wrapper_path=""
-fi
+wrapper_real_path=""
+stable_binary_path=""
+set_wrapper_paths
 
 binary_path=""
 if repo_root="$(find_repo_root)"; then
@@ -245,7 +293,7 @@ if repo_root="$(find_repo_root)"; then
     echo "Run scripts/install-dev-harness from this worktree first." >&2
     exit 1
   fi
-elif stable_binary_path="$(find_stable_harness_on_path "${wrapper_path}")"; then
+elif choose_out_of_tree_binary; then
   binary_path="${stable_binary_path}"
 else
   echo "Could not find an easyharness source tree from ${PWD}, and no stable harness binary is available on PATH." >&2
@@ -255,15 +303,13 @@ fi
 
 exec "${binary_path}" "$@"
 EOF
-)"
-  printf '%s\n' "${template}"
 }
 
 legacy_easyharness_link() {
   local path="$1"
   [[ -L "${path}" ]] || return 1
 
-  local target
+  local target=""
   target="$(readlink "${path}")"
   [[ -n "${target}" ]] || return 1
 
