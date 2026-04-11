@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -20,6 +21,13 @@ type commandResult struct {
 	Stdout   string
 	Stderr   string
 	ExitCode int
+}
+
+var installerCacheDirs struct {
+	once       sync.Once
+	goCache    string
+	goModCache string
+	err        error
 }
 
 func (r commandResult) CombinedOutput() string {
@@ -1066,15 +1074,51 @@ func installerEnv(t *testing.T, overrides map[string]string) []string {
 		overrides = map[string]string{}
 	}
 	if _, ok := overrides["GOCACHE"]; !ok {
-		overrides["GOCACHE"] = filepath.Join(t.TempDir(), "go-build")
+		overrides["GOCACHE"] = sharedInstallerGoCache(t)
 	}
 	if _, ok := overrides["GOMODCACHE"]; !ok {
-		overrides["GOMODCACHE"] = filepath.Join(t.TempDir(), "gomod")
+		overrides["GOMODCACHE"] = sharedInstallerGoModCache(t)
 	}
 	if _, ok := overrides["GOFLAGS"]; !ok {
 		overrides["GOFLAGS"] = "-modcacherw"
 	}
 	return envWithOverrides(t, overrides)
+}
+
+func sharedInstallerGoCache(t *testing.T) string {
+	t.Helper()
+	initializeInstallerCaches(t)
+	return installerCacheDirs.goCache
+}
+
+func sharedInstallerGoModCache(t *testing.T) string {
+	t.Helper()
+	initializeInstallerCaches(t)
+	return installerCacheDirs.goModCache
+}
+
+func initializeInstallerCaches(t *testing.T) {
+	t.Helper()
+
+	installerCacheDirs.once.Do(func() {
+		root, err := os.MkdirTemp("", "easyharness-install-smoke-cache-*")
+		if err != nil {
+			installerCacheDirs.err = err
+			return
+		}
+		installerCacheDirs.goCache = filepath.Join(root, "go-build")
+		installerCacheDirs.goModCache = filepath.Join(root, "gomod")
+		for _, dir := range []string{installerCacheDirs.goCache, installerCacheDirs.goModCache} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				installerCacheDirs.err = err
+				return
+			}
+		}
+	})
+
+	if installerCacheDirs.err != nil {
+		t.Fatalf("initialize shared installer caches: %v", installerCacheDirs.err)
+	}
 }
 
 func installerPath(t *testing.T, extraDirs ...string) string {
