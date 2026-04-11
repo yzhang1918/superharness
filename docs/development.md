@@ -21,16 +21,13 @@ By default the installer:
 - uses `~/.local/bin` by default
 - keeps parallel worktrees isolated by dispatching to the current worktree's
   `.local/bin/harness`
-- only refreshes a healthy outside-source-tree fallback when you install with
-  `--global`
-- self-heals an invalid outside-source-tree fallback during a normal install so
-  unrelated repositories stop dispatching to a broken fallback binary
+- dispatches outside easyharness source trees to a stable `harness` already on
+  `PATH`, such as a Homebrew install
 
 Useful options:
 
 ```bash
 scripts/install-dev-harness --help
-scripts/install-dev-harness --global
 scripts/install-dev-harness --install-dir "$HOME/.local/bin"
 scripts/install-dev-harness --force
 ```
@@ -42,17 +39,13 @@ be called directly:
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-When you want a checkout to provide the fallback used outside easyharness
-source trees, refresh it explicitly:
-
-```bash
-cd /path/to/your-easyharness-checkout
-scripts/install-dev-harness --global
-```
-
 Inside any easyharness source tree, the wrapper still dispatches to that
-checkout's local `.local/bin/harness` and does not silently fall back to the
-global binary.
+checkout's local `.local/bin/harness` and does not silently fall back to a
+stable Homebrew or other PATH-installed binary.
+
+Outside easyharness source trees, the wrapper expects a stable `harness`
+installation to already be available on `PATH`. The normal release path is the
+Homebrew install shown in the root [`README.md`](../README.md).
 
 Verify the command is available:
 

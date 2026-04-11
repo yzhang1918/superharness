@@ -32,8 +32,13 @@ func TestReleaseDocsPresentStableOnboardingSurface(t *testing.T) {
 		t.Fatalf("read development doc: %v", err)
 	}
 	development := string(developmentData)
-	support.RequireContains(t, development, "cd /path/to/your-easyharness-checkout")
+	normalizedDevelopment := strings.Join(strings.Fields(development), " ")
+	support.RequireContains(t, normalizedDevelopment, "stable `harness` installation to already be available on `PATH`")
+	support.RequireContains(t, normalizedDevelopment, "Homebrew install shown in the root")
 	support.RequireContains(t, development, "bundled Playwright wrapper")
+	if strings.Contains(development, "--global") {
+		t.Fatalf("expected development doc to avoid retired --global guidance, got:\n%s", development)
+	}
 	if strings.Contains(development, "/Users/yaozhang/") {
 		t.Fatalf("expected development doc to avoid workstation-specific absolute paths, got:\n%s", development)
 	}
