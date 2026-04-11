@@ -225,10 +225,20 @@ Fresh full finalize review is now pending for that repaired candidate.
 
 ## Validation Summary
 
+- Revision `1` validation before the first archive:
 - `bash -n scripts/install-dev-harness`
 - `gofmt -w tests/smoke/install_dev_harness_test.go`
 - `go test ./tests/smoke -run InstallDevHarness -count=1`
 - `scripts/install-dev-harness`
+- `harness status`
+- Post-archive GitHub Actions run
+  `https://github.com/catu-ai/easyharness/actions/runs/24286201051` failed
+  because `TestReleaseDocsPresentStableOnboardingSurface` still expected the
+  retired `--global` onboarding text in `docs/development.md`.
+- Revision `2` finalize-fix validation:
+- `gofmt -w tests/smoke/release_docs_test.go`
+- `go test ./tests/smoke -run ReleaseDocsPresentStableOnboardingSurface -count=1`
+- `go test ./...`
 - `harness status`
 
 ## Review Summary
@@ -249,22 +259,41 @@ Fresh full finalize review is now pending for that repaired candidate.
 - `review-006-full` passed cleanly after constraining out-of-tree fallback to
   release-mode PATH candidates and expanding the managed-wrapper smoke to cover
   both marker-based and legacy wrapper signatures.
+- Post-archive CI then invalidated revision `1`: GitHub Actions run
+  `24286201051` failed because `tests/smoke/release_docs_test.go` still
+  asserted the removed `cd /path/to/your-easyharness-checkout` / `--global`
+  development-doc path.
+- `review-007-delta` passed cleanly for revision `2` after updating the
+  release-doc smoke expectations to the new stable PATH / Homebrew onboarding
+  contract.
 
 ## Archive Summary
 
-- Archived At: 2026-04-12T00:01:01+08:00
-- Revision: 1
-- PR: pending creation after archive closeout.
-- Ready: `review-006-full` passed for revision `1`; the candidate is
-  archive-ready.
-- Merge Handoff: archive the active plan, commit the archive move and closeout
-  summaries, push branch `codex/retire-dev-global-fallback-path`, open or
-  update the PR, and record publish/CI/sync evidence until `harness status`
+- Archived At: 2026-04-12T00:10:38+08:00
+- Revision: 2
+- PR: https://github.com/catu-ai/easyharness/pull/145
+- Ready: revision `1` was archived and published, but post-archive CI failed in
+  `TestReleaseDocsPresentStableOnboardingSurface` because the smoke test still
+  expected retired `--global` onboarding guidance. Revision `2` repaired that
+  stale test expectation and `review-007-delta` passed, so the candidate is
+  ready to re-archive.
+- Merge Handoff: complete the revision `2` finalize review, re-archive the
+  active plan, commit and push the tracked plan move plus the smoke-test fix,
+  reuse PR `#145`, and refresh publish/CI/sync evidence until `harness status`
   reaches `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
 ### Delivered
+
+- Retired the dev-owned global fallback path and the installer's `--global`
+  mode so out-of-tree wrapper dispatch now depends on a stable release-mode
+  `harness` already on `PATH`.
+- Preserved repo-local wrapper dispatch inside easyharness source trees while
+  tightening smoke coverage for managed-wrapper recursion, repo-local dev-binary
+  rejection, release-only PATH fallback, and retired fallback absence.
+- Updated the release-doc smoke to assert the new stable PATH / Homebrew
+  onboarding contract instead of the removed `--global` development flow.
 
 - Removed the dev installer's explicit `--global` path and the dev-owned global
   fallback management under `~/.local/share/easyharness/dev/harness`.
