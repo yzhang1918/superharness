@@ -127,7 +127,10 @@ row's outer button still had `scrollWidth > clientWidth` because
 `.explorer-item-main` lacked an explicit `minmax(0, 1fr)` grid track. The
 repair added that track plus `max-width: 100%` constraints so a true 220px
 measurement now shows the button, main column, row, and subtitle all fully
-contained while the long title text alone truncates by ellipsis.
+contained while the long title text alone truncates by ellipsis. The exact
+candidate commit, screenshot paths, and width measurements are now durably
+recorded in
+`docs/plans/active/supplements/2026-04-11-stabilize-review-ui-layout/containment-validation.md`.
 
 #### Review Notes
 
@@ -196,6 +199,9 @@ does not benefit from a synthetic intermediate review boundary.
 - Use browser-side DOM measurements at the 220px explorer width to confirm the
   review row container itself is contained (`clientWidth == scrollWidth`) even
   when the title text still needs ellipsis.
+- Record the exact candidate commit, screenshot paths, and 220px DOM
+  measurements in the tracked containment supplement so archive-time review does
+  not depend on terminal scrollback or mutable local-memory claims.
 
 ## Risks
 
