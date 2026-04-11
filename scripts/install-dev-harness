@@ -236,6 +236,15 @@ managed_easyharness_wrapper() {
     return 0
 }
 
+release_harness_candidate() {
+  local path="$1"
+  local version_output=""
+
+  version_output="$("${path}" --version 2>/dev/null || true)"
+  [[ -n "${version_output}" ]] || return 1
+  grep -Fq 'mode: release' <<< "${version_output}"
+}
+
 find_stable_harness_on_path() {
   local self_path="$1"
   local self_real_path="$2"
@@ -255,6 +264,9 @@ find_stable_harness_on_path() {
       continue
     fi
     if managed_easyharness_wrapper "${candidate}"; then
+      continue
+    fi
+    if ! release_harness_candidate "${candidate}"; then
       continue
     fi
 

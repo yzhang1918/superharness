@@ -43,17 +43,17 @@ release install in the normal operator flow.
 
 ## Acceptance Criteria
 
-- [ ] `scripts/install-dev-harness` no longer accepts or documents `--global`,
+- [x] `scripts/install-dev-harness` no longer accepts or documents `--global`,
       and no longer writes or repairs a dev-owned global fallback binary.
-- [ ] Inside an easyharness source tree, the managed wrapper still resolves the
+- [x] Inside an easyharness source tree, the managed wrapper still resolves the
       current worktree's `.local/bin/harness` and fails locally when that
       binary is missing.
-- [ ] Outside easyharness source trees, the managed wrapper dispatches to a
+- [x] Outside easyharness source trees, the managed wrapper dispatches to a
       stable `harness` found on `PATH` and emits a clear actionable error when
       none exists.
-- [ ] The wrapper avoids recursively selecting the managed dev wrapper itself
+- [x] The wrapper avoids recursively selecting the managed dev wrapper itself
       when searching `PATH` for the stable fallback.
-- [ ] Development docs and installer smoke tests describe and verify the new
+- [x] Development docs and installer smoke tests describe and verify the new
       contract centered on Homebrew or other stable PATH installs.
 
 ## Deferred Items
@@ -168,7 +168,14 @@ Revalidated with `bash -n scripts/install-dev-harness`,
 assertion that ordinary installs leave the retired
 `~/.local/share/easyharness/dev/harness` path absent and reran
 `gofmt -w tests/smoke/install_dev_harness_test.go` plus
-`go test ./tests/smoke -run InstallDevHarness -count=1`.
+`go test ./tests/smoke -run InstallDevHarness -count=1`. After
+`review-005-full` requested further changes, tightened out-of-tree PATH
+selection so only `mode: release` candidates qualify as stable fallbacks, and
+extended managed-wrapper coverage to exercise both the legacy wrapper-signature
+branch and the case where another checkout's repo-local dev binary appears on
+`PATH` ahead of the stable install. Revalidated with
+`bash -n scripts/install-dev-harness`, `gofmt -w tests/smoke/install_dev_harness_test.go`,
+and `go test ./tests/smoke -run InstallDevHarness -count=1`.
 
 #### Review Notes
 
@@ -182,7 +189,14 @@ for both the symlink-alias path and the separate managed-wrapper-skip branch.
 findings for the repair. Finalize `review-003-full` later requested one tests
 finding because the suite no longer proved the retired dev-owned global
 fallback path stayed absent during ordinary installs; the repair added that
-assertion and a fresh finalize delta review is now pending.
+assertion and `review-004-delta` passed cleanly for that narrow fix.
+`review-005-full` then requested two more blocking findings: restrict
+out-of-tree fallback selection to stable release-mode binaries rather than any
+non-wrapper `harness` on `PATH`, and add smoke coverage for the legacy
+managed-wrapper detection branch that still remains supported. The repair now
+filters PATH candidates by `mode: release` and extends the smoke suite to
+cover both the legacy-wrapper branch and repo-local dev binaries on `PATH`.
+Fresh full finalize review is now pending for that repaired candidate.
 
 ## Validation Strategy
 
@@ -211,25 +225,54 @@ assertion and a fresh finalize delta review is now pending.
 
 ## Validation Summary
 
-PENDING_UNTIL_ARCHIVE
+- `bash -n scripts/install-dev-harness`
+- `gofmt -w tests/smoke/install_dev_harness_test.go`
+- `go test ./tests/smoke -run InstallDevHarness -count=1`
+- `scripts/install-dev-harness`
+- `harness status`
 
 ## Review Summary
 
-PENDING_UNTIL_ARCHIVE
+- `review-001-full` requested two blocking findings: fix PATH-fallback
+  recursion through symlinked wrapper aliases and add smoke coverage for
+  skipping other managed wrappers already on `PATH`.
+- `review-002-delta` passed cleanly after the wrapper real-path resolution fix
+  and the added managed-wrapper and alias-chain smoke coverage.
+- `review-003-full` requested one blocking tests finding: prove the retired
+  `~/.local/share/easyharness/dev/harness` path stays absent during ordinary
+  installs.
+- `review-004-delta` passed cleanly after adding that retired-path absence
+  assertion to the normal-install smoke.
 
 ## Archive Summary
 
-PENDING_UNTIL_ARCHIVE
+- PR: pending creation after archive closeout.
+- Ready: awaiting a fresh passing full finalize review for revision `1`, after
+  which the candidate should be archive-ready.
+- Merge Handoff: rerun full finalize review, archive the active plan, commit
+  the archive move and closeout summaries, push branch
+  `codex/retire-dev-global-fallback-path`, open or update the PR, and record
+  publish/CI/sync evidence until `harness status` reaches
+  `execution/finalize/await_merge`.
 
 ## Outcome Summary
 
 ### Delivered
 
-PENDING_UNTIL_ARCHIVE
+- Removed the dev installer's explicit `--global` path and the dev-owned global
+  fallback management under `~/.local/share/easyharness/dev/harness`.
+- Kept the managed wrapper model, but changed out-of-tree dispatch to use a
+  stable `harness` already on `PATH` while preserving strict repo-local binary
+  enforcement inside easyharness source trees.
+- Hardened PATH fallback selection so managed wrappers and symlink aliases are
+  skipped rather than recursively re-entering another dev wrapper.
+- Updated development docs and installer smoke coverage to match the new
+  release-backed PATH fallback contract, including proof that the retired
+  global fallback path stays absent during ordinary installs.
 
 ### Not Delivered
 
-PENDING_UNTIL_ARCHIVE
+NONE
 
 ### Follow-Up Issues
 

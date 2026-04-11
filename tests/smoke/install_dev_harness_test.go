@@ -300,45 +300,63 @@ func TestInstallDevHarnessWrapperSkipsOtherManagedWrappersOnPathOutsideWorktree(
 		t.Skip("installer smoke tests require a POSIX shell")
 	}
 
-	repoRoot := copyInstallerFixture(t)
-	installDir := filepath.Join(t.TempDir(), "path-bin")
-	managedDir := t.TempDir()
-	stableDir, _ := newFakeStableHarness(t)
-	writeFixtureFile(t, filepath.Join(managedDir, "harness"), fakeManagedWrapperScript("unexpected managed wrapper"), 0o755)
-
-	result := runCommand(
-		t,
-		repoRoot,
-		installerEnv(t, map[string]string{
-			"HOME": t.TempDir(),
-			"PATH": installerPath(t, installDir, managedDir, stableDir),
-		}),
-		"/bin/bash",
-		filepath.Join(repoRoot, "scripts", "install-dev-harness"),
-		"--install-dir", installDir,
-	)
-	if result.ExitCode != 0 {
-		t.Fatalf("install-dev-harness failed with exit %d\nstdout:\n%s\nstderr:\n%s", result.ExitCode, result.Stdout, result.Stderr)
+	cases := []struct {
+		name   string
+		script string
+	}{
+		{
+			name:   "marker wrapper",
+			script: fakeManagedWrapperScript("unexpected managed wrapper"),
+		},
+		{
+			name:   "legacy wrapper",
+			script: fakeLegacyManagedWrapperScript("unexpected legacy managed wrapper"),
+		},
 	}
 
-	wrapperPath := filepath.Join(installDir, "harness")
-	otherProject := t.TempDir()
-	helpResult := runCommand(
-		t,
-		otherProject,
-		envWithOverrides(t, map[string]string{
-			"PATH": installerPath(t, installDir, managedDir, stableDir),
-		}),
-		wrapperPath,
-		"--help",
-	)
-	if helpResult.ExitCode != 0 {
-		t.Fatalf("wrapper with other managed wrapper on PATH failed with exit %d\nstdout:\n%s\nstderr:\n%s", helpResult.ExitCode, helpResult.Stdout, helpResult.Stderr)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoRoot := copyInstallerFixture(t)
+			installDir := filepath.Join(t.TempDir(), "path-bin")
+			managedDir := t.TempDir()
+			stableDir, _ := newFakeStableHarness(t)
+			writeFixtureFile(t, filepath.Join(managedDir, "harness"), tc.script, 0o755)
 
-	support.RequireContains(t, helpResult.Stdout, "stable fallback harness help")
-	if strings.Contains(helpResult.CombinedOutput(), "unexpected managed wrapper") {
-		t.Fatalf("expected wrapper to skip other managed wrappers on PATH\nstdout:\n%s\nstderr:\n%s", helpResult.Stdout, helpResult.Stderr)
+			result := runCommand(
+				t,
+				repoRoot,
+				installerEnv(t, map[string]string{
+					"HOME": t.TempDir(),
+					"PATH": installerPath(t, installDir, managedDir, stableDir),
+				}),
+				"/bin/bash",
+				filepath.Join(repoRoot, "scripts", "install-dev-harness"),
+				"--install-dir", installDir,
+			)
+			if result.ExitCode != 0 {
+				t.Fatalf("install-dev-harness failed with exit %d\nstdout:\n%s\nstderr:\n%s", result.ExitCode, result.Stdout, result.Stderr)
+			}
+
+			wrapperPath := filepath.Join(installDir, "harness")
+			otherProject := t.TempDir()
+			helpResult := runCommand(
+				t,
+				otherProject,
+				envWithOverrides(t, map[string]string{
+					"PATH": installerPath(t, installDir, managedDir, stableDir),
+				}),
+				wrapperPath,
+				"--help",
+			)
+			if helpResult.ExitCode != 0 {
+				t.Fatalf("wrapper with other managed wrapper on PATH failed with exit %d\nstdout:\n%s\nstderr:\n%s", helpResult.ExitCode, helpResult.Stdout, helpResult.Stderr)
+			}
+
+			support.RequireContains(t, helpResult.Stdout, "stable fallback harness help")
+			if strings.Contains(helpResult.CombinedOutput(), "unexpected managed wrapper") || strings.Contains(helpResult.CombinedOutput(), "unexpected legacy managed wrapper") {
+				t.Fatalf("expected wrapper to skip other managed wrappers on PATH\nstdout:\n%s\nstderr:\n%s", helpResult.Stdout, helpResult.Stderr)
+			}
+		})
 	}
 }
 
@@ -392,6 +410,52 @@ func TestInstallDevHarnessWrapperSkipsSymlinkAliasesOnPathOutsideWorktree(t *tes
 	}
 
 	support.RequireContains(t, helpResult.Stdout, "stable fallback harness help")
+}
+
+func TestInstallDevHarnessWrapperSkipsRepoLocalDevBinaryOnPathOutsideWorktree(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("installer smoke tests require a POSIX shell")
+	}
+
+	repoRoot := copyInstallerFixture(t)
+	installDir := filepath.Join(t.TempDir(), "path-bin")
+	devDir, _ := newFakeDevHarness(t)
+	stableDir, _ := newFakeStableHarness(t)
+
+	result := runCommand(
+		t,
+		repoRoot,
+		installerEnv(t, map[string]string{
+			"HOME": t.TempDir(),
+			"PATH": installerPath(t, installDir, devDir, stableDir),
+		}),
+		"/bin/bash",
+		filepath.Join(repoRoot, "scripts", "install-dev-harness"),
+		"--install-dir", installDir,
+	)
+	if result.ExitCode != 0 {
+		t.Fatalf("install-dev-harness failed with exit %d\nstdout:\n%s\nstderr:\n%s", result.ExitCode, result.Stdout, result.Stderr)
+	}
+
+	wrapperPath := filepath.Join(installDir, "harness")
+	otherProject := t.TempDir()
+	helpResult := runCommand(
+		t,
+		otherProject,
+		envWithOverrides(t, map[string]string{
+			"PATH": installerPath(t, installDir, devDir, stableDir),
+		}),
+		wrapperPath,
+		"--help",
+	)
+	if helpResult.ExitCode != 0 {
+		t.Fatalf("wrapper with repo-local dev binary on PATH failed with exit %d\nstdout:\n%s\nstderr:\n%s", helpResult.ExitCode, helpResult.Stdout, helpResult.Stderr)
+	}
+
+	support.RequireContains(t, helpResult.Stdout, "stable fallback harness help")
+	if strings.Contains(helpResult.CombinedOutput(), "unexpected dev binary") {
+		t.Fatalf("expected wrapper to skip repo-local dev binaries on PATH\nstdout:\n%s\nstderr:\n%s", helpResult.Stdout, helpResult.Stderr)
+	}
 }
 
 func TestInstallDevHarnessVersionReportsStableModeAndPathOutsideWorktree(t *testing.T) {
@@ -798,6 +862,48 @@ func fakeManagedWrapperScript(marker string) string {
 	return "#!/bin/sh\n" +
 		"# easyharness-install-dev-wrapper\n" +
 		"printf '" + marker + "\\n'\n"
+}
+
+func fakeLegacyManagedWrapperScript(marker string) string {
+	return "#!/usr/bin/env bash\n" +
+		"set -euo pipefail\n\n" +
+		"find_repo_root() {\n" +
+		"  printf 'legacy-wrapper-root\\n'\n" +
+		"}\n" +
+		"# cmd/harness/main.go\n\n" +
+		"printf '" + marker + "\\n'\n"
+}
+
+func newFakeDevHarness(t *testing.T) (string, string) {
+	t.Helper()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "harness")
+	writeFixtureFile(
+		t,
+		path,
+		`#!/bin/sh
+set -eu
+
+case "${1:-}" in
+  --help)
+    printf 'unexpected dev binary\n'
+    ;;
+  --version)
+    printf 'version: dev-test\n'
+    printf 'mode: dev\n'
+    printf 'commit: dev-test-commit\n'
+    printf 'path: %s\n' "$0"
+    ;;
+  *)
+    printf 'unexpected dev binary\n'
+    printf 'args=%s\n' "$*"
+    ;;
+esac
+`,
+		0o755,
+	)
+	return dir, path
 }
 
 func writeFixtureFile(t *testing.T, path, contents string, mode os.FileMode) {
