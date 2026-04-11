@@ -141,9 +141,18 @@ real-binary scenario:
 There are no remaining gaps at the bounded transition-family level for the
 repo-level E2E suite.
 
-The intentionally deferred follow-up after this slice is:
+The earlier lifecycle-expansion slice intentionally deferred resilience and
+broader runstate-interleaving follow-up. Those adjacent gaps are now covered by:
 
-- resilience coverage in `tests/resilience/`
+- `tests/resilience/` for malformed current-plan pointers, degraded
+  review/evidence artifact reads, and archive/reopen rollback-family safety
+  cases
+- `tests/e2e/runstate_concurrency_test.go` for deterministic archive, reopen,
+  evidence, and status interleavings around revision-scoped archived evidence
+  and fail-fast lock contention
+
+The remaining follow-up after those adjacent suites is:
+
 - fuzzing or property-style coverage for parsing-heavy paths
 - unbounded route enumeration beyond the documented loop budgets
 
