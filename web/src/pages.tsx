@@ -21,11 +21,11 @@ import {
   reviewRoundAriaLabel,
   reviewRoundCompactMeta,
   reviewRoundCompactStatusLabel,
+  reviewRoundExplorerMetaLabel,
   reviewRoundListLabel,
   reviewRawSubmissionText,
   reviewRoundStatusLabel,
   reviewRoundStatusTone,
-  reviewRoundSubtitle,
   reviewRoundTitle,
   sortTimelineEvents,
   timelineEventSubtitle,
@@ -1116,14 +1116,13 @@ export function ReviewWorkspace(props: {
                 selected={round.round_id === selectedRound?.round_id}
                 onSelect={() => setSelectedRoundId(round.round_id)}
                 ariaLabel={reviewRoundAriaLabel(round)}
-                title={
-                  <div class="review-explorer-title">
-                    <span class="review-explorer-title-text">{reviewRoundTitle(round)}</span>
-                    <span class={`review-round-indicator is-${reviewRoundStatusTone(round)}`} aria-hidden="true" />
+                title={reviewRoundTitle(round)}
+                subtitle={
+                  <div class="review-explorer-subtitle">
+                    <span class="review-explorer-meta">{reviewRoundExplorerMetaLabel(round)}</span>
+                    <span class={`review-round-status-text is-${reviewRoundStatusTone(round)}`}>{reviewRoundCompactStatusLabel(round)}</span>
                   </div>
                 }
-                subtitle={`${reviewRoundSubtitle(round)} · ${reviewCountLabel(round.submitted_slots)}/${reviewCountLabel(round.total_slots)} submitted`}
-                trailing={<span class="review-round-status-text">{reviewRoundCompactStatusLabel(round)}</span>}
                 tone={reviewRoundStatusTone(round)}
               />
             ))
@@ -1146,15 +1145,19 @@ export function ReviewWorkspace(props: {
             title={reviewRoundTitle(selectedRound)}
             subtitle={reviewRoundListLabel(selectedRound)}
             meta={
-              <>
-                {supportArtifacts.length > 0 || artifacts.length > 0 ? (
-                  <button type="button" class="subtle-button" onClick={() => setShowArtifacts(true)}>
-                    Artifacts
-                  </button>
-                ) : null}
-                <StatusBadge tone={reviewRoundStatusTone(selectedRound)}>{reviewRoundStatusLabel(selectedRound)}</StatusBadge>
-                <span>{formatTimestamp(selectedRound.aggregated_at || selectedRound.updated_at || selectedRound.created_at || "")}</span>
-              </>
+              <div class="review-inspector-meta">
+                <div class="review-inspector-meta-row">
+                  {supportArtifacts.length > 0 || artifacts.length > 0 ? (
+                    <button type="button" class="subtle-button" onClick={() => setShowArtifacts(true)}>
+                      Artifacts
+                    </button>
+                  ) : null}
+                  <StatusBadge tone={reviewRoundStatusTone(selectedRound)}>{reviewRoundStatusLabel(selectedRound)}</StatusBadge>
+                </div>
+                <div class="review-inspector-meta-time">
+                  {formatTimestamp(selectedRound.aggregated_at || selectedRound.updated_at || selectedRound.created_at || "")}
+                </div>
+              </div>
             }
           />
 

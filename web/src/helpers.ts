@@ -284,6 +284,19 @@ export function reviewRoundSubtitle(round: ReviewRound): string {
   return parts.join(" · ") || round.round_id;
 }
 
+export function reviewRoundExplorerMetaLabel(round: ReviewRound): string {
+  const parts: string[] = [];
+  if (typeof round.step === "number") {
+    parts.push(`Step ${round.step}`);
+  } else if (round.kind?.trim() === "full") {
+    parts.push("Finalize");
+  } else {
+    parts.push(reviewRoundSequenceLabel(round));
+  }
+  parts.push(`${reviewCountLabel(round.submitted_slots)}/${reviewCountLabel(round.total_slots)}`);
+  return parts.join(" · ");
+}
+
 export function reviewCountLabel(value: number | undefined): string {
   if (typeof value !== "number") return "0";
   return String(value);

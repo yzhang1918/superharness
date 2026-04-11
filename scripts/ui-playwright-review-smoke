@@ -1107,13 +1107,9 @@ async (page) => await page.evaluate(() => {
   if (!/Pass|Changes requested|Waiting|Degraded|Complete|Aggregated|Incomplete|In progress/.test(statusText)) {
     throw new Error(`missing readable status text in row label: ${statusText}`);
   }
-  const indicator = row.querySelector(".review-round-indicator");
-  if (!indicator) {
-    throw new Error("missing explorer status indicator");
-  }
-  const rect = indicator.getBoundingClientRect();
-  if (rect.width < 6 || rect.height < 6) {
-    throw new Error(`status indicator too small: ${rect.width}x${rect.height}`);
+  const peerMeta = row.querySelector(".review-round-status-text");
+  if (!peerMeta || !/(PASS|CHG|WAIT|AGGR|DEG|WIP|DONE|PART)/.test(peerMeta.textContent || "")) {
+    throw new Error(`peer row is missing visible status token: ${(peerMeta && peerMeta.textContent) || ""}`);
   }
   return true;
 })

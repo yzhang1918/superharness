@@ -251,8 +251,8 @@ export function ExplorerItem(props: {
   selected: boolean;
   onSelect: () => void;
   ariaLabel?: string;
-  meta?: string;
-  subtitle?: string;
+  meta?: ComponentChildren;
+  subtitle?: ComponentChildren;
   tone?: Tone;
   title: ComponentChildren;
   trailing?: ComponentChildren;
